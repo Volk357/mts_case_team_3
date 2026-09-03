@@ -29,3 +29,6 @@ data/
 runs/
 artifacts/
 documents/
+
+# Local VPN profiles may contain private keys
+/cfg/

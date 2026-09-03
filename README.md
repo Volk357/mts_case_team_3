@@ -58,6 +58,7 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 - [Backend](apps/api/README.md);
 - [Frontend](apps/web/README.md);
 - [Контракты](contracts/README.md);
+- [Локальная модель](docs/local-model.md);
 - [Roadmaps](roadmaps/README.md).
 
 ## Типичный цикл разработки

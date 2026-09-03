@@ -1,0 +1,87 @@
+{
+  "documents": [
+    {
+      "doc": "synth_1",
+      "domain": "traffic",
+      "defects": 16,
+      "by_class": {
+        "presence": 11,
+        "absence": 4,
+        "section_removed": 1
+      }
+    },
+    {
+      "doc": "synth_2",
+      "domain": "radio",
+      "defects": 14,
+      "by_class": {
+        "absence": 4,
+        "presence": 9,
+        "section_removed": 1
+      }
+    },
+    {
+      "doc": "synth_3",
+      "domain": "churn",
+      "defects": 4,
+      "by_class": {
+        "absence": 2,
+        "presence": 2
+      }
+    },
+    {
+      "doc": "synth_4",
+      "domain": "roaming",
+      "defects": 17,
+      "by_class": {
+        "presence": 10,
+        "absence": 6,
+        "section_removed": 1
+      }
+    },
+    {
+      "doc": "synth_5",
+      "domain": "services",
+      "defects": 14,
+      "by_class": {
+        "absence": 5,
+        "presence": 8,
+        "section_removed": 1
+      }
+    }
+  ],
+  "total_defects": 65,
+  "by_class": {
+    "presence": 40,
+    "absence": 21,
+    "section_removed": 4
+  },
+  "by_type": {
+    "AMBIGUOUS_LOGIC": 3,
+    "DANGLING_REFERENCE": 3,
+    "DATA_CATALOG_MISSING": 2,
+    "DUPLICATE_SEMANTICS": 2,
+    "FILTER_RESULT_UNDEFINED": 2,
+    "HDFS_PATH_INCOMPLETE": 2,
+    "INCOMPLETE_SCHEMA": 2,
+    "INTERNAL_CONTRADICTION": 3,
+    "MISSING_SOURCE_LOCATION": 2,
+    "NO_DEDUP_OR_KEY": 2,
+    "NO_FILTER_DESCRIPTION": 2,
+    "NO_SCHEDULE": 3,
+    "NO_VOLUME_ESTIMATE": 3,
+    "NULLABILITY_UNSPECIFIED": 2,
+    "PII_NO_PROTECTION": 2,
+    "PLACEHOLDER_LEFT": 4,
+    "REFERENCE_LIST_MISSING": 3,
+    "RETENTION_GAP": 3,
+    "SCHEMA_INCONSISTENCY": 2,
+    "SERIALIZATION_UNSPECIFIED": 3,
+    "TEMPLATE_SECTION_MISSING": 4,
+    "TEXT_STRUCTURE_ERROR": 3,
+    "TIMEZONE_UNDEFINED": 3,
+    "UNDEFINED_EDGE_CASE": 3,
+    "UNSPECIFIED_FORMAT": 2
+  },
+  "invariants_ok": true
+}

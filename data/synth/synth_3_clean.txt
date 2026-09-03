@@ -1,0 +1,126 @@
+Общие сведения
+Агрегат по оттоку: месячная сводка ушедших и оставшихся абонентов в разрезе региона и причины расторжения.
+Название таблицы: SCHEMA_CDM_CHURN.TABLE_AGG_CHURN_MONTHLY
+Кластер: KAFKA_CLUSTER_MSK_PROD
+Схема: SCHEMA_CDM_CHURN
+Способ загрузки: Полная перезагрузка периода
+
+Решаемая проблема
+Расчёт оттока ведётся в презентациях подразделений, определение ушедшего абонента отличается между регионами. Сравнение динамики невозможно. Витрина закрепляет единое определение.
+
+Продуктовые метрики
+- Срок подготовки месячного отчёта по оттоку: с 5 дней до 1 суток
+- Доля регионов с единым определением оттока: цель 100%
+
+Заказчики
+Коммерческий блок, отдел удержания абонентов
+
+Нефункциональные требования
+Объём данных: Около 5 тыс. строк в месячной партиции, прирост около 2 МБ в месяц
+Задержки: Готовность витрины не позднее 3-го числа месяца
+Регламент расчёта: Ежемесячно, 1-го числа в 04:00 UTC за предыдущий месяц
+Глубина данных: С 01.05.2023
+Часовой пояс: UTC
+Срок хранения по слоям: RAW — 30 дней, DDS — 400 дней, CDM — 5 лет
+Обновление: Полная перезагрузка периода без upsert
+Поле FIELD_SUBSCRIBER_ID хешируется при выгрузке в CDM. Доступ к слою DDS разграничен ролью ROLE_PII_READ.
+
+Системы-источники
+CRM_CORE — система управления абонентской базой
+
+Data Catalog
+Ссылка на Дата-каталог: https://datacatalog.corp/tables/schema_cdm_churn.table_agg_churn_monthly
+
+Исходники проекта
+Ссылка на GitLab: https://gitlab.corp/bigdata/churn-agg
+
+Команда
+Аналитик: USER_A
+Разработчик: USER_B
+Тестировщик: USER_C
+
+JIRA
+Задача: DATA-4105 — Витрина-агрегат по оттоку абонентов. https://jira.corp/browse/DATA-4105
+
+Источники данных
+Описание источника | Тип источника | Ссылка на источник | Сериализация
+События изменения статуса договора | Kafka | TOPIC_CRM_CONTRACT_EVENTS | JSON
+Витрина активных абонентов | Hive | SCHEMA_DDS.TABLE_SUBSCRIBER_STATE | ORC
+
+Источники обогащения данных
+Обогащение справочником причин расторжения выполняется по бизнес-дате расчёта.
+Справочник | Схема | Назначение в расчёте
+TABLE_REGION_REF | SCHEMA_DIC | Справочник регионов
+TABLE_CHURN_REASON_REF | SCHEMA_DIC | Справочник причин расторжения договора
+
+Приемники данных
+Описание данных | Кластер | Ссылка на Каталог | Сериализация
+Витрина-агрегат по оттоку абонентов | KAFKA_CLUSTER_MSK_PROD | SCHEMA_CDM_CHURN.TABLE_AGG_CHURN_MONTHLY | ORC
+Путь хранения в HDFS: /data/cdm/churn/agg_churn_monthly, формат ORC.
+
+Схема потоков данных
+не применимо
+
+Алгоритм обработки потока
+Шаг 1. Фильтрация данных
+Ушедшим считается абонент, у которого FIELD_STATUS_CODE принял значение CLOSED в границах месяца агрегации по UTC и не вернулся в статус ACTIVE до конца месяца.
+События с FIELD_STATUS_CODE вне справочника статусов отбрасываются и логируются в TABLE_CHURN_REJECT.
+Шаг 2. Обогащение данных
+Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».
+Приоритет определения региона: значение FIELD_REGION_CODE из события.
+Если FIELD_REGION_CODE в событии не заполнен — берётся регион из TABLE_SUBSCRIBER_STATE на начало месяца.
+Если регион не определён ни одним способом — присваивается Unknown.
+Если у абонента в течение месяца несколько переходов в CLOSED, учитывается последний по FIELD_STATUS_TS.
+Шаг 3. Агрегация
+Группировка по: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON.
+Меры рассчитываются в границах группы, перечень мер приведён в разделе «Структура данных».
+Шаг 4. Запись в CDM
+Результат записывается в SCHEMA_CDM_CHURN.TABLE_AGG_CHURN_MONTHLY в формате ORC по пути /data/cdm/churn/agg_churn_monthly.
+
+Формирование ключа (kafka) / партиции (hdfs)
+Поле партиционирования: FIELD_BIZ_DATE
+Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON
+Правило дедупликации: Партиция перезаписывается целиком, дубли невозможны
+
+Структура данных
+Приемники. Таблица: SCHEMA_CDM_CHURN.TABLE_AGG_CHURN_MONTHLY
+Атрибут | Тип данных | Описание атрибута | Обязательность | Источник
+FIELD_BIZ_DATE | date | Бизнес-дата: 1-е число месяца агрегации | NOT NULL | Период расчёта
+FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code
+FIELD_CHURN_REASON | string | Код причины расторжения | NULLABLE | TABLE_CHURN_REASON_REF.reason_code
+FIELD_CHURNED_CNT | bigint | Количество ушедших абонентов | NOT NULL | count(distinct FIELD_SUBSCRIBER_ID)
+FIELD_ACTIVE_CNT | bigint | Количество активных абонентов на начало месяца | NOT NULL | count по TABLE_SUBSCRIBER_STATE
+FIELD_CHURN_RATE | double | Доля оттока (проценты) | NOT NULL | FIELD_CHURNED_CNT / FIELD_ACTIVE_CNT * 100
+FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG
+Источники. Таблица: TOPIC_CRM_CONTRACT_EVENTS
+Атрибут | Тип данных | Комментарий
+FIELD_SUBSCRIBER_ID | string | Идентификатор абонента
+FIELD_CONTRACT_ID | string | Номер договора
+FIELD_STATUS_CODE | string | Код статуса договора
+FIELD_STATUS_TS | timestamp | Время изменения статуса, UTC
+FIELD_REASON_CODE | string | Код причины расторжения
+FIELD_REGION_CODE | string | Код региона обслуживания
+
+Пример данных
+не применимо
+
+DDL
+CREATE TABLE SCHEMA_CDM_CHURN.TABLE_AGG_CHURN_MONTHLY (
+  FIELD_BIZ_DATE DATE NOT NULL,
+  FIELD_REGION_CODE STRING NOT NULL,
+  FIELD_CHURN_REASON STRING,
+  FIELD_CHURNED_CNT BIGINT NOT NULL,
+  FIELD_ACTIVE_CNT BIGINT NOT NULL,
+  FIELD_CHURN_RATE DOUBLE NOT NULL,
+  FIELD_PROC_TS TIMESTAMP NOT NULL
+)
+PARTITIONED BY (FIELD_BIZ_DATE)
+STORED AS ORC
+LOCATION '/data/cdm/churn/agg_churn_monthly';
+
+FAQ
+- Абонент, расторгнувший и заключивший договор в одном месяце, в отток не попадает.
+- Доля оттока считается от активной базы на начало месяца, а не на конец.
+
+История изменений
+v1.0 от 15.06.2023 — первая редакция. v2.0 от 01.02.2024 — изменено определение ушедшего абонента.

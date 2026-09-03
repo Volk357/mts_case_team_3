@@ -33,3 +33,13 @@ documents/
 
 # Local VPN profiles may contain private keys
 /cfg/
+
+# Private case-holder inputs and model outputs (public repository)
+/vitrina.txt
+/potoki.txt
+/istochnik.txt
+/results/
+/review_vitrina.md
+/review_vitrina.pdf
+/nikita_ollama.conf
+/Archive.zip

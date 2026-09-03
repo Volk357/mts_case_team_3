@@ -49,6 +49,11 @@ Analysis Core остаётся отдельным CLI-модулем Михаи�
 зафиксированный [контракт](INTEGRATION_CONTRACT.md). Промпты и таксономия не должны
 переноситься в frontend или Product Application backend.
 
+Рабочий контур Михаила находится в корне репозитория: `run_review.py`,
+`check_formal.py`, `score.py`, `generate.py`, YAML-файлы знаний и синтетический
+корпус `data/synth`. Его устройство и текущие результаты описаны в
+[документации Analysis Core](docs/analysis-core.md).
+
 ## Конфигурация
 
 Backend-профили находятся в `apps/api/config`, frontend-профили — в `apps/web`.

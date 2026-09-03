@@ -1,0 +1,245 @@
+{
+  "doc": "synth_2",
+  "domain": "radio",
+  "clean_source": "synth_2_clean.txt",
+  "template": "Потоковые данные/витрины",
+  "sections_marked_na": [
+    "enrich",
+    "sample",
+    "history"
+  ],
+  "defect_count": 14,
+  "by_class": {
+    "absence": 4,
+    "presence": 9,
+    "section_removed": 1
+  },
+  "defects": [
+    {
+      "defect_id": "INCOMPLETE_SCHEMA",
+      "defect_class": "absence",
+      "mutation": "removed_receiver_field_table",
+      "note": "Таблица витрины объявлена в разделе «Приемники данных», но перечень её полей удалён из раздела «Структура данных». Ссылки на внешнее описание нет.",
+      "detectable_by": "llm",
+      "removed_text": "FIELD_BIZ_DATE date Бизнес-дата часа агрегации NOT NULL Партиция источника / FIELD_HOUR int Час агрегации, 0–23 NOT NULL Партиция источника / FIELD_CELL_ID bigint Идентификатор соты NOT NULL TABLE_BS_REF.cell_id / FIELD_VENDOR_NAME string Наименование вендора оборудования NULLABLE TABLE_VENDOR_REF.vendor_name / FIELD_RRC_SUCCESS_RATE double Доля успешных установлений RRC (проценты) NOT NULL Расчёт",
+      "containers": [
+        {
+          "node": "struct",
+          "title": "Структура данных",
+          "lines": [
+            "Структура данных",
+            "Источники. Таблица: TOPIC_RAN_COUNTERS_NW",
+            "Атрибут | Тип данных | Комментарий",
+            "FIELD_CELL_ID | string | Идентификатор соты",
+            "FIELD_EVENT_TS | timestamp | Время снятия счётчика, UTC",
+            "FIELD_RRC_ATTEMPT | bigint | Попытки установления RRC",
+            "FIELD_RRC_SUCCESS | bigint | Успешные установления RRC",
+            "FIELD_DROP_CNT | bigint | Количество обрывов",
+            "FIELD_HO_CNT | bigint | Количество хэндоверов",
+            "FIELD_CELL_GEN | int | Поколение сети: 3 или 4"
+          ]
+        },
+        {
+          "node": "receivers",
+          "title": "Приемники данных",
+          "lines": [
+            "Приемники данных",
+            "Описание данных | Кластер | Ссылка на Каталог | Сериализация",
+            "Витрина-агрегат по качеству радиосети | KAFKA_CLUSTER_EKB_PROD | SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY | Parquet",
+            "Путь хранения в HDFS: Папка."
+          ]
+        }
+      ],
+      "container_lines": [
+        "Структура данных",
+        "Источники. Таблица: TOPIC_RAN_COUNTERS_NW",
+        "Атрибут | Тип данных | Комментарий",
+        "FIELD_CELL_ID | string | Идентификатор соты",
+        "FIELD_EVENT_TS | timestamp | Время снятия счётчика, UTC",
+        "FIELD_RRC_ATTEMPT | bigint | Попытки установления RRC",
+        "FIELD_RRC_SUCCESS | bigint | Успешные установления RRC",
+        "FIELD_DROP_CNT | bigint | Количество обрывов",
+        "FIELD_HO_CNT | bigint | Количество хэндоверов",
+        "FIELD_CELL_GEN | int | Поколение сети: 3 или 4",
+        "Приемники данных",
+        "Описание данных | Кластер | Ссылка на Каталог | Сериализация",
+        "Витрина-агрегат по качеству радиосети | KAFKA_CLUSTER_EKB_PROD | SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY | Parquet",
+        "Путь хранения в HDFS: Папка."
+      ],
+      "quote": "Структура данных",
+      "section": "Структура данных"
+    },
+    {
+      "defect_id": "NO_FILTER_DESCRIPTION",
+      "defect_class": "absence",
+      "mutation": "emptied_filter_step",
+      "note": "Шаг фильтрации объявлен заголовком, но содержания не имеет.",
+      "detectable_by": "deterministic",
+      "removed_text": "Учитываются счётчики, у которых FIELD_EVENT_TS попадает в границы часа агрегации по UTC. Счётчики с FIELD_RRC_ATTEMPT = 0 в расчёт долей не включаются и записываются в таблицу отбраковки TABLE_RADIO_REJECT.",
+      "containers": [
+        {
+          "node": "algo.s1",
+          "title": "Шаг 1. Фильтрация данных",
+          "lines": [
+            "Шаг 1. Фильтрация данных"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Шаг 1. Фильтрация данных"
+      ],
+      "quote": "Шаг 1. Фильтрация данных",
+      "section": "Алгоритм обработки потока"
+    },
+    {
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "defect_class": "absence",
+      "mutation": "removed_dedup_rule",
+      "note": "Документ заявляет обновление по ключу (upsert), но правило разрешения дублей удалено. Для витрин с полной перезагрузкой периода это дефектом не является, здесь режим другой.",
+      "detectable_by": "llm",
+      "removed_text": "Ключ обновления: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID. При совпадении ключа сохраняется запись с большим FIELD_PROC_TS",
+      "containers": [
+        {
+          "node": "key",
+          "title": "Формирование ключа (kafka) / партиции (hdfs)",
+          "lines": [
+            "Формирование ключа (kafka) / партиции (hdfs)",
+            "Поле партиционирования: FIELD_BIZ_DATE",
+            "Гранулярность строки: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Формирование ключа (kafka) / партиции (hdfs)",
+        "Поле партиционирования: FIELD_BIZ_DATE",
+        "Гранулярность строки: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID"
+      ],
+      "quote": "Формирование ключа (kafka) / партиции (hdfs)",
+      "section": "Формирование ключа (kafka) / партиции (hdfs)"
+    },
+    {
+      "defect_id": "NO_SCHEDULE",
+      "defect_class": "presence",
+      "mutation": "removed_run_time",
+      "note": "Частота осталась, число и время запуска удалены. Кейсодатель отнёс такой случай к категории «требующий уточнения».",
+      "detectable_by": "llm",
+      "quote": "Регламент расчёта: Ежечасно",
+      "section": "Нефункциональные требования",
+      "anchor_node": "nfr.schedule"
+    },
+    {
+      "defect_id": "RETENTION_GAP",
+      "defect_class": "presence",
+      "mutation": "removed_retention_for_layers",
+      "note": "Срок хранения оставлен только для одного слоя. Для остальных слоёв, перечисленных в схеме потоков, срок не указан.",
+      "detectable_by": "llm",
+      "quote": "Срок хранения по слоям: RAW — 14 дней",
+      "section": "Нефункциональные требования",
+      "anchor_node": "nfr.retention"
+    },
+    {
+      "defect_id": "TIMEZONE_UNDEFINED",
+      "defect_class": "presence",
+      "mutation": "timezone_replaced_by_local",
+      "note": "Часовой пояс требований изменён на местное время, при этом правило фильтрации в шаге 1 определяет границы периода по UTC. Поле с меткой смещения не названо.",
+      "detectable_by": "llm",
+      "quote": "Часовой пояс: Местное время региона",
+      "section": "Нефункциональные требования",
+      "anchor_node": "nfr.timezone"
+    },
+    {
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "defect_class": "presence",
+      "mutation": "changed_type_of_shared_field",
+      "note": "Поле FIELD_CELL_ID описано в источнике как string, а в витрине как bigint. Расхождение не объяснено.",
+      "detectable_by": "llm",
+      "quote": "FIELD_CELL_ID | string | Идентификатор соты",
+      "section": "Структура данных",
+      "anchor_node": "struct.src.FIELD_CELL_ID"
+    },
+    {
+      "defect_id": "DATA_CATALOG_MISSING",
+      "defect_class": "absence",
+      "mutation": "removed_datacatalog_link",
+      "note": "Раздел Data Catalog остался, ссылка из него удалена. Требование №2 обязывает давать прямую ссылку.",
+      "detectable_by": "deterministic",
+      "removed_text": "Ссылка на Дата-каталог: https://datacatalog.corp/tables/schema_cdm_radio.table_agg_radio_hourly",
+      "containers": [
+        {
+          "node": "catalog",
+          "title": "Data Catalog",
+          "lines": [
+            "Data Catalog"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Data Catalog"
+      ],
+      "quote": "Data Catalog",
+      "section": "Data Catalog"
+    },
+    {
+      "defect_id": "HDFS_PATH_INCOMPLETE",
+      "defect_class": "presence",
+      "mutation": "path_replaced_by_folder_stub",
+      "note": "Полный путь и формат хранения заменены заглушкой «Папка». Требование кейсодателя №7.",
+      "detectable_by": "deterministic",
+      "quote": "Путь хранения в HDFS: Папка.",
+      "section": "Приемники данных",
+      "anchor_node": "receivers.hdfs"
+    },
+    {
+      "defect_id": "TEMPLATE_SECTION_MISSING",
+      "defect_class": "section_removed",
+      "mutation": "removed_template_section",
+      "note": "Раздел DDL удалён, а не помечен «не применимо». Правило №5 требует сохранять все разделы шаблона.",
+      "detectable_by": "deterministic",
+      "removed_text": "CREATE TABLE SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY (\n  FIELD_BIZ_DATE DATE NOT NULL,\n  FIELD_HOUR INT NOT NULL,\n  FIELD_CELL_ID BIGINT NOT NULL,\n  FIELD_VENDOR_NAME STRING,\n  FIELD_RRC_SUCCESS_RATE DOUBLE NOT NULL,\n  FIELD_DROP_CALL_RATE DOUBLE NOT NULL,\n  FIELD_HANDOVER_CNT BIGINT NOT NULL,\n  FIELD_PROC_TS TIMESTAMP NOT NULL\n)\nPARTITIONED BY (FIELD_BIZ_DATE)\nSTORED AS PARQUET\nLOCATION '/data/cd",
+      "section_name": "DDL",
+      "quote": "DDL",
+      "section": "DDL",
+      "neighbor": "- Доли рассчитываются в процентах с двумя знаками после запятой, округление банковское."
+    },
+    {
+      "defect_id": "PLACEHOLDER_LEFT",
+      "defect_class": "presence",
+      "mutation": "task_number_replaced_by_placeholder",
+      "note": "Вместо номера задачи осталась заглушка PROJECT-XX, вместо ссылки — LINK_JIRA_TASK.",
+      "detectable_by": "deterministic",
+      "quote": "Задача: PROJECT-XX — Витрина-агрегат по качеству радиосети. LINK_JIRA_TASK",
+      "section": "JIRA",
+      "anchor_node": "jira.link"
+    },
+    {
+      "defect_id": "TEXT_STRUCTURE_ERROR",
+      "defect_class": "presence",
+      "mutation": "aggregate_added_to_group_by",
+      "note": "В список группировки добавлено поле FIELD_HANDOVER_CNT, которое является мерой, а не измерением.",
+      "detectable_by": "llm",
+      "quote": "Группировка по: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID, FIELD_HANDOVER_CNT.",
+      "section": "Алгоритм обработки потока",
+      "anchor_node": "algo.s3.group"
+    },
+    {
+      "defect_id": "DANGLING_REFERENCE",
+      "defect_class": "presence",
+      "mutation": "reference_to_missing_section",
+      "note": "Ссылка на раздел «Показатели витрины», которого в документе нет. Исходно ссылка вела на раздел «Структура данных».",
+      "detectable_by": "llm",
+      "quote": "Меры рассчитываются в границах группы, перечень мер приведён в разделе «Показатели витрины».",
+      "section": "Алгоритм обработки потока",
+      "anchor_node": "algo.s3.calc"
+    },
+    {
+      "defect_id": "AMBIGUOUS_LOGIC",
+      "defect_class": "presence",
+      "mutation": "removed_priority_order",
+      "note": "Из правила убран явный приоритет применения. Частные случаи остались, порядок их применения не определён.",
+      "detectable_by": "llm",
+      "quote": "Сопоставление выполняется по имеющимся полям.",
+      "section": "Алгоритм обработки потока",
+      "anchor_node": "algo.s2.branch1"
+    }
+  ]
+}

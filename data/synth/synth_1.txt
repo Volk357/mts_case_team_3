@@ -1,0 +1,132 @@
+Общие сведения
+Агрегат по интернет-трафику: суточная сводка объёма переданных данных в разрезе региона, технологии доступа и тарифного плана.
+Название таблицы: SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY
+Кластер: CLUSTER
+Схема: SCHEMA_CDM_TRAFFIC
+Способ загрузки: Полная перезагрузка периода
+Загрузка выполняется инкрементально, ранее записанные строки обновляются по ключу.
+
+Решаемая проблема
+Продуктовые команды считают потребление трафика вручную по выгрузкам из RAW-слоя. Расчёты расходятся между командами, воспроизвести цифру прошлого периода невозможно. Витрина фиксирует единый способ расчёта.
+
+Продуктовые метрики
+- Время подготовки отчёта по потреблению: с 3 дней до 1 часа
+- Доля расхождений между командами по объёму трафика: цель менее 1%
+
+Заказчики
+BigData Unit X, продукт «Мобильный интернет»
+
+Нефункциональные требования
+Задержки: Готовность витрины не позднее 05:00 UTC
+Регламент расчёта: Ежесуточно, в 03:00 UTC за предыдущие сутки
+Глубина данных: С 01.01.2024
+Часовой пояс: Местное время региона
+Срок хранения по слоям: RAW — 30 дней, DDS — 180 дней, CDM — 3 года
+Обновление: Полная перезагрузка периода без upsert
+Поля FIELD_IMSI и FIELD_MSISDN в витрину не выгружаются. В слое RAW доступ к ним разграничен ролью ROLE_PII_READ, выгрузка вовне запрещена.
+
+Системы-источники
+IUM — IN-платформа сбора событий интернет-трафика (GPRS/PS)
+
+Data Catalog
+Ссылка на Дата-каталог: https://datacatalog.corp/tables/schema_cdm_traffic.table_agg_traffic_daily
+
+Исходники проекта
+Ссылка на GitLab: https://gitlab.corp/bigdata/traffic-agg
+
+Команда
+Аналитик: USER_A
+Разработчик: USER_B
+Тестировщик: USER_C
+
+JIRA
+Задача: DATA-4107 — Витрина-агрегат по интернет-трафику абонентов. https://jira.corp/browse/DATA-4107
+
+Источники данных
+Описание источника | Тип источника | Ссылка на источник | Сериализация
+Сырые события интернет-трафика | Hive | SCHEMA_RAW.TABLE_IUM_RAW_PS | —
+Сессии PS-домена | Hive | SCHEMA_DDS.TABLE_PS_SESSION | ORC
+
+Источники обогащения данных
+Обогащение выполняется справочниками региона, тарифа и технологии доступа по бизнес-дате расчёта.
+
+Приемники данных
+Описание данных | Кластер | Ссылка на Каталог | Сериализация
+Витрина-агрегат по интернет-трафику абонентов | — | SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY | ORC
+Путь хранения в HDFS: /data/cdm/traffic/agg_traffic_daily, формат ORC.
+
+Схема потоков данных
+не применимо
+
+Алгоритм обработки потока
+Шаг 1. Фильтрация данных
+Учитываются сессии, у которых FIELD_SESSION_START попадает в границы бизнес-даты по UTC. Сессии, начавшиеся до 00:00 UTC и завершившиеся после, относятся к дате начала.
+Шаг 2. Обогащение данных
+Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».
+Сопоставление выполняется по имеющимся полям.
+Если FIELD_LAC = 0 — сопоставление только по FIELD_CELL_ID.
+Если FIELD_CELL_ID = 0 — сопоставление только по FIELD_LAC.
+Шаг 3. Агрегация
+Группировка по: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE.
+Меры рассчитываются в границах группы, перечень мер приведён в разделе «Показатели витрины».
+Шаг 4. Запись в CDM
+Результат записывается в SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY в формате ORC по пути /data/cdm/traffic/agg_traffic_daily.
+
+Формирование ключа (kafka) / партиции (hdfs)
+Поле партиционирования: FIELD_BIZ_DATE
+Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE
+Правило дедупликации: Партиция перезаписывается целиком, дубли невозможны
+
+Структура данных
+Приемники. Таблица: SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY
+Атрибут | Тип данных | Описание атрибута | Обязательность | Источник
+FIELD_BIZ_DATE | date | Бизнес-дата суток агрегации | NOT NULL | Партиция источника
+FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code
+FIELD_RAT | string | Технология радиодоступа: 2G, 3G, 4G, 5G | NOT NULL | TABLE_RAT_REF.rat_name
+FIELD_TARIFF_CODE | string | Код тарифного плана | — | TABLE_TARIFF_REF.tariff_code
+FIELD_BYTES_UP | bigint | Объём переданных данных | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_up)
+FIELD_BYTES_DOWN | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)
+FIELD_BYTES_DOWN_TOTAL | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)
+FIELD_USERS_CNT | bigint | Уникальное количество абонентов (IMSI) | NOT NULL | count(distinct FIELD_IMSI)
+FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG
+Источники. Таблица: TABLE_IUM_RAW_PS
+Атрибут | Тип данных | Комментарий
+FIELD_IMSI | string | Идентификатор абонента
+FIELD_SESSION_START | timestamp | Время начала сессии, UTC
+FIELD_SESSION_END | timestamp | Время окончания сессии, UTC
+FIELD_BYTES_UP | string | Переданные байты за сессию
+FIELD_BYTES_DOWN | bigint | Принятые байты за сессию
+FIELD_RAT_CODE | int | Код технологии радиодоступа
+FIELD_LAC | int | Код зоны локации
+FIELD_CELL_ID | bigint | Идентификатор соты
+
+Пример данных
+FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS
+2025-06-01 | REG_01 | VAL_01 | VAL_01 | 1007 | 1007 | 1007 | 2025-06-01 03:15:00
+2025-06-02 | REG_02 | VAL_02 | VAL_02 | 2007 | 2007 | 2007 | 2025-06-02 03:15:00
+2025-06-03 | REG_03 | VAL_03 | VAL_03 | 3007 | 3007 | 3007 | 2025-06-03 03:15:00
+2025-06-04 | REG_04 | VAL_04 | VAL_04 | 4007 | 4007 | 4007 | 2025-06-04 03:15:00
+2025-06-05 | REG_05 | VAL_05 | VAL_05 | 5007 | 5007 | 5007 | 2025-06-05 03:15:00
+2025-06-06 | REG_06 | VAL_06 | VAL_06 | 6007 | 6007 | 6007 | 2025-06-06 03:15:00
+2025-06-07 | REG_07 | VAL_07 | VAL_07 | 7007 | 7007 | 7007 | 2025-06-07 03:15:00
+2025-06-08 | REG_08 | VAL_08 | VAL_08 | 8007 | 8007 | 8007 | 2025-06-08 03:15:00
+2025-06-09 | REG_09 | VAL_09 | VAL_09 | 9007 | 9007 | 9007 | 2025-06-09 03:15:00
+2025-06-10 | REG_10 | VAL_10 | VAL_10 | 10007 | 10007 | 10007 | 2025-06-10 03:15:00
+
+DDL
+CREATE TABLE SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY (
+  FIELD_BIZ_DATE DATE NOT NULL,
+  FIELD_REGION_CODE STRING NOT NULL,
+  FIELD_RAT STRING NOT NULL,
+  FIELD_TARIFF_CODE STRING,
+  FIELD_BYTES_UP BIGINT NOT NULL,
+  FIELD_BYTES_DOWN BIGINT NOT NULL,
+  FIELD_USERS_CNT BIGINT NOT NULL,
+  FIELD_PROC_TS TIMESTAMP NOT NULL
+)
+PARTITIONED BY (FIELD_BIZ_DATE)
+STORED AS ORC
+LOCATION '/data/cdm/traffic/agg_traffic_daily';
+
+История изменений
+не применимо

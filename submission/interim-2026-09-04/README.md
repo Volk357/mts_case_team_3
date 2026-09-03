@@ -8,12 +8,8 @@
 | Раздел формы | Файл |
 |---|---|
 | Описание проекта | [`01-project-description.md`](01-project-description.md) |
-| Продуктовые материалы | [`02-product-brief.md`](02-product-brief.md) |
-| Продуктовые материалы | [`03-mvp-and-user-scenario.md`](03-mvp-and-user-scenario.md) |
-| Продуктовые материалы | [`04-success-metrics-and-validation.md`](04-success-metrics-and-validation.md) |
-| Продуктовые материалы | [`05-risks-and-assumptions.md`](05-risks-and-assumptions.md) |
-| Дополнительные материалы | [`06-architecture-and-progress.md`](06-architecture-and-progress.md) |
-| Дополнительные материалы | [`07-demo-scenarios.md`](07-demo-scenarios.md) |
+| Продуктовые материалы | [`02-product-and-additional-materials.md`](02-product-and-additional-materials.md) |
+| Дополнительные материалы | Тот же файл: [`02-product-and-additional-materials.md`](02-product-and-additional-materials.md) |
 
 Перед загрузкой проверить только два организационных пункта:
 

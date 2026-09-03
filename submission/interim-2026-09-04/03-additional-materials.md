@@ -1,8 +1,6 @@
-# DocReview Platform — дополнительные материалы
+# Архитектура и текущий прогресс
 
-**Версия:** промежуточная, 3 сентября 2026 года.
-
-## Архитектура и поток данных
+## Поток данных
 
 ```mermaid
 flowchart LR
@@ -13,46 +11,46 @@ flowchart LR
         P[Промпты]
     end
 
-    T --> RP[Review Pack / YAML]
+    T --> RP[Версионируемый Review Pack / YAML]
     X --> RP
     E --> RP
     P --> RP
 
     A[Аналитик] -->|PDF или DOCX| U[Upload API]
-    U -->|валидация| FS[(Private storage)]
+    U -->|проверка типа и размера| FS[(Private document storage)]
     U --> D[(Application DB)]
-    A -->|pack ID| J[Reviews API]
+    A -->|выбранный pack ID| J[Reviews API]
     J -->|queued job| D
     J -->|review ID, 202| A
 
     W[Review worker] -->|claim job| D
-    W -->|file + pack + run ID| C[Analysis Core CLI]
+    W -->|file path + pack path + run ID| C[Analysis Core CLI]
     RP --> C
-    C --> F[Формальные проверки]
+    C --> F[Детерминированные проверки]
     C --> L[LLM reviewers]
-    L --> M[On-premise model gateway]
+    L -->|OpenAI-compatible request| M[On-premise model gateway]
     F --> V[Verification, deduplication, ranking]
     L --> V
     V -->|ReviewResult JSON, max 20| W
-    W -->|schema validation| D
+    W -->|schema validation + atomic result| D
 
-    A -->|poll| J
-    D -->|stage/findings| J
-    A -->|решение| FB[Feedback API]
+    A -->|poll status| J
+    D -->|public stage/findings| J
+    A -->|решение по finding| FB[Feedback API]
     FB --> D
-    D -.->|обезличенная оценка| Q[Quality loop]
+    D -.->|обезличенная оценка| Q[Quality loop / следующая версия pack]
 ```
 
-## Границы компонентов
+## Границы модулей
 
-| Компонент | Получает | Возвращает | Не содержит |
+| Модуль | Получает | Возвращает | Не содержит |
 |---|---|---|---|
 | Product Application | Пользователя, файл, pack ID | UI, статусы, findings, feedback | Таксономию и prompts |
-| Analysis Core | Файл, Review Pack, model config, run ID | JSON по общей схеме | HTTP, пользователей и UI |
-| Review Pack | Шаблон, taxonomy, exclusions, prompts | Версионированные правила | Код приложения и секреты |
-| Model Gateway | Messages и inference-параметры | Ответ модели | Публичное хранение документов |
+| Analysis Core | Путь к файлу, Review Pack, model config, run ID | JSON по общей схеме | HTTP, пользователей и UI |
+| Review Pack | Шаблон, taxonomy, exclusions, prompts | Версионированные правила анализа | Код приложения и секреты |
+| Model Gateway | Messages и параметры inference | Ответ модели | Документы в публичном облаке |
 
-## Текущий прогресс
+## Текущий статус
 
 ```mermaid
 flowchart TD
@@ -62,90 +60,74 @@ flowchart TD
     A --> E[Готово: quality pipeline]
     E --> F[Готово: synthetic golden set и scoring]
     D --> G[В работе: catalog Review Packs]
-    F --> H[В работе: упаковка real Core]
+    F --> H[В работе: единая упаковка real Core]
     G --> I[Далее: progress/result UI и feedback]
     H --> I
     I --> J[Далее: E2E, второй pack, Docker и demo hardening]
 ```
 
-## Реализованные компоненты
+## Что уже можно продемонстрировать
 
-- Python/FastAPI backend и React/TypeScript frontend;
-- JSON Schema результата, exit codes и TypeScript-типы;
-- CLI-совместимый mock с успешными и ошибочными сценариями;
-- модель данных, миграции, state machine и tenant isolation;
-- безопасная загрузка PDF/DOCX и атомарное хранение;
-- durable DB queue, worker, process runner, timeout, отмена и retry;
-- приём и валидация результата, проекция findings;
-- Documents API и Reviews API с idempotency и polling;
-- UI загрузки документа;
-- LLM-review pipeline, детерминированные проверки и YAML-таксономия;
-- генератор synthetic golden set и scoring по классам дефектов.
+- запуск приложения одной командой и health diagnostics;
+- загрузку валидного PDF/DOCX и отказ для небезопасного файла;
+- создание review без блокировки HTTP-запроса;
+- повторную отправку без дублирования job;
+- polling `queued/running/completed/failed` и отдельную выдачу findings;
+- mock-сценарии: 0, 12 и 20 findings, timeout, invalid JSON, model unavailable;
+- генерацию пяти synthetic документов и их truth-разметки;
+- архитектурную независимость приложения от prompts, модели и defect IDs.
 
-## Пример данных
+## Что пока нельзя заявлять
 
-Каждое замечание возвращается в структурированном виде:
+- полностью завершённый UI просмотра результатов;
+- production-ready развёртывание;
+- доказанную экономию времени на реальной пользовательской выборке;
+- финальный Recall@20;
+- подтверждённую платформенность до работы второго Review Pack.
 
-```json
-{
-  "defect_id": "AMBIGUOUS_LOGIC",
-  "severity": "high",
-  "confidence": 0.91,
-  "location": {
-    "page": 8,
-    "section_path": ["Алгоритм расчёта", "Шаг 3"],
-    "block_id": "block-42"
-  },
-  "quote": "Берётся последняя запись за месяц",
-  "problem": "Не определён выбор при одинаковом времени событий",
-  "clarification": "Уточнить дополнительное правило сортировки"
-}
-```
 
-Формат принуждает решение ссылаться на конкретное место и не позволяет подменять
-ревью автоматическим переписыванием документа.
+---
 
-## Предварительные результаты
+# Демонстрационные сценарии и доказательства прогресса
 
-| Контур | Подтверждённый результат |
-|---|---|
-| Synthetic golden set | 5 документов, 65 дефектов, 25 типов |
-| Классы дефектов | 40 presence, 21 absence, 4 section removed |
-| Backend | 213 passed, 1 skipped; coverage 91,97% |
-| Mock Analysis Core | 45 passed; coverage 95,82% |
-| Frontend | 14 passed; lint, typecheck и production build успешны |
-| Real Analysis Core после merge | Требуется фиксация зависимости `requests`; зелёный прогон пока не заявляется |
+## Сценарий A — Product Application с mock Core
 
-## Демонстрационный сценарий A — Product Application с mock Core
+Цель: показать готовность приложения независимо от состояния модели.
 
 1. Запустить frontend, API и worker одной командой.
 2. Загрузить PDF или DOCX через UI.
-3. Показать opaque document ID без раскрытия storage path.
-4. Создать review и получить мгновенный `202 Accepted`.
-5. Показать polling статуса и выдачу 12 findings.
-6. Повторить запрос с тем же idempotency key и показать отсутствие дубля.
-7. Включить timeout/model unavailable и показать безопасную ошибку.
+3. Показать сохранённый opaque document ID без раскрытия storage path.
+4. Создать review и показать мгновенный `202 Accepted`.
+5. Показать изменение статуса через polling.
+6. Получить 12 локализованных findings из стандартного mock-сценария.
+7. Повторить тот же запрос с idempotency key и показать отсутствие дубля.
+8. Переключить mock на timeout/model unavailable и показать безопасную ошибку.
 
-**Текущий статус:** backend-цепочка готова; UI после upload требуется соединить с
+**Статус:** backend-цепочка готова; UI после upload ещё требуется соединить с
 выбором pack, progress и result screens.
 
-## Демонстрационный сценарий B — измеримый контур качества
+## Сценарий B — Контур качества
+
+Цель: показать, что качество измеряется, а не оценивается только по красивому ответу.
 
 1. Сгенерировать synthetic corpus.
 2. Показать clean/defective/truth тройку одного документа.
 3. Запустить формальный слой и LLM review.
-4. Посчитать результаты отдельно для presence, absence и section removal.
-5. Показать почти чистый документ как контроль галлюцинаций.
-6. Показать unmatched defects и false positives, а не только среднюю метрику.
+4. Посчитать совпадения отдельно для presence, absence и section removal.
+5. Показать почти чистый `synth_3` как контроль галлюцинаций.
+6. Показать не только среднюю метрику, но и unmatched defects/false positives.
 
-**Текущий статус:** generator, truth-разметка, deterministic checks и scorer находятся
-в репозитории; для повторяемого запуска требуется зафиксировать зависимости Core.
+**Статус:** generator, 5 документов, 65 truth-дефектов, deterministic checks и scorer
+находятся в репозитории. Для воспроизводимого запуска после объединения веток нужно
+зафиксировать зависимости Analysis Core.
 
-## Планируемый финальный E2E
+## Сценарий C — финальный E2E
+
+Цель: соединить продуктовую и качественную части.
 
 ```text
 Upload документа
-→ выбор Review Pack
+→ выбор NET Review Pack
 → очередь и worker
 → реальный Analysis Core
 → локальная Qwen3
@@ -154,9 +136,10 @@ Upload документа
 → решение аналитика
 ```
 
-После основного сценария тот же процесс повторяется с generic-документом и другим
-Review Pack без изменения или пересборки приложения. Второй проход служит
-доказательством платформенности.
+После этого без пересборки приложения повторить сценарий с generic-документом и
+generic Review Pack. Именно второй проход является доказательством платформенности.
+
+**Статус:** запланировано до финальной защиты.
 
 ## Проверяемые артефакты в репозитории
 
@@ -169,11 +152,14 @@ Review Pack без изменения или пересборки приложе
 | Quality pipeline | `run_review.py`, `check_formal.py`, `score.py` |
 | Taxonomy и шаблон | `defects.yaml`, `defects_prompt.yaml`, `template.yaml` |
 | Synthetic corpus | `data/synth/` |
+| Подробная архитектура | `docs/application-data-model.md`, `docs/api-conventions.md` |
+| Roadmap до demo/production | `roadmaps/` |
 
-## Текущие ограничения
+## Зафиксированные инженерные проверки
 
-- полностью завершённый UI просмотра результатов ещё не готов;
-- production-развёртывание пока не заявляется;
-- экономия времени на реальной пользовательской выборке не измерена;
-- финальный Recall@20 ещё не зафиксирован;
-- платформенность требует успешного прогона второго Review Pack.
+| Контур | Результат последнего подтверждённого прогона |
+|---|---|
+| Backend | 213 passed, 1 skipped; coverage 91,97% |
+| Mock Analysis Core | 45 passed; coverage 95,82% |
+| Frontend | 14 passed; lint, typecheck и production build успешны |
+| Real Analysis Core после merge | Нужна установка/фиксация зависимости `requests`; не выдаётся за зелёный прогон |

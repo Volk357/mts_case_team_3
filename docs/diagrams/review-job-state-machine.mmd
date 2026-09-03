@@ -1,0 +1,13 @@
+stateDiagram-v2
+    [*] --> queued
+    queued --> running
+    queued --> cancelled
+    running --> completed
+    running --> failed
+    running --> timed_out
+    running --> cancelled
+    completed --> [*]
+    failed --> [*]
+    timed_out --> [*]
+    cancelled --> [*]
+

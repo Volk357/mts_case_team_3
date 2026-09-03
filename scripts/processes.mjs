@@ -6,6 +6,9 @@ export const repositoryDirectory = fileURLToPath(new URL("../", import.meta.url)
 export const apiDirectory = fileURLToPath(new URL("../apps/api/", import.meta.url));
 export const webDirectory = fileURLToPath(new URL("../apps/web/", import.meta.url));
 export const contractsDirectory = fileURLToPath(new URL("../contracts/", import.meta.url));
+export const mockCoreDirectory = fileURLToPath(
+  new URL("../apps/mock-analysis-core/", import.meta.url),
+);
 
 export const systemPython = process.env.DOCREVIEW_PYTHON ??
   (process.platform === "win32" ? "python" : "python3");

@@ -17,17 +17,55 @@ python -m venv .venv
 .venv\Scripts\python -m uvicorn docreview_api.main:app --reload
 ```
 
+Worker запускается отдельным процессом:
+
+```powershell
+.venv\Scripts\python -m docreview_api.workers.review_worker
+```
+
+Корневой `npm run dev` запускает API, worker и web-приложение вместе. Worker
+атомарно забирает старейший `queued` job, поэтому два одновременно запущенных
+экземпляра не исполняют одну проверку. После перезапуска он помечает слишком старые
+`running` job ошибкой `WORKER_INTERRUPTED`; исходный job не переоткрывается.
+
 Проверка:
 
 ```text
 GET http://127.0.0.1:8000/api/health
 ```
 
+Публичные правила prefix, UUID, дат и единого error envelope зафиксированы в
+[`docs/api-conventions.md`](../../docs/api-conventions.md). OpenAPI доступен по
+`GET /api/openapi.json`, Swagger UI — по `/api/docs`.
+
+## База данных
+
+Локальные профили используют SQLite в игнорируемом каталоге `data/`. ORM-схема
+остаётся совместимой с PostgreSQL, который выбран для production-развёртывания.
+Подключение задаётся через `DOCREVIEW_DATABASE_URL`.
+
+Применить миграции:
+
+```powershell
+cd apps/api
+.venv\Scripts\python -m alembic upgrade head
+```
+
+Откатить последнюю миграцию:
+
+```powershell
+.venv\Scripts\python -m alembic downgrade -1
+```
+
+Schema автоматически не создаётся при импорте приложения: миграции остаются
+явной операцией запуска. Repository layer не выполняет скрытые commit; атомарное
+завершение review использует отдельную транзакцию `complete_review_job`.
+
 ## Quality gate
 
 ```powershell
-.venv\Scripts\python -m ruff check src tests
-.venv\Scripts\python -m ruff format --check src tests
+.venv\Scripts\python -m ruff check src tests alembic
+.venv\Scripts\python -m ruff format --check src tests alembic
 .venv\Scripts\python -m mypy
 .venv\Scripts\python -m pytest --cov
 ```
@@ -58,9 +96,59 @@ GET http://127.0.0.1:8000/api/health
 загружается после профиля и переопределяет его. Для создания файла скопируйте
 `.env.example`; реальные ключи, токены и пароли в Git не добавляются.
 
-Относительные пути `DOCREVIEW_DOCUMENTS_DIR`, `DOCREVIEW_RUNS_DIR` и
-`DOCREVIEW_ARTIFACTS_DIR` вычисляются от корня репозитория независимо от текущей
-рабочей директории. Все runtime-данные находятся в `data/`, который исключён из Git.
+Относительные пути `DOCREVIEW_DOCUMENTS_DIR`, `DOCREVIEW_RUNS_DIR`,
+`DOCREVIEW_ARTIFACTS_DIR` и `DOCREVIEW_REVIEW_PACKS_DIR` вычисляются от корня
+репозитория независимо от текущей рабочей директории. Все runtime-данные находятся
+в `data/`, который исключён из Git.
+
+Частота чтения очереди задаётся `DOCREVIEW_WORKER_POLL_INTERVAL_SECONDS`. Значение
+`DOCREVIEW_WORKER_STALE_AFTER_SECONDS` обязано превышать сумму общего timeout анализа
+и времени мягкой остановки процесса, чтобы новый worker не завершил ещё работающий job.
 
 `DOCREVIEW_CORS_ORIGINS` задаётся JSON-массивом точных HTTP(S) origins. Wildcard `*`
 не принимается.
+
+## Загрузка документов
+
+`POST /api/documents` принимает multipart-поле `document`. Разрешены только `.pdf`
+с media type `application/pdf` и `.docx` с Office Open XML media type. Backend
+сверяет расширение, заявленный media type и фактическую структуру файла, отклоняет
+пустые файлы и имена, содержащие путь. Отображаемое имя нормализуется в Unicode NFC
+и никогда не используется как внутреннее имя хранения.
+
+Максимальный размер задаётся `DOCREVIEW_MAX_UPLOAD_SIZE_BYTES`; значение по
+умолчанию — `52428800` байт (50 MiB). Файл потоково записывается во временный
+объект внутри `DOCREVIEW_DOCUMENTS_DIR`, одновременно вычисляется SHA-256. После
+проверки формата временный файл атомарно перемещается под именем из UUID, и только
+затем создаётся запись `Document`. При ошибке временный или уже перемещённый файл
+удаляется.
+
+До появления авторизации загрузки относятся к системной MVP-компании, заданной
+`DOCREVIEW_DEFAULT_COMPANY_ID`, `DOCREVIEW_DEFAULT_COMPANY_SLUG` и
+`DOCREVIEW_DEFAULT_COMPANY_NAME`. Внутренний storage key и абсолютный путь для Job
+Runner формируются backend и никогда не возвращаются клиенту.
+
+### Защита и эксплуатация загрузок
+
+Временные файлы получают права `0600`, постоянные — `0640`, storage-каталоги —
+`0750` (на Windows применяются поддерживаемые ОС эквиваленты). Перед атомарным
+перемещением вызывается `AntivirusScanner`. В MVP явно подключён
+`DisabledAntivirusScanner`; для production dependency заменяется адаптером ClamAV
+или внутреннего антивируса. Отклонённый сканером файл удаляется и не создаёт
+`Document`.
+
+Upload-метрики содержат только число успешных загрузок, суммарный размер, число
+ошибок и их техническую категорию. Байты документа, исходное имя и storage path в
+метрики или логи не записываются.
+
+Очистка orphan-файлов не запускается автоматически. Явная идемпотентная команда:
+
+```powershell
+cd apps/api
+.venv\Scripts\python -m docreview_api.maintenance.cleanup_uploads
+```
+
+Она удаляет только файлы старше
+`DOCREVIEW_ORPHAN_UPLOAD_GRACE_PERIOD_HOURS` (24 часа по умолчанию): временные
+`upload-*.tmp` и UUID-файлы PDF/DOCX, для которых нет записи `Document`. Symlink,
+неизвестные имена и свежие файлы пропускаются; результат содержит только счётчики.

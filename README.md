@@ -17,10 +17,11 @@ npm run dev
 
 - frontend — `http://127.0.0.1:5173`;
 - Backend API — `http://127.0.0.1:8000`;
+- отдельный Review Job worker, читающий durable-очередь из БД;
 - Swagger UI — `http://127.0.0.1:8000/api/docs`;
 - сквозная диагностика — `http://127.0.0.1:5173/debug/health`.
 
-Остановка обоих процессов выполняется через `Ctrl+C`.
+Остановка всех трёх процессов выполняется через `Ctrl+C`.
 
 ## Единая проверка
 
@@ -37,6 +38,7 @@ production build. Эту же последовательность выполн�
 ```text
 apps/api/       FastAPI: HTTP API, сервисы, хранилища и workers
 apps/web/       React: пользовательский интерфейс и API client
+apps/mock-analysis-core/  CLI-совместимая заглушка Analysis Core
 contracts/      JSON Schema, fixtures и сгенерированные TypeScript-типы
 roadmaps/       декомпозиция работ Никиты
 scripts/        единые setup/dev/check команды
@@ -59,6 +61,8 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 - [Frontend](apps/web/README.md);
 - [Контракты](contracts/README.md);
 - [Локальная модель](docs/local-model.md);
+- [Модель данных приложения](docs/application-data-model.md);
+- [Политика хранения и tenant-scoped удаления](docs/storage-retention-policy.md);
 - [Roadmaps](roadmaps/README.md).
 
 ## Типичный цикл разработки

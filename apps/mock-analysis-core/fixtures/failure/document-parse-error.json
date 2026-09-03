@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "run_id": "fixture-document-parse-error",
+  "status": "failed",
+  "error": {
+    "code": "DOCUMENT_PARSE_ERROR",
+    "stage": "parsing",
+    "message": "Не удалось разобрать структуру документа.",
+    "retriable": false
+  }
+}

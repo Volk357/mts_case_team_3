@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import {
   apiDirectory,
   contractsDirectory,
+  mockCoreDirectory,
   run,
   runNpm,
   systemPython,
@@ -32,6 +33,15 @@ run(venvPython, [
   "-e",
   ".",
 ], { cwd: apiDirectory });
+run(venvPython, [
+  "-m",
+  "pip",
+  "install",
+  "--no-deps",
+  "--no-build-isolation",
+  "-e",
+  ".",
+], { cwd: mockCoreDirectory });
 runNpm(["ci"], { cwd: contractsDirectory });
 runNpm(["ci"], { cwd: webDirectory });
 

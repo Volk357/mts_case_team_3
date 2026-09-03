@@ -1,0 +1,241 @@
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import sys
+from datetime import timedelta
+from pathlib import Path
+from uuid import UUID, uuid4
+
+import pytest
+from sqlalchemy.orm import Session, sessionmaker
+
+from docreview_api.db import Base, create_database_engine, create_session_factory
+from docreview_api.db.models import (
+    CompanyModel,
+    DocumentModel,
+    ReviewJobModel,
+    ReviewPackReferenceModel,
+)
+from docreview_api.models.review_job_state import ReviewJobStatus
+from docreview_api.services.process_runner import ProcessRunner
+from docreview_api.services.review_job_control import ReviewJobControlService
+from docreview_api.services.review_job_errors import ERROR_CATALOG, ReviewJobFailureService
+from docreview_api.services.review_job_executor import AnalysisJobExecutor
+from docreview_api.services.review_job_queue import DatabaseReviewJobQueue
+from docreview_api.services.review_result_receiver import ReviewResultReceiver
+from docreview_api.services.run_workspace import RunWorkspaceManager
+from docreview_api.workers.review_worker import ReviewJobWorker
+
+SCHEMA_PATH = Path(__file__).resolve().parents[3] / "contracts" / "review-result.schema.json"
+
+
+def seed_queued_job(
+    sessions: sessionmaker[Session], documents_root: Path, review_packs_root: Path
+) -> UUID:
+    content = b"%PDF-1.7\nworker integration fixture\n%%EOF"
+    document_id = uuid4()
+    company_id = uuid4()
+    pack_id = uuid4()
+    documents_root.mkdir(parents=True)
+    (documents_root / f"{document_id.hex}.pdf").write_bytes(content)
+    (review_packs_root / "requirements").mkdir(parents=True)
+    job = ReviewJobModel(
+        run_id=f"worker-{uuid4().hex}",
+        company_id=company_id,
+        document_id=document_id,
+        review_pack_reference_id=pack_id,
+        status=ReviewJobStatus.QUEUED,
+    )
+    with sessions.begin() as session:
+        session.add(CompanyModel(id=company_id, slug=company_id.hex, display_name="Company"))
+        session.add(
+            DocumentModel(
+                id=document_id,
+                company_id=company_id,
+                original_filename="document.pdf",
+                media_type="application/pdf",
+                size_bytes=len(content),
+                sha256=hashlib.sha256(content).hexdigest(),
+                storage_key=f"{document_id.hex}.pdf",
+            )
+        )
+        session.add(
+            ReviewPackReferenceModel(
+                id=pack_id,
+                company_id=company_id,
+                pack_key="requirements",
+                version="mock-success-1.0",
+                display_name="Requirements",
+                locator="requirements",
+            )
+        )
+        session.add(job)
+    return job.id
+
+
+def build_test_worker(
+    tmp_path: Path, scenario: str
+) -> tuple[ReviewJobWorker, sessionmaker[Session], UUID]:
+    engine = create_database_engine(f"sqlite:///{(tmp_path / 'worker.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    sessions = create_session_factory(engine)
+    documents_root = tmp_path / "documents"
+    review_packs_root = tmp_path / "review-packs"
+    job_id = seed_queued_job(sessions, documents_root, review_packs_root)
+    queue = DatabaseReviewJobQueue(sessions)
+    runner = ProcessRunner(
+        (sys.executable, "-m", "docreview_mock"),
+        environment={
+            "DOCREVIEW_MOCK_PROFILE": "test",
+            "DOCREVIEW_MOCK_SCENARIO": scenario,
+        },
+    )
+    executor = AnalysisJobExecutor(
+        sessions,
+        queue,
+        documents_root=documents_root,
+        review_packs_root=review_packs_root,
+        workspace_manager=RunWorkspaceManager(tmp_path / "runs"),
+        process_runner=runner,
+        control=ReviewJobControlService(sessions),
+        failure_service=ReviewJobFailureService(sessions),
+        result_receiver=ReviewResultReceiver(sessions, schema_path=SCHEMA_PATH),
+        timeout_seconds=0.1 if scenario == "timeout" else 5,
+        termination_grace_seconds=0.1,
+    )
+    worker = ReviewJobWorker(
+        queue,
+        executor,
+        stale_after=timedelta(minutes=10),
+        poll_interval_seconds=0.01,
+    )
+    return worker, sessions, job_id
+
+
+@pytest.mark.parametrize("scenario", ["empty", "standard-12", "maximum-20"])
+@pytest.mark.anyio
+async def test_worker_completes_all_success_scenarios(tmp_path: Path, scenario: str) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, scenario)
+
+    assert await worker.run_once()
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None and job.status is ReviewJobStatus.COMPLETED
+        expected_count = {"empty": 0, "standard-12": 12, "maximum-20": 20}[scenario]
+        assert len(job.findings) == expected_count
+
+
+@pytest.mark.parametrize(
+    ("scenario", "status", "error_code"),
+    [
+        ("document-parse-error", ReviewJobStatus.FAILED, "DOCUMENT_PARSE_ERROR"),
+        ("review-pack-not-found", ReviewJobStatus.FAILED, "REVIEW_PACK_NOT_FOUND"),
+        ("model-unavailable", ReviewJobStatus.FAILED, "MODEL_UNAVAILABLE"),
+        ("invalid-json", ReviewJobStatus.FAILED, "MODEL_RESPONSE_INVALID"),
+        ("incompatible-schema-version", ReviewJobStatus.FAILED, "CORE_SCHEMA_INCOMPATIBLE"),
+        ("timeout", ReviewJobStatus.TIMED_OUT, "ANALYSIS_TIMEOUT"),
+        ("crash", ReviewJobStatus.FAILED, "INTERNAL_ERROR"),
+        ("missing-result-after-success", ReviewJobStatus.FAILED, "CORE_RESULT_INVALID"),
+    ],
+)
+@pytest.mark.anyio
+async def test_worker_terminalizes_every_failure_scenario(
+    tmp_path: Path,
+    scenario: str,
+    status: ReviewJobStatus,
+    error_code: str,
+) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, scenario)
+
+    assert await worker.run_once()
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None and job.status is status
+        assert job.error_code == error_code
+        assert job.raw_result is None
+        assert job.user_error_message
+        assert "mock:" not in job.user_error_message
+
+
+class FailingExecutor:
+    async def execute(self, job_id: UUID) -> None:
+        del job_id
+        raise RuntimeError("secret detail must not become user-visible")
+
+
+@pytest.mark.anyio
+async def test_worker_survives_executor_error_and_keeps_diagnostic_internal(tmp_path: Path) -> None:
+    engine = create_database_engine(f"sqlite:///{(tmp_path / 'failure.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    sessions = create_session_factory(engine)
+    job_id = seed_queued_job(sessions, tmp_path / "documents", tmp_path / "packs")
+    queue = DatabaseReviewJobQueue(sessions)
+    worker = ReviewJobWorker(
+        queue,
+        FailingExecutor(),
+        stale_after=timedelta(minutes=10),
+        poll_interval_seconds=0.01,
+    )
+
+    assert await worker.run_once()
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None and job.status is ReviewJobStatus.FAILED
+        assert job.error_code == "WORKER_EXECUTION_ERROR"
+        assert job.user_error_message == ERROR_CATALOG["WORKER_EXECUTION_ERROR"].user_message
+        assert job.diagnostic_message == "Worker executor raised RuntimeError."
+        assert "secret detail" not in job.user_error_message
+
+
+@pytest.mark.anyio
+async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_path: Path) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "timeout")
+    task = asyncio.create_task(worker.run_once())
+    for _ in range(100):
+        with sessions() as session:
+            job = session.get(ReviewJobModel, job_id)
+            if job is not None and job.process_pid is not None:
+                break
+        await asyncio.sleep(0.01)
+    else:
+        pytest.fail("worker did not start the child process")
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None and job.status is ReviewJobStatus.FAILED
+        assert job.error_code == "WORKER_INTERRUPTED"
+        assert job.error_retriable is True
+
+
+@pytest.mark.anyio
+async def test_new_worker_processes_job_left_queued_before_restart(tmp_path: Path) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "empty")
+    del worker
+
+    queue = DatabaseReviewJobQueue(sessions)
+
+    class CompletingExecutor:
+        def __init__(self) -> None:
+            self.seen: list[UUID] = []
+
+        async def execute(self, claimed_id: UUID) -> None:
+            self.seen.append(claimed_id)
+
+    executor = CompletingExecutor()
+    restarted = ReviewJobWorker(
+        queue,
+        executor,
+        stale_after=timedelta(minutes=10),
+        poll_interval_seconds=0.01,
+    )
+    assert restarted.recover_after_restart() == ()
+    assert await restarted.run_once()
+    assert executor.seen == [job_id]

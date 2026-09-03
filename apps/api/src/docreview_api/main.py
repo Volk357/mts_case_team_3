@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from docreview_api import __version__
+from docreview_api.api.exception_handlers import register_exception_handlers
 from docreview_api.api.router import api_router
 from docreview_api.config import Settings, get_settings
 
@@ -29,8 +30,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=list(resolved_settings.cors_origins),
         allow_credentials=False,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Accept", "Authorization", "Content-Type"],
+        allow_headers=["Accept", "Authorization", "Content-Type", "Idempotency-Key"],
     )
+    register_exception_handlers(application)
     application.include_router(api_router, prefix=resolved_settings.api_prefix)
     return application
 

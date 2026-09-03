@@ -1,0 +1,11 @@
+{
+  "schema_version": "2.0",
+  "run_id": "fixture-incompatible-schema-version",
+  "status": "failed",
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "stage": "serialization",
+    "message": "Core returned a result using an unsupported contract version.",
+    "retriable": false
+  }
+}

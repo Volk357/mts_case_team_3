@@ -1,0 +1,39 @@
+{
+  "schema_version": "1.0",
+  "run_id": "fixture-empty",
+  "status": "completed",
+  "document": {
+    "filename": "empty-требования.pdf",
+    "document_type": "data-mart-requirements",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "engine": {
+    "version": "0.1.0"
+  },
+  "review_pack": {
+    "id": "mts-data-mart",
+    "version": "mock-success-1.0"
+  },
+  "model": {
+    "name": "mock",
+    "prompt_versions": {
+      "review": "fixture-1"
+    }
+  },
+  "findings": [],
+  "summary": {
+    "total_candidates": 0,
+    "verified_candidates": 0,
+    "returned_findings": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "warnings": [],
+  "timings": {
+    "parse_ms": 40,
+    "analysis_ms": 80,
+    "total_ms": 120
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "run_id": "fixture-review-pack-not-found",
+  "status": "failed",
+  "error": {
+    "code": "REVIEW_PACK_NOT_FOUND",
+    "stage": "configuration",
+    "message": "Указанный Review Pack не найден.",
+    "retriable": false
+  }
+}

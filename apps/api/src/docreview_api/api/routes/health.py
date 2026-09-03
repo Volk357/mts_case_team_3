@@ -1,23 +1,14 @@
 """Service health endpoint."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 
 from docreview_api import __version__
-from docreview_api.config import Environment, Settings, get_settings
+from docreview_api.api.schemas.system import HealthResponse
+from docreview_api.config import Settings, get_settings
 
 router = APIRouter(tags=["system"])
-
-
-class HealthResponse(BaseModel):
-    """Public health information without infrastructure details."""
-
-    status: Literal["ok"] = "ok"
-    service: str
-    environment: Environment
-    version: str
 
 
 @router.get("/health", response_model=HealthResponse)

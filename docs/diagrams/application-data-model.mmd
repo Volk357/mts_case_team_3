@@ -1,0 +1,13 @@
+erDiagram
+    COMPANY ||--o{ USER : employs
+    COMPANY ||--o{ DOCUMENT : owns
+    COMPANY ||--o{ REVIEW_PACK_REFERENCE : owns
+    COMPANY ||--o{ REVIEW_JOB : scopes
+    USER o|--o{ DOCUMENT : uploads
+    USER o|--o{ REVIEW_JOB : requests
+    DOCUMENT ||--o{ REVIEW_JOB : reviewed_by
+    REVIEW_PACK_REFERENCE ||--o{ REVIEW_JOB : configures
+    REVIEW_JOB ||--o{ FINDING : produces
+    FINDING ||--o{ FINDING_FEEDBACK : receives
+    USER o|--o{ FINDING_FEEDBACK : submits
+

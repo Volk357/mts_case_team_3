@@ -5,6 +5,7 @@ __pycache__/
 .cache/
 .coverage
 .pytest_cache/
+.tmp-pytest-*/
 .mypy_cache/
 .ruff_cache/
 .venv/

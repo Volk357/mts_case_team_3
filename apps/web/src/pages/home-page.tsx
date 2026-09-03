@@ -1,6 +1,6 @@
-import { ArrowRight, Building2, FileSearch, ShieldCheck } from "lucide-react";
-import { Link } from "react-router-dom";
+import { ArrowDown, Building2, FileSearch, ShieldCheck } from "lucide-react";
 
+import { FileDropzone } from "@/components/file-dropzone";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -37,11 +37,15 @@ export function HomePage() {
           информации недостаточно для однозначной реализации.
         </p>
         <Button asChild>
-          <Link to="/debug/health">
-            Проверить подключение
-            <ArrowRight aria-hidden="true" className="size-4" />
-          </Link>
+          <a href="#upload">
+            Загрузить документ
+            <ArrowDown aria-hidden="true" className="size-4" />
+          </a>
         </Button>
+      </section>
+
+      <section aria-label="Загрузка документа" className="max-w-3xl">
+        <FileDropzone />
       </section>
 
       <section aria-label="Преимущества" className="grid gap-4 md:grid-cols-3">

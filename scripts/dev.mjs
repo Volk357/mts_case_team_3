@@ -13,6 +13,9 @@ const processes = [
   start(venvPython, ["-m", "uvicorn", "docreview_api.main:app", "--reload"], {
     cwd: apiDirectory,
   }),
+  start(venvPython, ["-m", "docreview_api.workers.review_worker"], {
+    cwd: apiDirectory,
+  }),
   startNpm(["run", "dev", "--", "--host", "127.0.0.1"], { cwd: webDirectory }),
 ];
 

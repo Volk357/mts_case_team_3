@@ -1,0 +1,50 @@
+{
+  "document-parse-error": {
+    "exit_code": 3,
+    "result_file": "document-parse-error.json",
+    "stderr": "mock: document parsing failed",
+    "delay_ms": 0
+  },
+  "review-pack-not-found": {
+    "exit_code": 4,
+    "result_file": "review-pack-not-found.json",
+    "stderr": "mock: review pack is unknown",
+    "delay_ms": 0
+  },
+  "model-unavailable": {
+    "exit_code": 5,
+    "result_file": "model-unavailable.json",
+    "stderr": "mock: model endpoint is unavailable",
+    "delay_ms": 0
+  },
+  "invalid-json": {
+    "exit_code": 6,
+    "result_file": "invalid-json.txt",
+    "stderr": "mock: model response is not valid JSON",
+    "delay_ms": 0
+  },
+  "incompatible-schema-version": {
+    "exit_code": 0,
+    "result_file": "incompatible-schema-version.json",
+    "stderr": "mock: emitted unsupported schema version",
+    "delay_ms": 0
+  },
+  "timeout": {
+    "exit_code": 8,
+    "result_file": "analysis-timeout.json",
+    "stderr": "mock: analysis timed out",
+    "delay_ms": 1500
+  },
+  "crash": {
+    "exit_code": 7,
+    "result_file": null,
+    "stderr": "mock: unexpected pipeline crash",
+    "delay_ms": 0
+  },
+  "missing-result-after-success": {
+    "exit_code": 0,
+    "result_file": null,
+    "stderr": "mock: completed without result",
+    "delay_ms": 0
+  }
+}

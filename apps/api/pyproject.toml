@@ -9,8 +9,13 @@ description = "Product Application API for the DocReview platform"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "alembic>=1.17,<2",
   "fastapi>=0.124,<1",
+  "jsonschema>=4.23,<5",
   "pydantic-settings>=2.12,<3",
+  "psycopg[binary]>=3.2,<4",
+  "python-multipart>=0.0.22,<1",
+  "sqlalchemy>=2.0,<3",
   "uvicorn[standard]>=0.38,<1",
 ]
 
@@ -21,6 +26,7 @@ dev = [
   "pytest>=8.4,<9",
   "pytest-cov>=7,<8",
   "ruff>=0.14,<1",
+  "types-jsonschema>=4.23,<5",
 ]
 
 [tool.setuptools.packages.find]
@@ -57,4 +63,3 @@ source = ["docreview_api"]
 show_missing = true
 skip_covered = true
 fail_under = 90
-

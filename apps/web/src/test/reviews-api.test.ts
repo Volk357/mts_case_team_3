@@ -1,46 +1,62 @@
-import { getReview } from "@/api/reviews";
+import { createReview, getReview, getReviewFindings } from "@/api/reviews";
 
-const completedResult = {
-  schema_version: "1.0",
-  run_id: "review-42",
-  status: "completed",
-  document: {
-    filename: "requirements.pdf",
-    document_type: "requirements",
-    sha256: "a".repeat(64),
-  },
-  engine: { version: "0.1.0" },
-  review_pack: { id: "default", version: "1.0" },
-  model: { name: "local-model", prompt_versions: { reviewer: "1" } },
-  findings: [],
-  summary: {
-    total_candidates: 0,
-    verified_candidates: 0,
-    returned_findings: 0,
-    critical: 0,
-    high: 0,
-    medium: 0,
-    low: 0,
-  },
-  warnings: [],
-  timings: { total_ms: 10 },
+const queuedReview = {
+  review_id: "review-42",
+  document_id: "document-1",
+  review_pack_id: "pack-1",
+  status: "queued",
+  stage: "waiting",
+  queued_at: "2026-09-03T12:00:00.000Z",
+  started_at: null,
+  finished_at: null,
+  poll_after_ms: 2000,
+  error: null,
 } as const;
 
 describe("reviews API", () => {
-  it("returns a generated ReviewResult contract", async () => {
+  it("creates an asynchronous review with an idempotency key", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify(completedResult), {
-        status: 200,
+      new Response(JSON.stringify(queuedReview), {
+        status: 202,
         headers: { "Content-Type": "application/json" },
       }),
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const result = await getReview("review/42");
+    const result = await createReview("document-1", "pack-1", "submit-1");
 
-    expect(result.status).toBe("completed");
+    expect(result.stage).toBe("waiting");
     expect(fetchMock).toHaveBeenCalledWith(
-      "/api/reviews/review%2F42",
+      "/api/reviews",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          "Idempotency-Key": "submit-1",
+        },
+      }),
+    );
+  });
+
+  it("polls state and obtains findings through separate endpoints", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify(queuedReview), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ review_id: "review/42", items: [], total: 0 }), {
+          status: 200,
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await getReview("review/42");
+    const result = await getReviewFindings("review/42");
+
+    expect(result.total).toBe(0);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "/api/reviews/review%2F42/findings",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
     );
   });

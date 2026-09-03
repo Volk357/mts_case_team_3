@@ -4,8 +4,9 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
+from uuid import UUID
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 Environment = Literal["development", "test", "demo", "production"]
@@ -39,23 +40,99 @@ class Settings(BaseSettings):
 
     app_name: str = "DocReview API"
     environment: Environment = "development"
-    api_prefix: str = Field(default="/api", pattern=r"^/[A-Za-z0-9/_-]*$")
+    api_prefix: Literal["/api"] = "/api"
     log_level: LogLevel = "INFO"
+    database_url: str = f"sqlite:///{(REPOSITORY_DIRECTORY / 'data' / 'docreview.db').as_posix()}"
     documents_dir: Path = REPOSITORY_DIRECTORY / "data" / "documents"
     runs_dir: Path = REPOSITORY_DIRECTORY / "data" / "runs"
     artifacts_dir: Path = REPOSITORY_DIRECTORY / "data" / "artifacts"
+    review_packs_dir: Path = REPOSITORY_DIRECTORY / "review-packs"
+    analysis_executable: str = Field(default="docreview", min_length=1, max_length=1000)
+    process_stdout_limit_bytes: int = Field(default=5 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
+    process_stderr_limit_bytes: int = Field(default=256 * 1024, ge=1024, le=10 * 1024 * 1024)
+    analysis_timeout_seconds: float = Field(default=300.0, gt=0, le=24 * 60 * 60)
+    process_termination_grace_seconds: float = Field(default=5.0, ge=0, le=60)
+    worker_poll_interval_seconds: float = Field(default=1.0, gt=0, le=60)
+    review_poll_interval_seconds: int = Field(default=2, ge=1, le=30)
+    worker_stale_after_seconds: float = Field(default=600.0, gt=0, le=48 * 60 * 60)
+    review_result_schema_path: Path = (
+        REPOSITORY_DIRECTORY / "contracts" / "review-result.schema.json"
+    )
+    max_review_result_size_bytes: int = Field(
+        default=10 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024
+    )
+    max_upload_size_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+    default_company_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
+    default_company_slug: str = Field(default="local-mvp", min_length=1, max_length=100)
+    default_company_name: str = Field(default="Local MVP Company", min_length=1, max_length=255)
+    orphan_upload_grace_period_hours: int = Field(default=24, ge=1, le=24 * 30)
+    document_retention_days: int = Field(default=90, ge=1, le=3650)
+    artifact_retention_days: int = Field(default=14, ge=1, le=365)
+    automatic_retention_enabled: bool = False
     cors_origins: tuple[str, ...] = (
         "http://127.0.0.1:5173",
         "http://localhost:5173",
     )
 
-    @field_validator("documents_dir", "runs_dir", "artifacts_dir", mode="before")
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        """Allow explicit SQLAlchemy URLs and resolve relative SQLite files."""
+
+        if value == "sqlite:///:memory:":
+            return value
+        prefix = "sqlite:///"
+        if value.startswith(prefix):
+            database_path = Path(value.removeprefix(prefix)).expanduser()
+            if not database_path.is_absolute():
+                database_path = (REPOSITORY_DIRECTORY / database_path).resolve()
+            return f"{prefix}{database_path.as_posix()}"
+        if value.startswith(("postgresql://", "postgresql+psycopg://")):
+            return value
+        raise ValueError("Database URL must use SQLite or PostgreSQL")
+
+    @field_validator(
+        "documents_dir",
+        "runs_dir",
+        "artifacts_dir",
+        "review_packs_dir",
+        "review_result_schema_path",
+        mode="before",
+    )
     @classmethod
     def resolve_storage_path(cls, value: object) -> Path:
         """Resolve relative storage paths from the repository root, not process cwd."""
 
         path = Path(str(value)).expanduser()
         return path if path.is_absolute() else (REPOSITORY_DIRECTORY / path).resolve()
+
+    @field_validator("automatic_retention_enabled")
+    @classmethod
+    def reject_automatic_retention(cls, value: bool) -> bool:
+        """Keep all MVP deletion explicit even if an environment is misconfigured."""
+
+        if value:
+            raise ValueError("Automatic retention is not available in the MVP")
+        return value
+
+    @field_validator("analysis_executable")
+    @classmethod
+    def validate_analysis_executable(cls, value: str) -> str:
+        """Reject empty/control-character executable configuration."""
+
+        executable = value.strip()
+        if not executable or any(ord(character) < 32 for character in executable):
+            raise ValueError("Analysis executable must be a non-empty path or command")
+        return executable
+
+    @model_validator(mode="after")
+    def validate_worker_stale_window(self) -> "Settings":
+        minimum = self.analysis_timeout_seconds + self.process_termination_grace_seconds
+        if self.worker_stale_after_seconds <= minimum:
+            raise ValueError(
+                "Worker stale window must exceed the analysis timeout and termination grace period"
+            )
+        return self
 
     @field_validator("cors_origins")
     @classmethod

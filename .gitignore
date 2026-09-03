@@ -1,0 +1,47 @@
+# === НИКОГДА не коммитить (репозиторий PUBLIC) ===
+
+# Документы кейсодателя — обезличенные, но реальные
+vitrina.txt
+potoki.txt
+istochnik.txt
+
+# Реальные прогоны и отчёты (содержат цитаты из документов кейсодателя)
+results/
+review_vitrina.md
+review_vitrina.pdf
+
+# Архив (старые результаты, отчёты, дубли)
+архив/
+Archive.zip
+
+# Секреты и инфраструктура
+nikita_ollama.conf
+*.conf
+.env
+
+# Внутренние стратегические материалы (цитаты кейсодателя, метрики, стратегия)
+CLAUDE.md
+review-log.md
+taxonomy_coverage.md
+PRODUCT_MATERIALS.md
+PROJECT_DESCRIPTION.md
+CONTEXT_GENERATOR.md
+RED_TEAM.md
+
+# Сгенерированное / служебное
+__pycache__/
+*.pyc
+.DS_Store
+*.bak
+*.bak[0-9]
+*.debug
+*.myedits
+*.pre_schema
+
+# Бинарники/презентации — не на публичный репо без проверки
+*.pdf
+*.pptx
+*.zip
+*.jpeg
+*.jpg
+*.png

@@ -1,0 +1,340 @@
+{
+  "doc": "synth_4",
+  "domain": "roaming",
+  "clean_source": "synth_4_clean.txt",
+  "template": "Потоковые данные/витрины",
+  "sections_marked_na": [
+    "scheme",
+    "history"
+  ],
+  "defect_count": 17,
+  "by_class": {
+    "presence": 10,
+    "absence": 6,
+    "section_removed": 1
+  },
+  "defects": [
+    {
+      "defect_id": "DANGLING_REFERENCE",
+      "defect_class": "presence",
+      "mutation": "reference_to_missing_section",
+      "note": "Ссылка на раздел «Показатели витрины», которого в документе нет. Исходно ссылка вела на раздел «Структура данных».",
+      "detectable_by": "llm",
+      "quote": "Меры рассчитываются в границах группы, перечень мер приведён в разделе «Показатели витрины».",
+      "section": "Алгоритм обработки потока",
+      "anchor_node": "algo.s3.calc"
+    },
+    {
+      "defect_id": "INTERNAL_CONTRADICTION",
+      "defect_class": "presence",
+      "mutation": "insert_contradicting_statement",
+      "note": "Вставленное утверждение противоречит строке «Обновление» в нефункциональных требованиях. Обе стороны в тексте дословно.",
+      "detectable_by": "llm",
+      "quote": "Партиция периода перезаписывается целиком, обновление по ключу не выполняется.",
+      "section": "Общие сведения",
+      "anchor_node": "mut.contradiction"
+    },
+    {
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "defect_class": "absence",
+      "mutation": "removed_edge_case_rule",
+      "note": "Удалено правило, закрывавшее граничный случай алгоритма обогащения. Соседние правила ветвления сохранены.",
+      "detectable_by": "llm",
+      "removed_text": "Если пара FIELD_MCC и FIELD_MNC отсутствует в справочнике партнёров, партнёру присваивается значение Unknown, событие сохраняется для последующей ручной разметки.",
+      "containers": [
+        {
+          "node": "algo.s2",
+          "title": "Шаг 2. Обогащение данных",
+          "lines": [
+            "Шаг 2. Обогащение данных",
+            "Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».",
+            "Сопоставление выполняется по имеющимся полям.",
+            "Если FIELD_MNC не заполнен — сопоставление только по FIELD_MCC с выбором партнёра по признаку основного оператора страны.",
+            "Если FIELD_MCC не заполнен — событие направляется на ручную разметку."
+          ]
+        }
+      ],
+      "container_lines": [
+        "Шаг 2. Обогащение данных",
+        "Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».",
+        "Сопоставление выполняется по имеющимся полям.",
+        "Если FIELD_MNC не заполнен — сопоставление только по FIELD_MCC с выбором партнёра по признаку основного оператора страны.",
+        "Если FIELD_MCC не заполнен — событие направляется на ручную разметку."
+      ],
+      "quote": "Шаг 2. Обогащение данных",
+      "section": "Алгоритм обработки потока"
+    },
+    {
+      "defect_id": "AMBIGUOUS_LOGIC",
+      "defect_class": "presence",
+      "mutation": "removed_priority_order",
+      "note": "Из правила убран явный приоритет применения. Частные случаи остались, порядок их применения не определён.",
+      "detectable_by": "llm",
+      "quote": "Сопоставление выполняется по имеющимся полям.",
+      "section": "Алгоритм обработки потока",
+      "anchor_node": "algo.s2.branch1"
+    },
+    {
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "defect_class": "presence",
+      "mutation": "removed_unit_of_measure",
+      "note": "У поля FIELD_DURATION_SEC убрана единица измерения из описания. Тип данных остался, величина без единицы неоднозначна.",
+      "detectable_by": "llm",
+      "quote": "FIELD_DURATION_SEC | bigint | Суммарная длительность соединений | NULLABLE | sum(FIELD_CALL_DURATION)",
+      "section": "Структура данных",
+      "anchor_node": "struct.recv.FIELD_DURATION_SEC"
+    },
+    {
+      "defect_id": "DUPLICATE_SEMANTICS",
+      "defect_class": "presence",
+      "mutation": "insert_near_duplicate_field",
+      "note": "Добавлено поле FIELD_EVENT_CNT_TOTAL с описанием, неотличимым от FIELD_EVENT_CNT. Разница между полями не объяснена.",
+      "detectable_by": "llm",
+      "quote": "FIELD_EVENT_CNT_TOTAL | bigint | Количество событий за сутки | NOT NULL | count(*)",
+      "section": "Структура данных",
+      "anchor_node": "struct.recv.FIELD_EVENT_CNT_TOTAL"
+    },
+    {
+      "defect_id": "PII_NO_PROTECTION",
+      "defect_class": "absence",
+      "mutation": "removed_pii_requirements",
+      "note": "Требования к защите идентификаторов абонента удалены, идентификатор остался в структуре источника.",
+      "detectable_by": "llm",
+      "removed_text": "Поле FIELD_IMSI в витрину не выгружается. В слое RAW доступ разграничен ролью ROLE_PII_READ.",
+      "containers": [
+        {
+          "node": "nfr",
+          "title": "Нефункциональные требования",
+          "lines": [
+            "Нефункциональные требования",
+            "Объём данных: Около 60 тыс. строк в суточной партиции, прирост около 15 МБ в сутки",
+            "Задержки: Готовность витрины не позднее 08:00 UTC",
+            "Регламент расчёта: Ежесуточно",
+            "Глубина данных: С 01.03.2024",
+            "Часовой пояс: UTC",
+            "Срок хранения по слоям: RAW — 90 дней",
+            "Обновление: Обновление по ключу (upsert) в пределах партиции"
+          ]
+        },
+        {
+          "node": "struct",
+          "title": "Структура данных",
+          "lines": [
+            "Структура данных",
+            "Приемники. Таблица: SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY",
+            "Атрибут | Тип данных | Описание атрибута | Обязательность | Источник",
+            "FIELD_BIZ_DATE | date | Бизнес-дата суток агрегации | NOT NULL | Партиция источника",
+            "FIELD_COUNTRY_CODE | string | Код страны пребывания | NOT NULL | TABLE_COUNTRY_REF.country_code",
+            "FIELD_PARTNER_CODE | string | Код роуминг-партнёра | NOT NULL | TABLE_PARTNER_REF.partner_code",
+            "FIELD_SERVICE_TYPE | string | Тип услуги: VOICE, SMS, DATA | — | TABLE_SERVICE_REF.service_code",
+            "FIELD_EVENT_CNT | bigint | Количество событий за сутки | NOT NULL | count(*)",
+            "FIELD_EVENT_CNT_TOTAL | bigint | Количество событий за сутки | NOT NULL | count(*)",
+            "FIELD_DURATION_SEC | bigint | Суммарная длительность соединений | NULLABLE | sum(FIELD_CALL_DURATION)",
+            "FIELD_CHARGE_AMOUNT | decimal(18,4) | Начисленная сумма (валюта расчёта, SDR) | NOT NULL | sum(FIELD_CHARGE)",
+            "FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG",
+            "Источники. Таблица: TOPIC_ROAMING_EVENTS",
+            "Атрибут | Тип данных | Комментарий",
+            "FIELD_IMSI | string | Идентификатор абонента",
+            "FIELD_MCC | string | Мобильный код страны сети пребывания",
+            "FIELD_MNC | string | Код сети оператора пребывания",
+            "FIELD_EVENT_TS | timestamp | Время события в сети партнёра, UTC",
+            "FIELD_CALL_DURATION | int | Длительность соединения (секунды)",
+            "FIELD_CHARGE | decimal(18,4) | Сумма начисления по событию",
+            "FIELD_SERVICE_CODE | int | Код типа услуги"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Нефункциональные требования",
+        "Объём данных: Около 60 тыс. строк в суточной партиции, прирост около 15 МБ в сутки",
+        "Задержки: Готовность витрины не позднее 08:00 UTC",
+        "Регламент расчёта: Ежесуточно",
+        "Глубина данных: С 01.03.2024",
+        "Часовой пояс: UTC",
+        "Срок хранения по слоям: RAW — 90 дней",
+        "Обновление: Обновление по ключу (upsert) в пределах партиции",
+        "Структура данных",
+        "Приемники. Таблица: SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY",
+        "Атрибут | Тип данных | Описание атрибута | Обязательность | Источник",
+        "FIELD_BIZ_DATE | date | Бизнес-дата суток агрегации | NOT NULL | Партиция источника",
+        "FIELD_COUNTRY_CODE | string | Код страны пребывания | NOT NULL | TABLE_COUNTRY_REF.country_code",
+        "FIELD_PARTNER_CODE | string | Код роуминг-партнёра | NOT NULL | TABLE_PARTNER_REF.partner_code",
+        "FIELD_SERVICE_TYPE | string | Тип услуги: VOICE, SMS, DATA | — | TABLE_SERVICE_REF.service_code",
+        "FIELD_EVENT_CNT | bigint | Количество событий за сутки | NOT NULL | count(*)",
+        "FIELD_EVENT_CNT_TOTAL | bigint | Количество событий за сутки | NOT NULL | count(*)",
+        "FIELD_DURATION_SEC | bigint | Суммарная длительность соединений | NULLABLE | sum(FIELD_CALL_DURATION)",
+        "FIELD_CHARGE_AMOUNT | decimal(18,4) | Начисленная сумма (валюта расчёта, SDR) | NOT NULL | sum(FIELD_CHARGE)",
+        "FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG",
+        "Источники. Таблица: TOPIC_ROAMING_EVENTS",
+        "Атрибут | Тип данных | Комментарий",
+        "FIELD_IMSI | string | Идентификатор абонента",
+        "FIELD_MCC | string | Мобильный код страны сети пребывания",
+        "FIELD_MNC | string | Код сети оператора пребывания",
+        "FIELD_EVENT_TS | timestamp | Время события в сети партнёра, UTC",
+        "FIELD_CALL_DURATION | int | Длительность соединения (секунды)",
+        "FIELD_CHARGE | decimal(18,4) | Сумма начисления по событию",
+        "FIELD_SERVICE_CODE | int | Код типа услуги"
+      ],
+      "quote": "Нефункциональные требования",
+      "section": "Нефункциональные требования"
+    },
+    {
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "defect_class": "presence",
+      "mutation": "cleared_cluster_cell",
+      "note": "В таблице приёмников очищена колонка «Кластер». Подключиться к приёмнику без указания кластера нельзя.",
+      "detectable_by": "llm",
+      "quote": "Витрина-агрегат по роумингу | — | SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY | ORC",
+      "section": "Приемники данных",
+      "anchor_node": "receivers.row1"
+    },
+    {
+      "defect_id": "PLACEHOLDER_LEFT",
+      "defect_class": "presence",
+      "mutation": "value_replaced_by_placeholder",
+      "note": "Вместо имени кластера осталась заглушка CLUSTER. Соглашения TABLE_*, FIELD_*, SCHEMA_* заглушками не являются.",
+      "detectable_by": "deterministic",
+      "quote": "Кластер: CLUSTER",
+      "section": "Общие сведения",
+      "anchor_node": "common.cluster"
+    },
+    {
+      "defect_id": "FILTER_RESULT_UNDEFINED",
+      "defect_class": "absence",
+      "mutation": "removed_rejected_records_fate",
+      "note": "Правило фильтрации сохранено, описание судьбы отсеянных записей удалено.",
+      "detectable_by": "llm",
+      "removed_text": "События старше 90 суток помещаются в таблицу поздних поступлений TABLE_ROAMING_LATE и обрабатываются отдельным регламентом пересчёта.",
+      "containers": [
+        {
+          "node": "algo.s1",
+          "title": "Шаг 1. Фильтрация данных",
+          "lines": [
+            "Шаг 1. Фильтрация данных",
+            "Учитываются события, у которых FIELD_EVENT_TS попадает в границы бизнес-даты по UTC. События с датой старше 90 суток в текущую партицию не принимаются."
+          ]
+        }
+      ],
+      "container_lines": [
+        "Шаг 1. Фильтрация данных",
+        "Учитываются события, у которых FIELD_EVENT_TS попадает в границы бизнес-даты по UTC. События с датой старше 90 суток в текущую партицию не принимаются."
+      ],
+      "quote": "Шаг 1. Фильтрация данных",
+      "section": "Алгоритм обработки потока"
+    },
+    {
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "defect_class": "absence",
+      "mutation": "removed_dedup_rule",
+      "note": "Документ заявляет обновление по ключу (upsert), но правило разрешения дублей удалено. Для витрин с полной перезагрузкой периода это дефектом не является, здесь режим другой.",
+      "detectable_by": "llm",
+      "removed_text": "Ключ обновления: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE. При совпадении ключа сохраняется запись с большим FIELD_PROC_TS",
+      "containers": [
+        {
+          "node": "key",
+          "title": "Формирование ключа (kafka) / партиции (hdfs)",
+          "lines": [
+            "Формирование ключа (kafka) / партиции (hdfs)",
+            "Поле партиционирования: FIELD_BIZ_DATE",
+            "Гранулярность строки: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Формирование ключа (kafka) / партиции (hdfs)",
+        "Поле партиционирования: FIELD_BIZ_DATE",
+        "Гранулярность строки: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE"
+      ],
+      "quote": "Формирование ключа (kafka) / партиции (hdfs)",
+      "section": "Формирование ключа (kafka) / партиции (hdfs)"
+    },
+    {
+      "defect_id": "NO_SCHEDULE",
+      "defect_class": "presence",
+      "mutation": "removed_run_time",
+      "note": "Частота осталась, число и время запуска удалены. Кейсодатель отнёс такой случай к категории «требующий уточнения».",
+      "detectable_by": "llm",
+      "quote": "Регламент расчёта: Ежесуточно",
+      "section": "Нефункциональные требования",
+      "anchor_node": "nfr.schedule"
+    },
+    {
+      "defect_id": "RETENTION_GAP",
+      "defect_class": "presence",
+      "mutation": "removed_retention_for_layers",
+      "note": "Срок хранения оставлен только для одного слоя. Для остальных слоёв, перечисленных в схеме потоков, срок не указан.",
+      "detectable_by": "llm",
+      "quote": "Срок хранения по слоям: RAW — 90 дней",
+      "section": "Нефункциональные требования",
+      "anchor_node": "nfr.retention"
+    },
+    {
+      "defect_id": "NULLABILITY_UNSPECIFIED",
+      "defect_class": "presence",
+      "mutation": "cleared_nullability_cell",
+      "note": "У поля FIELD_SERVICE_TYPE снят признак обязательности. Требование кейсодателя №3.",
+      "detectable_by": "deterministic",
+      "quote": "FIELD_SERVICE_TYPE | string | Тип услуги: VOICE, SMS, DATA | — | TABLE_SERVICE_REF.service_code",
+      "section": "Структура данных",
+      "anchor_node": "struct.recv.FIELD_SERVICE_TYPE"
+    },
+    {
+      "defect_id": "REFERENCE_LIST_MISSING",
+      "defect_class": "absence",
+      "mutation": "removed_reference_catalog_table",
+      "note": "Удалён перечень справочников с назначением каждого. Сами справочники используются в алгоритме. Требование №8.",
+      "detectable_by": "llm",
+      "removed_text": "TABLE_COUNTRY_REF SCHEMA_DIC Справочник стран по коду MCC / TABLE_PARTNER_REF SCHEMA_DIC Справочник роуминг-партнёров, историчный по бизнес-дате / TABLE_SERVICE_REF SCHEMA_DIC Справочник типов услуг: голос, SMS, данные",
+      "containers": [
+        {
+          "node": "enrich",
+          "title": "Источники обогащения данных",
+          "lines": [
+            "Источники обогащения данных",
+            "Обогащение справочником партнёров выполняется по историческому срезу на бизнес-дату события, поскольку коды партнёров меняются."
+          ]
+        }
+      ],
+      "container_lines": [
+        "Источники обогащения данных",
+        "Обогащение справочником партнёров выполняется по историческому срезу на бизнес-дату события, поскольку коды партнёров меняются."
+      ],
+      "quote": "Источники обогащения данных",
+      "section": "Источники обогащения данных"
+    },
+    {
+      "defect_id": "DATA_CATALOG_MISSING",
+      "defect_class": "absence",
+      "mutation": "removed_datacatalog_link",
+      "note": "Раздел Data Catalog остался, ссылка из него удалена. Требование №2 обязывает давать прямую ссылку.",
+      "detectable_by": "deterministic",
+      "removed_text": "Ссылка на Дата-каталог: https://datacatalog.corp/tables/schema_cdm_roaming.table_agg_roaming_daily",
+      "containers": [
+        {
+          "node": "catalog",
+          "title": "Data Catalog",
+          "lines": [
+            "Data Catalog"
+          ]
+        }
+      ],
+      "container_lines": [
+        "Data Catalog"
+      ],
+      "quote": "Data Catalog",
+      "section": "Data Catalog"
+    },
+    {
+      "defect_id": "TEMPLATE_SECTION_MISSING",
+      "defect_class": "section_removed",
+      "mutation": "removed_template_section",
+      "note": "Раздел FAQ удалён, а не помечен «не применимо». Правило №5 требует сохранять все разделы шаблона.",
+      "detectable_by": "deterministic",
+      "removed_text": "- Суммы приводятся к SDR по курсу на бизнес-дату события, а не на дату расчёта витрины. / - События, полученные повторно в файлах TAP, определяются по паре FIELD_IMSI и FIELD_EVENT_TS и не задваиваются.",
+      "section_name": "FAQ",
+      "quote": "FAQ",
+      "section": "FAQ",
+      "neighbor": "CREATE TABLE SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY ("
+    }
+  ]
+}

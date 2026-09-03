@@ -1,0 +1,126 @@
+Общие сведения
+Агрегат по услугам: месячная сводка подключений и отключений дополнительных услуг в разрезе региона и категории услуги.
+Название таблицы: SCHEMA_CDM_SERVICES.TABLE_AGG_SERVICES_MONTHLY
+Кластер: KAFKA_CLUSTER_MSK_PROD
+Схема: SCHEMA_CDM_SERVICES
+Способ загрузки: Полная перезагрузка периода
+
+Решаемая проблема
+Отчётность по подключениям собирается вручную из двух систем, цифры расходятся с биллингом. Витрина даёт единый источник.
+
+Продуктовые метрики
+- Срок подготовки отчёта по подключениям: с 4 дней до 1 суток
+- Расхождение с биллингом по количеству подключений: цель менее 0,5%
+
+Заказчики
+Коммерческий блок, отдел дополнительных услуг
+
+Нефункциональные требования
+Объём данных: Около 3 тыс. строк в месячной партиции, прирост около 1 МБ в месяц
+Задержки: Готовность витрины не позднее 2-го числа месяца
+Регламент расчёта: Ежемесячно, 1-го числа в 05:00 UTC за предыдущий месяц
+Глубина данных: С 01.01.2025
+Часовой пояс: UTC
+Срок хранения по слоям: RAW — 30 дней, DDS — 400 дней, CDM — 3 года
+Обновление: Полная перезагрузка периода без upsert
+Поле FIELD_SUBSCRIBER_ID в витрину не выгружается, агрегат не содержит идентификаторов абонента.
+
+Системы-источники
+PROV_SYS — система активации дополнительных услуг
+
+Data Catalog
+Ссылка на Дата-каталог: https://datacatalog.corp/tables/schema_cdm_services.table_agg_services_monthly
+
+Исходники проекта
+Ссылка на GitLab: https://gitlab.corp/bigdata/services-agg
+
+Команда
+Аналитик: USER_A
+Разработчик: USER_B
+Тестировщик: USER_C
+
+JIRA
+Задача: DATA-4108 — Витрина-агрегат по подключённым услугам. https://jira.corp/browse/DATA-4108
+
+Источники данных
+Описание источника | Тип источника | Ссылка на источник | Сериализация
+События подключения услуг | Kafka | TOPIC_PROV_SERVICE_EVENTS | JSON
+Сырые события активации | Hive | SCHEMA_RAW.TABLE_PROV_RAW_EVENTS | ORC
+
+Источники обогащения данных
+Обогащение каталогом услуг выполняется по историческому срезу на бизнес-дату события, поскольку категории услуг пересматриваются.
+Справочник | Схема | Назначение в расчёте
+TABLE_REGION_REF | SCHEMA_DIC | Справочник регионов
+TABLE_SERVICE_CATALOG_REF | SCHEMA_DIC | Каталог услуг с категориями, историчный по бизнес-дате
+
+Приемники данных
+Описание данных | Кластер | Ссылка на Каталог | Сериализация
+Витрина-агрегат по подключённым услугам | KAFKA_CLUSTER_MSK_PROD | SCHEMA_CDM_SERVICES.TABLE_AGG_SERVICES_MONTHLY | ORC
+Путь хранения в HDFS: /data/cdm/services/agg_services_monthly, формат ORC.
+
+Схема потоков данных
+не применимо
+
+Алгоритм обработки потока
+Шаг 1. Фильтрация данных
+Учитываются события, у которых FIELD_EVENT_TS попадает в границы месяца агрегации по UTC.
+События с FIELD_SERVICE_CODE, отсутствующим в каталоге услуг на бизнес-дату, отбрасываются и логируются в TABLE_SERVICES_REJECT.
+Шаг 2. Обогащение данных
+Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».
+Приоритет определения категории: код услуги на бизнес-дату события.
+Если на бизнес-дату записи нет — берётся ближайшая предшествующая запись каталога.
+Если предшествующих записей нет — категория Unknown.
+Если услуга отсутствует в каталоге на бизнес-дату расчёта, категории присваивается значение Unknown.
+Шаг 3. Агрегация
+Группировка по: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_SERVICE_CATEGORY.
+Меры рассчитываются в границах группы, перечень мер приведён в разделе «Структура данных».
+Шаг 4. Запись в CDM
+Результат записывается в SCHEMA_CDM_SERVICES.TABLE_AGG_SERVICES_MONTHLY в формате ORC по пути /data/cdm/services/agg_services_monthly.
+
+Формирование ключа (kafka) / партиции (hdfs)
+Поле партиционирования: FIELD_BIZ_DATE
+Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_SERVICE_CATEGORY
+Правило дедупликации: Партиция перезаписывается целиком, дубли невозможны
+
+Структура данных
+Приемники. Таблица: SCHEMA_CDM_SERVICES.TABLE_AGG_SERVICES_MONTHLY
+Атрибут | Тип данных | Описание атрибута | Обязательность | Источник
+FIELD_BIZ_DATE | date | Бизнес-дата: 1-е число месяца агрегации | NOT NULL | Период расчёта
+FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code
+FIELD_SERVICE_CATEGORY | string | Категория услуги | NOT NULL | TABLE_SERVICE_CATALOG_REF.category_code
+FIELD_CONNECT_CNT | bigint | Количество подключений за месяц | NOT NULL | count по событиям ACTIVATE
+FIELD_DISCONNECT_CNT | bigint | Количество отключений за месяц | NOT NULL | count по событиям DEACTIVATE
+FIELD_NET_CNT | bigint | Чистый прирост подключений | NOT NULL | FIELD_CONNECT_CNT - FIELD_DISCONNECT_CNT
+FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG
+Источники. Таблица: TOPIC_PROV_SERVICE_EVENTS
+Атрибут | Тип данных | Комментарий
+FIELD_SUBSCRIBER_ID | string | Идентификатор абонента
+FIELD_SERVICE_CODE | string | Код услуги
+FIELD_EVENT_TYPE | string | Тип события: ACTIVATE, DEACTIVATE
+FIELD_EVENT_TS | timestamp | Время события, UTC
+FIELD_REGION_CODE | string | Код региона обслуживания
+FIELD_CHANNEL_CODE | string | Код канала подключения
+
+Пример данных
+не применимо
+
+DDL
+CREATE TABLE SCHEMA_CDM_SERVICES.TABLE_AGG_SERVICES_MONTHLY (
+  FIELD_BIZ_DATE DATE NOT NULL,
+  FIELD_REGION_CODE STRING NOT NULL,
+  FIELD_SERVICE_CATEGORY STRING NOT NULL,
+  FIELD_CONNECT_CNT BIGINT NOT NULL,
+  FIELD_DISCONNECT_CNT BIGINT NOT NULL,
+  FIELD_NET_CNT BIGINT NOT NULL,
+  FIELD_PROC_TS TIMESTAMP NOT NULL
+)
+PARTITIONED BY (FIELD_BIZ_DATE)
+STORED AS ORC
+LOCATION '/data/cdm/services/agg_services_monthly';
+
+FAQ
+- Подключение и отключение одной услуги в одном месяце учитывается в обоих счётчиках.
+- Чистый прирост может быть отрицательным, это ожидаемое поведение.
+
+История изменений
+не применимо

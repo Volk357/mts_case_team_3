@@ -62,6 +62,7 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 
 Подробности:
 
+- [Промежуточная сдача 4 сентября](submission/interim-2026-09-04/README.md);
 - [Backend](apps/api/README.md);
 - [Frontend](apps/web/README.md);
 - [Контракты](contracts/README.md);

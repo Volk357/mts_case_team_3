@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "run_id": "review-invalid-1",
+  "status": "completed",
+  "document": {
+    "filename": "document.pdf",
+    "document_type": "data_mart",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "engine": { "version": "0.1.0" },
+  "review_pack": { "id": "mts-data-mart", "version": "1.0" },
+  "model": { "name": "qwen", "prompt_versions": {} },
+  "summary": {
+    "total_candidates": 0,
+    "verified_candidates": 0,
+    "returned_findings": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0
+  },
+  "warnings": [],
+  "timings": { "total_ms": 1 }
+}

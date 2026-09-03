@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "run_id": "review-124",
+  "status": "failed",
+  "error": {
+    "code": "MODEL_UNAVAILABLE",
+    "stage": "semantic_review",
+    "message": "Model endpoint is unavailable",
+    "retriable": true
+  }
+}

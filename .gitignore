@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.cache/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Node
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Editors and operating systems
+.idea/
+.DS_Store
+Thumbs.db
+
+# Runtime artifacts and secrets
+.env
+.env.local
+.env.*.local
+data/
+runs/
+artifacts/
+documents/

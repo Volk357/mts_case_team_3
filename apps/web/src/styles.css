@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", "Segoe UI", system-ui, sans-serif;
+  --color-background: #f7f8fc;
+  --color-foreground: #172033;
+  --color-primary: #6955d9;
+  --color-primary-foreground: #ffffff;
+  --color-muted: #eef0f6;
+  --color-muted-foreground: #667085;
+  --color-border: #dfe3ec;
+  --color-card: #ffffff;
+  --color-card-foreground: #172033;
+  --radius-card: 1.25rem;
+}
+
+:root {
+  color: var(--color-foreground);
+  background: var(--color-background);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background:
+    radial-gradient(circle at 10% 0%, rgb(105 85 217 / 10%), transparent 30rem),
+    var(--color-background);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}

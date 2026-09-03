@@ -1,0 +1,99 @@
+{
+  "schema_version": "1.0",
+  "run_id": "review-123",
+  "status": "completed",
+  "document": {
+    "filename": "Техническое задание.pdf",
+    "document_type": "data_mart",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "engine": {
+    "version": "0.1.0"
+  },
+  "review_pack": {
+    "id": "mts-data-mart",
+    "version": "1.0"
+  },
+  "model": {
+    "name": "qwen",
+    "prompt_versions": {
+      "data_logic": "3",
+      "completeness": "2"
+    }
+  },
+  "findings": [
+    {
+      "id": "finding-001",
+      "defect_id": "AMBIGUOUS_LOGIC",
+      "severity": "high",
+      "confidence": 0.91,
+      "location": {
+        "page": 8,
+        "section_path": [
+          "Алгоритм расчёта",
+          "Шаг 3. Определение региона"
+        ],
+        "block_id": "block-42",
+        "table": null,
+        "row": null,
+        "column": null,
+        "bbox": {
+          "x": 120.5,
+          "y": 415,
+          "width": 420,
+          "height": 48
+        }
+      },
+      "quote": "Берётся последняя запись за месяц",
+      "problem": "Не определён выбор при одинаковом времени событий",
+      "clarification": "Уточнить дополнительное правило сортировки",
+      "detected_by": [
+        "data_logic_reviewer"
+      ]
+    },
+    {
+      "id": "finding-002",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "severity": "medium",
+      "confidence": 0.84,
+      "location": {
+        "page": null,
+        "section_path": [
+          "Источники данных"
+        ],
+        "block_id": "block-17",
+        "table": "Источники",
+        "row": 2,
+        "column": "Кластер"
+      },
+      "quote": "Источник — TABLE_IUM_RAW_PS",
+      "problem": "Для таблицы не указано физическое расположение",
+      "clarification": "Уточнить кластер и схему таблицы-источника",
+      "detected_by": [
+        "source_reviewer",
+        "required_location_rule"
+      ]
+    }
+  ],
+  "summary": {
+    "total_candidates": 4,
+    "verified_candidates": 2,
+    "returned_findings": 2,
+    "critical": 0,
+    "high": 1,
+    "medium": 1,
+    "low": 0
+  },
+  "warnings": [
+    {
+      "code": "PAGE_UNKNOWN",
+      "message": "Для одного фрагмента номер страницы недоступен"
+    }
+  ],
+  "timings": {
+    "parse_ms": 1200,
+    "analysis_ms": 40100,
+    "verification_ms": 1500,
+    "total_ms": 42800
+  }
+}

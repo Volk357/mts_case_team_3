@@ -1,0 +1,11 @@
+{
+  "schema_version": "2.0",
+  "run_id": "review-invalid-4",
+  "status": "failed",
+  "error": {
+    "code": "INTERNAL_ERROR",
+    "stage": "pipeline",
+    "message": "Unexpected error",
+    "retriable": false
+  }
+}

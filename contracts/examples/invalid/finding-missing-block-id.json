@@ -1,0 +1,40 @@
+{
+  "schema_version": "1.0",
+  "run_id": "review-invalid-2",
+  "status": "completed",
+  "document": {
+    "filename": "document.pdf",
+    "document_type": "data_mart",
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "engine": { "version": "0.1.0" },
+  "review_pack": { "id": "mts-data-mart", "version": "1.0" },
+  "model": { "name": "qwen", "prompt_versions": {} },
+  "findings": [
+    {
+      "id": "finding-001",
+      "defect_id": "AMBIGUOUS_LOGIC",
+      "severity": "high",
+      "confidence": 0.8,
+      "location": {
+        "page": 1,
+        "section_path": ["Алгоритм"]
+      },
+      "quote": "Последняя запись",
+      "problem": "Правило неоднозначно",
+      "clarification": "Уточнить порядок выбора",
+      "detected_by": ["data_logic_reviewer"]
+    }
+  ],
+  "summary": {
+    "total_candidates": 1,
+    "verified_candidates": 1,
+    "returned_findings": 1,
+    "critical": 0,
+    "high": 1,
+    "medium": 0,
+    "low": 0
+  },
+  "warnings": [],
+  "timings": { "total_ms": 1 }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "docreview-contracts",
+  "private": true,
+  "scripts": {
+    "generate:types": "json2ts -i review-result.schema.json -o generated/review-result.d.ts",
+    "check:generated": "node scripts/check-generated.mjs",
+    "check:types": "tsc -p tsconfig.json",
+    "check": "npm run check:generated && npm run check:types"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^15.0.4",
+    "typescript": "^5.9.2"
+  }
+}

@@ -8,8 +8,8 @@
 | Раздел формы | Файл |
 |---|---|
 | Описание проекта | [`01-project-description.md`](01-project-description.md) |
-| Продуктовые материалы | [`02-product-and-additional-materials.md`](02-product-and-additional-materials.md) |
-| Дополнительные материалы | Тот же файл: [`02-product-and-additional-materials.md`](02-product-and-additional-materials.md) |
+| Продуктовые материалы | [`02-product-materials.md`](02-product-materials.md) |
+| Дополнительные материалы | [`03-additional-materials.md`](03-additional-materials.md) |
 
 Перед загрузкой проверить только два организационных пункта:
 

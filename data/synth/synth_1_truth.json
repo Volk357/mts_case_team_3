@@ -199,7 +199,7 @@
       "defect_class": "presence",
       "mutation": "cleared_serialization_cell",
       "note": "Для источника не указана сериализация: ни формат, ни схема, ни способ десериализации. Требование кейсодателя №1.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "Сырые события интернет-трафика | Hive | SCHEMA_RAW.TABLE_IUM_RAW_PS | —",
       "section": "Источники данных",
       "anchor_node": "sources.row1"

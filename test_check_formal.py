@@ -273,6 +273,33 @@ def test_data_catalog_link_in_other_section_does_not_count():
     assert "DATA_CATALOG_MISSING" in ids
 
 
+_SRC = ("Источники данных\n"
+        "Описание источника | Тип источника | Ссылка на источник | Сериализация\n")
+
+
+def test_serialization_flags_empty_cell():
+    text = _SRC + "Сырые события | Hive | SCHEMA.TABLE | —\nИсточники обогащения данных\n"
+    ids = [f["defect_id"] for f in cf.check_serialization(text, CFG)]
+    assert "SERIALIZATION_UNSPECIFIED" in ids
+
+
+def test_serialization_ok_when_filled():
+    text = _SRC + "Сырые события | Hive | SCHEMA.TABLE | ORC\nИсточники обогащения данных\n"
+    assert cf.check_serialization(text, CFG) == []
+
+
+def test_serialization_ignores_when_no_sources_section():
+    text = "Общие сведения\nНазвание: X\n"
+    assert cf.check_serialization(text, CFG) == []
+
+
+def test_serialization_ignores_other_section_column():
+    # «Сериализация» вне таблицы источников не проверяется
+    text = ("Приемники данных\nОписание | Кластер | Сериализация\n"
+            "Витрина | CLUSTER | —\n")
+    assert cf.check_serialization(text, CFG) == []
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -317,6 +344,10 @@ if __name__ == "__main__":
     test_data_catalog_content_no_url_is_clarification_not_high()
     test_data_catalog_empty_section_is_high()
     test_data_catalog_never_suppresses_defect()
+    test_serialization_flags_empty_cell()
+    test_serialization_ok_when_filled()
+    test_serialization_ignores_when_no_sources_section()
+    test_serialization_ignores_other_section_column()
     test_data_catalog_link_in_other_section_does_not_count()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

@@ -622,7 +622,7 @@ defects:
     name: Не указана модель сериализации потока
     focus_area: sources
     severity: high
-    detectable_by: llm
+    detectable_by: deterministic
     validated: not_tested
     description: >
       Для входного или выходного потока не указана модель данных:

@@ -399,8 +399,64 @@ def check_no_filter(text, cfg):
     return []
 
 
+def check_serialization(text, cfg):
+    """В таблице «Источники данных» колонка «Сериализация» пуста для источника.
+    Требование кейсодателя №1. Детерминированно: scope на таблицу источников,
+    парсинг колонки сериализации по заголовку, проверка ячейки."""
+    conf = cfg.get("serialization")
+    if not conf:
+        return []
+    sec_markers = [m.lower() for m in conf["section_markers"]]
+    header_markers = [m.lower() for m in conf.get("header_markers", [])]
+    col_marker = conf["column_marker"].lower()
+    empty = [m.lower() for m in conf.get("empty_markers", ["—", "-"])]
+    lines = lines_of(text)
+    in_table, col_idx, header_seen = False, None, False
+    bad = []
+    for ln in lines:
+        low = ln.lower()
+        if "|" not in ln and norm(strip_numbering(ln)) in sec_markers \
+                and is_section_header(ln, cfg):
+            in_table, col_idx, header_seen = True, None, False
+            continue
+        if not in_table:
+            continue
+        if "|" not in ln:
+            if is_section_header(ln, cfg):     # следующий раздел — конец таблицы
+                in_table = False
+            continue                            # пустые строки пропускаем
+        if not header_seen:
+            cells = [c.strip().lower() for c in ln.split("|")]
+            if not any(h in low for h in header_markers):
+                continue                        # не строка-заголовок таблицы
+            col_idx = next((k for k, c in enumerate(cells) if col_marker in c), None)
+            header_seen = True
+            continue
+        if col_idx is None:
+            continue                            # колонки сериализации нет — не проверяем
+        cells = [c.strip() for c in ln.split("|")]
+        cell = cells[col_idx].strip().lower() if col_idx < len(cells) else ""
+        if not cell or cell in empty:
+            bad.append(ln.strip())
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "SERIALIZATION_UNSPECIFIED",
+        "explanation": (
+            "Для источника в таблице «Источники данных» не указана сериализация "
+            "(формат/схема/способ десериализации). Требование кейсодателя №1: "
+            "сериализация входного потока должна быть задана. Источников без "
+            "сериализации: %d." % len(bad)),
+        "suggestion": "Указать сериализацию (формат/схему) для каждого источника.",
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
 CHECKS = [check_sections, check_nullability, check_placeholders,
-          check_data_catalog, check_hdfs, check_vague_wording, check_no_filter]
+          check_data_catalog, check_hdfs, check_vague_wording, check_no_filter,
+          check_serialization]
 
 
 def run(text, cfg):

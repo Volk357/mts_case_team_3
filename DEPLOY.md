@@ -1,7 +1,10 @@
 # Развёртывание на сервере
 
 Ставим демонстрационный контур: приложение (API, воркер, веб) + ядро анализа.
-Написано под чистый Ubuntu 22.04/24.04. Всё, что ниже, выполняется под sudo.
+Написано под Ubuntu 22.04/24.04, выполняется под root.
+
+**Проверено на практике 4 сентября:** развёрнуто на машине, где уже работал другой
+сервис на 80-м порту. Ниже — то, что реально сработало, включая грабли.
 
 ---
 
@@ -116,8 +119,16 @@ mkdir -p /opt/docreview/data
 cat > /opt/docreview/app.env <<'ENV'
 DOCREVIEW_ANALYSIS_EXECUTABLE=/usr/local/bin/docreview
 DOCREVIEW_DATABASE_URL=sqlite:////opt/docreview/data/docreview.db
+DOCREVIEW_DOCUMENTS_DIR=/opt/docreview/data/documents
+DOCREVIEW_RUNS_DIR=/opt/docreview/data/runs
+DOCREVIEW_REVIEW_PACKS_DIR=/opt/docreview/data/review-packs
 DOCREVIEW_ANALYSIS_TIMEOUT_SECONDS=600
+DOCREVIEW_WORKER_STALE_AFTER_SECONDS=900
 ENV
+
+# миграции до первого запуска
+cd /opt/docreview/src/apps/api && set -a && . /opt/docreview/app.env && set +a
+.venv/bin/python -m alembic upgrade head
 ```
 
 `ANALYSIS_TIMEOUT_SECONDS` поднят: один документ обрабатывается около 40 секунд,
@@ -139,7 +150,7 @@ After=network.target
 User=docreview
 WorkingDirectory=/opt/docreview/src/apps/api
 EnvironmentFile=/opt/docreview/app.env
-ExecStart=/opt/docreview/src/apps/api/.venv/bin/python -m uvicorn docreview_api.main:app --host 127.0.0.1 --port 8000
+ExecStart=/opt/docreview/src/apps/api/.venv/bin/python -m uvicorn docreview_api.main:app --host 127.0.0.1 --port 8010
 Restart=on-failure
 
 [Install]
@@ -168,21 +179,33 @@ systemctl enable --now docreview-api docreview-worker
 
 ### 6. Фронтенд и nginx
 
+**Собирать локально, а не на сервере.** На двух ядрах и 4 ГБ `vite build` рискует
+уйти в OOM, а `node_modules` займёт сотни мегабайт. И ещё: если путь к проекту
+содержит пробел, сборка падает (`Inbox mac` превращается в `Inbox%20mac`) —
+копируйте в каталог без пробелов.
+
 ```bash
-cd /opt/docreview/src/apps/web
-npm ci && npm run build          # результат в dist/
-cp -r dist /opt/docreview/web
+# локально, в каталоге без пробелов
+(cd contracts && npm ci) && (cd apps/web && npm ci && npm run build)
+rsync -az apps/web/dist/ root@СЕРВЕР:/opt/docreview/web/
 ```
+
+Если на 80-м порту уже что-то работает, ставим DocReview на отдельный порт
+и НЕ трогаем чужой конфиг. Перед каждым `reload` — обязательный `nginx -t`
+и копия `sites-available`.
 
 ```nginx
 server {
-    listen 80;
+    listen 8080;
     server_name _;
+
+    auth_basic "DocReview";                       # аутентификации в приложении нет
+    auth_basic_user_file /etc/nginx/.docreview_htpasswd;
     client_max_body_size 55m;          # загрузка до 50 МБ
 
     root /opt/docreview/web;
     location / { try_files $uri /index.html; }
-    location /api/ { proxy_pass http://127.0.0.1:8000; }
+    location /api/ { proxy_pass http://127.0.0.1:8010; proxy_read_timeout 700s; }
 }
 ```
 
@@ -192,14 +215,49 @@ server {
 
 ```bash
 systemctl status docreview-api docreview-worker --no-pager
-curl -s localhost:8000/debug/health
+curl -s localhost:8010/api/health   # именно /api/health
 journalctl -u docreview-worker -n 50 --no-pager
 ```
 
-Сквозной сценарий: загрузить `data/synth/synth_3.txt` через интерфейс,
-дождаться результата, убедиться что замечания появились.
+Сквозной сценарий через API (интерфейс пока показывает только загрузку):
+
+```bash
+PACK=$(curl -s localhost:8010/api/review-packs | python3 -c 'import json,sys;print(json.load(sys.stdin)["items"][0]["review_pack_id"])')
+DOC=$(curl -s -X POST localhost:8010/api/documents -F "document=@файл.docx" | python3 -c 'import json,sys;print(json.load(sys.stdin)["document_id"])')
+KEY=$(python3 -c 'import uuid;print(uuid.uuid4())')
+RID=$(curl -s -X POST localhost:8010/api/reviews -H "Content-Type: application/json" \
+      -H "Idempotency-Key: $KEY" -d "{\"document_id\":\"$DOC\",\"review_pack_id\":\"$PACK\"}" \
+      | python3 -c 'import json,sys;print(json.load(sys.stdin)["review_id"])')
+curl -s localhost:8010/api/reviews/$RID        # статус
+curl -s localhost:8010/api/reviews/$RID/findings
+```
+
+Ожидаемое время: около 40 секунд на документ при локальной модели,
+65–80 секунд, если модель за туннелем.
 
 ---
+
+## Грабли, на которые мы наступили
+
+- **Хеш документа.** Приложение сверяет `document.sha256` из результата с хешем
+  ЗАГРУЖЕННОГО ФАЙЛА. Ядро раньше считало хеш извлечённого текста: на `.txt`
+  совпадало случайно, на `.docx` — никогда, и результат браковался целиком
+  (`ReviewResultProjectionError`). Исправлено в ядре, но если увидите
+  `WORKER_EXECUTION_ERROR` при успешном `result.json` — смотрите сюда.
+- **Настройки валидируются взаимно.** `worker_stale_after_seconds` обязан быть
+  больше `analysis_timeout_seconds` плюс grace, иначе приложение не стартует
+  с невнятной ошибкой pydantic.
+- **Пути в настройках по умолчанию** отсчитываются от корня репозитория,
+  вычисленного относительно пакета. Если раскладка на сервере другая, задавайте
+  `DOCREVIEW_DOCUMENTS_DIR`, `DOCREVIEW_RUNS_DIR`, `DOCREVIEW_REVIEW_PACKS_DIR` явно.
+- **Review Pack надо засеять в базу** с тем же `pack_key`/`version`, что в манифесте
+  пакета, иначе результат ядра будет отвергнут как несоответствующий заданию.
+- **API живёт под префиксом `/api`**: `/api/health`, `/api/docs`. На `/debug/health`
+  будет 404.
+- **`POST /api/reviews` требует заголовок `Idempotency-Key`**, поле загрузки
+  называется `document`, а не `file`.
+- **Ядро запускается одной командой** — в настройку `analysis_executable` нельзя
+  положить «python скрипт.py», нужна исполняемая обёртка.
 
 ## Известные ограничения этого развёртывания
 

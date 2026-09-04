@@ -7,6 +7,7 @@ import { getReviewWithMetadata } from "@/api/reviews";
 import { ErrorReference } from "@/components/error-reference";
 import { PageHeader } from "@/components/page-header";
 import { ReviewProgress } from "@/components/review-progress";
+import { ReviewResults } from "@/components/review-results";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -26,14 +27,17 @@ export function ReviewPage() {
       return response.data.poll_after_ms ?? 2_000;
     },
   });
+  const completed = review.isSuccess && review.data.data.status === "completed";
 
   return (
-    <section className="mx-auto max-w-4xl space-y-8">
-      <PageHeader
-        eyebrow="Проверка документа"
-        title="Следим за ходом анализа"
-        description="Страница обновляется автоматически. Её можно перезагрузить или открыть позднее — идентификатор проверки сохранён в адресе."
-      />
+    <section className={completed ? "space-y-8" : "mx-auto max-w-4xl space-y-8"}>
+      {!completed && (
+        <PageHeader
+          eyebrow="Проверка документа"
+          title="Следим за ходом анализа"
+          description="Страница обновляется автоматически. Её можно перезагрузить или открыть позднее — идентификатор проверки сохранён в адресе."
+        />
+      )}
 
       {review.isPending && (
         <Card aria-live="polite" className="flex items-center gap-3 p-8 text-muted-foreground">
@@ -72,13 +76,15 @@ export function ReviewPage() {
         </Card>
       )}
 
-      {review.isSuccess && (
+      {review.isSuccess && !completed && (
         <ReviewProgress
           correlationId={review.data.correlationId}
           now={review.dataUpdatedAt}
           review={review.data.data}
         />
       )}
+
+      {completed && <ReviewResults review={review.data.data} />}
 
       <p className="break-all text-xs text-muted-foreground">
         ID проверки: <code>{reviewId}</code>

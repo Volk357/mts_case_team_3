@@ -1,0 +1,129 @@
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useLocation } from "react-router-dom";
+
+import type { DocumentResponse } from "@/api/documents";
+import type { ReviewFinding, ReviewState } from "@/api/reviews";
+import { AppProviders } from "@/app-providers";
+import { ReviewResults } from "@/components/review-results";
+
+const { getDocumentMock, getReviewFindingsMock } = vi.hoisted(() => ({
+  getDocumentMock: vi.fn(),
+  getReviewFindingsMock: vi.fn(),
+}));
+
+vi.mock("@/api/documents", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/api/documents")>();
+  return { ...original, getDocument: getDocumentMock };
+});
+
+vi.mock("@/api/reviews", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/api/reviews")>();
+  return { ...original, getReviewFindings: getReviewFindingsMock };
+});
+
+const document: DocumentResponse = {
+  document_id: "document-1",
+  filename: "Технические требования.pdf",
+  size_bytes: 12_345,
+  media_type: "application/pdf",
+  created_at: "2026-09-04T07:00:00Z",
+};
+
+const review: ReviewState = {
+  review_id: "review-42",
+  document_id: document.document_id,
+  review_pack_id: "pack-1",
+  status: "completed",
+  stage: "result_ready",
+  queued_at: "2026-09-04T07:00:00Z",
+  started_at: "2026-09-04T07:00:01Z",
+  finished_at: "2026-09-04T07:01:00Z",
+  poll_after_ms: null,
+  error: null,
+};
+
+const finding = (
+  findingId: string,
+  ordinal: number,
+  severity: ReviewFinding["severity"],
+  defectId: string,
+): ReviewFinding => ({
+  finding_id: findingId,
+  ordinal,
+  defect_id: defectId,
+  severity,
+  confidence: 0.9,
+  location: {
+    page: ordinal + 1,
+    section_path: ["Требования", `Раздел ${ordinal}`],
+    block_id: `block-${ordinal}`,
+  },
+  quote: `Цитата ${ordinal}`,
+  problem: `Проблема ${ordinal}`,
+  clarification: `Уточнение ${ordinal}`,
+});
+
+const findings = [
+  finding("finding-1", 1, "high", "AMBIGUOUS_LOGIC"),
+  finding("finding-2", 2, "medium", "MISSING_SOURCE"),
+  finding("finding-3", 3, "low", "AMBIGUOUS_LOGIC"),
+];
+
+function LocationProbe() {
+  return <output data-testid="location">{useLocation().search}</output>;
+}
+
+function renderResults(initialEntry = "/reviews/review-42") {
+  render(
+    <AppProviders>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <ReviewResults review={review} />
+        <LocationProbe />
+      </MemoryRouter>
+    </AppProviders>,
+  );
+}
+
+beforeEach(() => {
+  getDocumentMock.mockReset().mockResolvedValue(document);
+  getReviewFindingsMock.mockReset().mockResolvedValue({
+    review_id: review.review_id,
+    items: findings,
+    total: findings.length,
+  });
+});
+
+it("builds the result information architecture and restores selection from the URL", async () => {
+  renderResults("/reviews/review-42?finding=finding-2");
+
+  expect(
+    await screen.findByRole("heading", { name: "Технические требования.pdf", level: 1 }),
+  ).toBeVisible();
+  expect(screen.getByText("3", { selector: "strong" })).toBeVisible();
+  expect(screen.getByRole("list", { name: "Замечания" })).toBeVisible();
+  expect(screen.getByText("Область просмотра документа")).toBeVisible();
+  expect(screen.getByText("Цитата 2")).toBeVisible();
+  expect(screen.getByRole("button", { name: /MISSING_SOURCE/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+});
+
+it("filters findings and keeps the active finding in the URL", async () => {
+  const user = userEvent.setup();
+  renderResults();
+
+  await screen.findByRole("heading", { name: "Технические требования.pdf" });
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-1"));
+
+  await user.selectOptions(screen.getByLabelText("Уровень серьёзности"), "low");
+  expect(screen.getByText("Показано: 1 из 3")).toBeVisible();
+  expect(screen.getByRole("button", { name: /#3.*AMBIGUOUS_LOGIC/ })).toBeVisible();
+  expect(screen.queryByRole("button", { name: /MISSING_SOURCE/ })).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-3"));
+
+  await user.selectOptions(screen.getByLabelText("Уровень серьёзности"), "all");
+  await user.click(screen.getByRole("button", { name: /MISSING_SOURCE/ }));
+  expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-2");
+});

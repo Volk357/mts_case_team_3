@@ -1,17 +1,29 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
+import type { DocumentResponse } from "@/api/documents";
 import type { ReviewState } from "@/api/reviews";
 import { AppProviders } from "@/app-providers";
 import { ReviewPage } from "@/pages/review-page";
 
-const { getReviewWithMetadataMock } = vi.hoisted(() => ({
+const { getDocumentMock, getReviewFindingsMock, getReviewWithMetadataMock } = vi.hoisted(() => ({
+  getDocumentMock: vi.fn(),
+  getReviewFindingsMock: vi.fn(),
   getReviewWithMetadataMock: vi.fn(),
 }));
 
+vi.mock("@/api/documents", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/api/documents")>();
+  return { ...original, getDocument: getDocumentMock };
+});
+
 vi.mock("@/api/reviews", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/api/reviews")>();
-  return { ...original, getReviewWithMetadata: getReviewWithMetadataMock };
+  return {
+    ...original,
+    getReviewFindings: getReviewFindingsMock,
+    getReviewWithMetadata: getReviewWithMetadataMock,
+  };
 });
 
 const baseReview: ReviewState = {
@@ -44,7 +56,23 @@ const response = (data: ReviewState, correlationId = "request-review-42") => ({
   correlationId,
 });
 
-beforeEach(() => getReviewWithMetadataMock.mockReset());
+const document: DocumentResponse = {
+  document_id: "document-1",
+  filename: "Требования.pdf",
+  size_bytes: 1_024,
+  media_type: "application/pdf",
+  created_at: "2026-09-04T07:00:00Z",
+};
+
+beforeEach(() => {
+  getReviewWithMetadataMock.mockReset();
+  getDocumentMock.mockReset().mockResolvedValue(document);
+  getReviewFindingsMock.mockReset().mockResolvedValue({
+    review_id: "review-42",
+    items: [],
+    total: 0,
+  });
+});
 
 it("restores a completed review from the route and stops polling", async () => {
   getReviewWithMetadataMock.mockResolvedValue(
@@ -59,7 +87,7 @@ it("restores a completed review from the route and stops polling", async () => {
 
   renderReviewRoute();
 
-  expect(await screen.findByText("Проверка завершена")).toBeVisible();
+  expect(await screen.findByRole("heading", { name: "Требования.pdf", level: 1 })).toBeVisible();
   expect(screen.getByText(/ID проверки:/)).toHaveTextContent("review-42");
   await new Promise((resolve) => setTimeout(resolve, 40));
   expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(1);
@@ -92,11 +120,9 @@ it("polls queued and running states until the review becomes terminal", async ()
     "aria-busy",
     "true",
   );
-  expect(await screen.findByText("Проверка завершена", {}, { timeout: 2_000 })).toBeVisible();
-  expect(screen.getByText("Проверка завершена").closest("[aria-live]")).toHaveAttribute(
-    "aria-busy",
-    "false",
-  );
+  expect(
+    await screen.findByRole("heading", { name: "Требования.pdf", level: 1 }, { timeout: 2_000 }),
+  ).toBeVisible();
   await waitFor(() => expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3));
   await new Promise((resolve) => setTimeout(resolve, 40));
   expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3);

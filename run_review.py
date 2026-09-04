@@ -50,6 +50,20 @@ MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:30b-a3b")
 NUM_CTX = 32768
 TIMEOUT = 900
 
+# Допустимые значения важности. Модель обязана вернуть high/medium/low
+# (см. промпт), но иногда возвращает смесь алфавитов — на реальном документе
+# пришло «clarifiсатио» (латиница + кириллица). Такое значение проходило
+# насквозь и молча становилось medium: и в контракте (_SEV_MAP в docreview),
+# и в ранжировании (_SEV_WEIGHT). То есть замечание наименьшей важности
+# показывалось как среднее, а на экране демо стояло нечитаемое слово.
+SEVERITIES = ("critical", "high", "medium", "low", "clarification")
+
+# Русские формы: модель изредка отвечает на языке документа.
+_SEVERITY_RU = {"высок": "high", "средн": "medium", "низк": "low",
+                "уточн": "clarification"}
+
+
+
 SCHEMA = {
     "type": "array",
     "items": {
@@ -59,7 +73,12 @@ SCHEMA = {
             "defect_id": {"type": "string", "maxLength": 40},
             "explanation": {"type": "string", "maxLength": 300},
             "suggestion": {"type": "string", "maxLength": 200},
-            "severity": {"type": "string", "maxLength": 12},
+            # enum, а не maxLength: ограничение «не длиннее 12» обрезало
+            # законное значение clarification (13 символов) прямо в декодере
+            # модели — на реальном документе пришло «clarifiсатио», ровно
+            # 12 символов из двух алфавитов. Словарь задаётся один раз в
+            # SEVERITIES; normalize_severity остаётся вторым рубежом.
+            "severity": {"type": "string", "enum": list(SEVERITIES)},
         },
         "required": ["quote", "defect_id", "explanation", "suggestion", "severity"],
     },
@@ -436,6 +455,28 @@ def loose_match(quote, source):
     return re.search(pattern, normalize(source)) is not None
 
 
+def normalize_severity(value):
+    """(значение из словаря, было_ли_исправлено).
+
+    Порядок: точное совпадение → однозначный ASCII-префикс (так «clarifiсатио»
+    становится clarification) → русская форма → medium как безопасный запас.
+    Замечание из-за важности НЕ отбрасывается: важность — не основание
+    сомневаться в самой находке.
+    """
+    s = re.sub(r"[\s.,;:]+", "", str(value or "")).lower()
+    if s in SEVERITIES:
+        return s, False
+    prefix = re.match(r"[a-z]*", s).group(0)
+    if len(prefix) >= 3:
+        hits = [x for x in SEVERITIES if x.startswith(prefix)]
+        if len(hits) == 1:
+            return hits[0], True
+    for ru, sev in _SEVERITY_RU.items():
+        if s.startswith(ru):
+            return sev, True
+    return "medium", True
+
+
 def verify(findings, source, valid_ids):
     """
     Проверяет замечания: цитата должна существовать в тексте,
@@ -469,6 +510,11 @@ def verify(findings, source, valid_ids):
             f["reject_reason"] = "self_negated"
             dropped.append(f)
             continue
+
+        sev, corrected = normalize_severity(f.get("severity"))
+        if corrected:
+            f["severity_raw"] = f.get("severity")   # для отчёта и разбора
+        f["severity"] = sev
 
         kept.append(f)
 
@@ -551,6 +597,7 @@ def run(doc_text, mode, taxonomy_text, valid_ids, known_objects,
         "verified": len(all_kept),
         "rejected_count": len(all_dropped),
         "reject_reasons": reasons,
+        "severity_fixed": sum(1 for f in all_kept if "severity_raw" in f),
         "findings": all_kept,
         "rejected": all_dropped,
     }
@@ -589,6 +636,7 @@ def run_global(doc_text, defects, glossary_text):
         "verified": len(kept),
         "rejected_count": len(dropped),
         "reject_reasons": reasons,
+        "severity_fixed": sum(1 for f in kept if "severity_raw" in f),
         "findings": kept,
         "rejected": dropped,
     }
@@ -677,8 +725,9 @@ def dedupe(findings, doc_text, window=500):
         f.pop("_pos", None)
         f.pop("_qn", None)
 
-    kept.sort(key=lambda x: {"high": 0, "medium": 1, "low": 2}.get(
-        x.get("severity", "medium"), 1))
+    # порядок — через _sev_rank, а не через свою копию таблицы: копия не знала
+    # про critical и ставила его в один ряд с medium
+    kept.sort(key=_sev_rank)
 
     return kept, merged
 
@@ -687,10 +736,18 @@ BUDGET_CEILING = 20  # потолок замечаний на документ (
 
 
 def _sev_rank(f):
-    return {"high": 0, "medium": 1, "low": 2}.get(f.get("severity", "medium"), 1)
+    """Класс защиты от бюджета: 0 — не режем (critical и high), дальше по убыванию.
+    critical и high в ОДНОМ классе намеренно: docreview._rank_union считает
+    защищёнными именно ранг 0, и развести их значило бы снять защиту с high."""
+    return {"critical": 0, "high": 0, "medium": 1, "low": 2}.get(
+        f.get("severity", "medium"), 1)
 
 
-_SEV_WEIGHT = {"high": 3, "medium": 2, "low": 1, "clarification": 1}
+# Вес важности внутри класса: critical выше high, чтобы при равной уверенности
+# он шёл первым в выдаче. Значения словаря SEVERITIES покрыты полностью —
+# иначе новое значение молча получало бы вес medium.
+_SEV_WEIGHT = {"critical": 4, "high": 3, "medium": 2, "low": 1,
+               "clarification": 1}
 
 
 def _priority(f):
@@ -717,9 +774,13 @@ def apply_budget(kept, ceiling=BUDGET_CEILING):
         return kept, []
     high = [f for f in kept if _sev_rank(f) == 0]
     rest = [f for f in kept if _sev_rank(f) != 0]
+    # Внутри защищённого класса тоже упорядочиваем по важности: там лежат
+    # и critical, и high, и без сортировки critical оказывался ниже high
+    # просто по порядку поступления.
+    high.sort(key=lambda f: _priority(f), reverse=True)
     rest.sort(key=lambda f: _priority(f), reverse=True)
     slots = max(0, ceiling - len(high))
-    # high впереди (не режутся), затем rest в порядке severity × confidence.
+    # Защищённые впереди (не режутся), затем rest в порядке severity × confidence.
     # Финальную пересортировку по severity НЕ делаем — она бы отменила ранг.
     keep = high + rest[:slots]
     dropped = rest[slots:]
@@ -767,6 +828,7 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
         "capped_away": len(capped),
         "rejected_count": frag["rejected_count"] + glob["rejected_count"],
         "reject_reasons": {**frag["reject_reasons"], **glob["reject_reasons"]},
+        "severity_fixed": sum(1 for f in kept if "severity_raw" in f),
         "findings": kept,
         "merged": merged,
         "capped": capped,
@@ -785,6 +847,9 @@ def summarize(res):
         print(f"  склеено дублей:     {res['merged_away']}")
     print(f"  принято:            {ver} ({share})")
     print(f"  отброшено:          {res['rejected_count']}")
+    if res.get("severity_fixed"):
+        print(f"  важность исправлена: {res['severity_fixed']} "
+              f"(модель вернула значение вне словаря)")
     for k, v in sorted(res["reject_reasons"].items(), key=lambda x: -x[1]):
         print(f"      {k}: {v}")
     print(f"  время:              {res['total_seconds']} с")

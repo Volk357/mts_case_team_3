@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { LoaderCircle } from "lucide-react";
+import { Eye, EyeOff, FileCheck2, LoaderCircle } from "lucide-react";
 
 import { getHealth } from "@/api/health";
 import { ApiError } from "@/api/client";
@@ -19,6 +19,9 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
   const [password, setPassword] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Пароль выдаёт администратор, он длинный и случайный: вслепую на телефоне
+  // его не набрать, поэтому показ пароля — не украшение.
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -41,7 +44,14 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
+    <div className="grid min-h-dvh grid-rows-[auto_minmax(0,1fr)] lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:grid-rows-1">
+      {/* На телефоне вместо большой левой половины — узкая полоса с названием:
+          иначе форма висит на пустом фоне и непонятно, куда вошёл. */}
+      <div className="px-gutter flex items-center gap-2.5 bg-navy py-4 pt-[max(1rem,env(safe-area-inset-top))] font-semibold tracking-tight text-white lg:hidden">
+        <FileCheck2 aria-hidden="true" className="size-5 text-accent" />
+        DocReview
+      </div>
+
       <section className="relative hidden flex-col justify-between overflow-hidden bg-navy px-16 py-14 lg:flex">
         <div
           aria-hidden="true"
@@ -55,10 +65,10 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
           Проверка аналитической документации
         </p>
         <div className="relative max-w-xl">
-          <h1 className="text-4xl leading-[1.15] font-semibold tracking-tight text-white">
+          <h1 className="text-display font-semibold text-balance text-white">
             Вопросы к документу видны до того, как он ушёл в разработку
           </h1>
-          <p className="mt-6 text-lg leading-8 text-white/70">
+          <p className="text-lead mt-6 text-white/70">
             Инструмент читает готовое техническое задание и показывает места, где
             информации не хватает для однозначной реализации. Решение остаётся
             за аналитиком.
@@ -71,14 +81,14 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
         </p>
       </section>
 
-      <section className="flex items-center justify-center px-6 py-16">
+      <section className="px-gutter flex items-center justify-center py-12 pb-[max(3rem,env(safe-area-inset-bottom))] sm:py-16">
         <div className="w-full max-w-sm">
-          <h2 className="text-2xl font-semibold tracking-tight">Вход</h2>
+          <h2 className="text-title font-semibold">Вход</h2>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
             Доступ выдаёт администратор контура.
           </p>
 
-          <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
+          <form className="mt-8 space-y-5" onSubmit={(event) => void handleSubmit(event)}>
             <div className="space-y-2">
               <label className="block text-sm font-medium" htmlFor="login">
                 Логин
@@ -99,16 +109,30 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
               <label className="block text-sm font-medium" htmlFor="password">
                 Пароль
               </label>
-              <input
-                autoComplete="current-password"
-                className="h-11 w-full rounded-(--radius-sm) border border-border bg-card px-3.5 text-[0.9375rem] transition-colors outline-none focus:border-accent"
-                id="password"
-                name="password"
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                type="password"
-                value={password}
-              />
+              <div className="relative">
+                <input
+                  autoComplete="current-password"
+                  className="h-11 w-full rounded-(--radius-sm) border border-border bg-card pr-12 pl-3.5 text-[0.9375rem] transition-colors outline-none focus:border-accent"
+                  id="password"
+                  name="password"
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  type={passwordVisible ? "text" : "password"}
+                  value={password}
+                />
+                <button
+                  aria-label={passwordVisible ? "Скрыть пароль" : "Показать пароль"}
+                  className="absolute inset-y-0 right-0 grid w-11 place-items-center rounded-(--radius-sm) text-text-muted transition-colors hover:text-foreground"
+                  onClick={() => setPasswordVisible((visible) => !visible)}
+                  type="button"
+                >
+                  {passwordVisible ? (
+                    <EyeOff aria-hidden="true" className="size-4" />
+                  ) : (
+                    <Eye aria-hidden="true" className="size-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {error ? (

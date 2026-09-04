@@ -49,13 +49,13 @@ export function HealthPage() {
     <section className="mx-auto max-w-2xl space-y-6">
       <div>
         <p className="mb-2 text-sm font-medium text-primary">Диагностика</p>
-        <h1 className="text-3xl font-semibold tracking-tight">Состояние Backend API</h1>
+        <h1 className="text-title font-semibold">Состояние Backend API</h1>
         <p className="mt-3 text-muted-foreground">
           Эта страница проверяет реальное подключение frontend к сервису приложения.
         </p>
       </div>
 
-      <Card className="p-6" aria-live="polite">
+      <Card className="p-5 sm:p-6" aria-live="polite">
         {state.kind === "loading" && (
           <div className="flex items-center gap-3 text-muted-foreground">
             <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
@@ -65,11 +65,11 @@ export function HealthPage() {
 
         {state.kind === "ready" && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 font-semibold text-emerald-700">
+            <div className="flex items-center gap-3 font-semibold text-green">
               <CircleCheck aria-hidden="true" className="size-6" />
               Backend доступен
             </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
               <dt className="text-muted-foreground">Сервис</dt>
               <dd>{state.data.service}</dd>
               <dt className="text-muted-foreground">Окружение</dt>
@@ -82,7 +82,7 @@ export function HealthPage() {
 
         {state.kind === "error" && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 font-semibold text-red-700">
+            <div className="flex items-center gap-3 font-semibold text-red">
               <CircleAlert aria-hidden="true" className="size-6" />
               Backend недоступен
             </div>

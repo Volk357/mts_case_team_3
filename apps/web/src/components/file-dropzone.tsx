@@ -128,7 +128,7 @@ export function FileDropzone() {
         pack.review_pack_id,
         crypto.randomUUID(),
       );
-      navigate(`/reviews/${review.review_id}`);
+      void navigate(`/reviews/${review.review_id}`);
     } catch (error) {
       setPhase("error");
       setMessage(uploadErrorMessage(error));
@@ -143,13 +143,13 @@ export function FileDropzone() {
 
   return (
     <Card className="overflow-hidden" id="upload">
-      <div className="border-b border-border px-6 py-5 sm:px-8">
-        <h2 className="text-xl font-semibold">Загрузите документ</h2>
+      <div className="border-b border-border px-5 py-5 sm:px-8">
+        <h2 className="text-lg font-semibold sm:text-xl">Загрузите документ</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           PDF или DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
         </p>
       </div>
-      <div className="p-6 sm:p-8">
+      <div className="p-5 sm:p-8">
         <input
           accept={ACCEPTED_FILES}
           aria-hidden="true"
@@ -163,8 +163,10 @@ export function FileDropzone() {
         <div
           aria-label="Область загрузки документа"
           className={cn(
-            "group flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
-            dragging ? "border-primary bg-primary/5" : "border-border bg-muted/35 hover:border-primary/50 hover:bg-primary/[0.03]",
+            "group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-(--radius-card) border-2 border-dashed px-4 py-8 text-center transition-colors sm:min-h-64 sm:px-6 sm:py-10",
+            dragging
+              ? "border-primary bg-primary/5"
+              : "border-border bg-muted/35 hover:border-primary/50 hover:bg-primary/[0.03] active:border-primary/50 active:bg-primary/[0.05]",
             phase === "uploading" && "cursor-wait",
           )}
           onClick={openPicker}
@@ -188,19 +190,25 @@ export function FileDropzone() {
         >
           {file ? (
             <>
-              <span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-                <FileText aria-hidden="true" className="size-7" />
+              <span className="grid size-12 place-items-center rounded-(--radius-card) bg-primary/10 text-primary sm:size-14">
+                <FileText aria-hidden="true" className="size-6 sm:size-7" />
               </span>
               <p className="mt-4 max-w-full truncate font-semibold">{file.name}</p>
               <p className="mt-1 text-sm text-muted-foreground">{formatBytes(file.size)}</p>
             </>
           ) : (
             <>
-              <span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-                <UploadCloud aria-hidden="true" className="size-7" />
+              <span className="grid size-12 place-items-center rounded-(--radius-card) bg-primary/10 text-primary sm:size-14">
+                <UploadCloud aria-hidden="true" className="size-6 sm:size-7" />
               </span>
-              <p className="mt-4 font-semibold">Перетащите файл сюда</p>
-              <p className="mt-1 text-sm text-muted-foreground">или нажмите, чтобы выбрать</p>
+              {/* Пальцем файл не перетаскивают: на тач-экране обещаем то, что работает */}
+              <p className="mt-4 font-semibold pointer-coarse:hidden">Перетащите файл сюда</p>
+              <p className="mt-1 text-sm text-muted-foreground pointer-coarse:hidden">
+                или нажмите, чтобы выбрать
+              </p>
+              <p className="mt-4 hidden font-semibold pointer-coarse:block">
+                Нажмите, чтобы выбрать файл
+              </p>
             </>
           )}
         </div>
@@ -225,7 +233,10 @@ export function FileDropzone() {
         )}
 
         {message && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-(--radius-sm) bg-red-soft px-4 py-3 text-sm leading-6 text-red"
+          >
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{message}</span>
           </div>
@@ -243,16 +254,21 @@ export function FileDropzone() {
 
         {file && phase !== "uploading" && (
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            <Button onClick={openPicker} type="button" variant="secondary">
+            <Button className="w-full sm:w-auto" onClick={openPicker} type="button" variant="secondary">
               <RefreshCw aria-hidden="true" className="size-4" />
               Заменить файл
             </Button>
             {phase === "success" || phase === "starting" ? (
-              <Button disabled={phase === "starting"} onClick={() => void startReview()} type="button">
+              <Button
+                className="w-full sm:w-auto"
+                disabled={phase === "starting"}
+                onClick={() => void startReview()}
+                type="button"
+              >
                 {phase === "starting" ? "Запускаем проверку" : "Проверить документ"}
               </Button>
             ) : (
-              <Button onClick={() => void startUpload()} type="button">
+              <Button className="w-full sm:w-auto" onClick={() => void startUpload()} type="button">
                 Загрузить документ
               </Button>
             )}

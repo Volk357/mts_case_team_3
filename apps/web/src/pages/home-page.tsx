@@ -2,7 +2,6 @@ import { ArrowDown, Building2, FileSearch, ShieldCheck } from "lucide-react";
 
 import { FileDropzone } from "@/components/file-dropzone";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 
 const benefits = [
   {
@@ -24,35 +23,40 @@ const benefits = [
 
 export function HomePage() {
   return (
-    <div className="space-y-12">
-      <section className="max-w-3xl space-y-6 py-8">
-        <h1 className="max-w-3xl text-[2.75rem] leading-[1.15] font-semibold tracking-tight">
+    <div className="space-y-10 sm:space-y-14">
+      <section className="space-y-5 sm:space-y-6 sm:py-4">
+        <h1 className="max-w-2xl text-display font-semibold text-balance">
           Найдите вопросы к документу до передачи в разработку
         </h1>
-        <p className="max-w-2xl text-lg leading-8 text-text-secondary">
+        <p className="text-lead max-w-2xl text-text-secondary">
           DocReview проверяет готовый документ по правилам вашей организации и показывает, где
           информации недостаточно для однозначной реализации.
         </p>
-        <Button asChild>
+        {/* На телефоне область загрузки и так следующая на экране — якорь там лишний */}
+        <Button asChild className="hidden sm:inline-flex">
           <a href="#upload">
-            Загрузить документ
+            Начать проверку
             <ArrowDown aria-hidden="true" className="size-4" />
           </a>
         </Button>
       </section>
 
-      <section aria-label="Загрузка документа" className="max-w-3xl">
+      <section aria-label="Загрузка документа">
         <FileDropzone />
       </section>
 
-      <section aria-label="Преимущества" className="grid gap-4 md:grid-cols-3">
-        {benefits.map(({ icon: Icon, title, text }) => (
-          <Card className="p-6" key={title}>
-            <Icon aria-hidden="true" className="mb-5 size-5 text-accent" />
-            <h2 className="mb-2 font-semibold">{title}</h2>
-            <p className="text-sm leading-6 text-text-secondary">{text}</p>
-          </Card>
-        ))}
+      {/* Не карточки: три коротких утверждения на общем фоне читаются подряд
+          и на узком экране не превращаются в три одинаковых плитки. */}
+      <section aria-label="Как устроена проверка">
+        <dl className="grid gap-px overflow-hidden rounded-(--radius-card) border border-border bg-border sm:grid-cols-3">
+          {benefits.map(({ icon: Icon, title, text }) => (
+            <div className="bg-card p-5 sm:p-6" key={title}>
+              <Icon aria-hidden="true" className="mb-4 size-5 text-accent" />
+              <dt className="mb-1.5 font-semibold">{title}</dt>
+              <dd className="text-sm leading-6 text-text-secondary">{text}</dd>
+            </div>
+          ))}
+        </dl>
       </section>
     </div>
   );

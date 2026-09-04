@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as renderComponent, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 
 import { ApiError } from "@/api/client";
@@ -16,6 +17,12 @@ vi.mock("@/api/documents", () => ({
 
 const pdf = (name = "Требования.pdf") =>
   new File(["%PDF-1.7\n%%EOF"], name, { type: "application/pdf" });
+
+// FileDropzone уводит на страницу проверки через useNavigate: без роутера
+// он падает ещё на рендере.
+function render(ui: React.ReactElement) {
+  return renderComponent(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 function fileInput(): HTMLInputElement {
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -95,7 +102,7 @@ it("renders upload progress and a successful result", async () => {
       media_type: "application/pdf",
     });
   });
-  expect(await screen.findByText("Документ загружен и готов к проверке.")).toBeInTheDocument();
+  expect(await screen.findByText("Документ загружен. Проверка занимает около минуты.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Заменить файл" })).toBeEnabled();
 });
 

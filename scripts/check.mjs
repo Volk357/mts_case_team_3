@@ -15,14 +15,18 @@ requireVirtualEnvironment();
 run(venvPython, ["-m", "unittest", "discover", "-s", "tests", "-p", "test_*.py"], {
   cwd: repositoryDirectory,
 });
-run(venvPython, ["-m", "ruff", "check", "src", "tests", "alembic"], {
+run(venvPython, ["-m", "ruff", "check", "src", "tests", "scripts", "alembic"], {
   cwd: apiDirectory,
 });
-run(venvPython, ["-m", "ruff", "format", "--check", "src", "tests", "alembic"], {
+run(venvPython, ["-m", "ruff", "format", "--check", "src", "tests", "scripts", "alembic"], {
   cwd: apiDirectory,
 });
 run(venvPython, ["-m", "mypy"], { cwd: apiDirectory });
-run(venvPython, ["-m", "pytest", "--cov"], { cwd: apiDirectory });
+run(
+  venvPython,
+  ["-m", "pytest", "--cov", "--basetemp", ".tmp-pytest-check", "-p", "no:cacheprovider"],
+  { cwd: apiDirectory },
+);
 run(venvPython, ["-m", "ruff", "check", "src", "tests", "tools"], {
   cwd: mockCoreDirectory,
 });
@@ -30,7 +34,11 @@ run(venvPython, ["-m", "ruff", "format", "--check", "src", "tests", "tools"], {
   cwd: mockCoreDirectory,
 });
 run(venvPython, ["-m", "mypy"], { cwd: mockCoreDirectory });
-run(venvPython, ["-m", "pytest", "--cov"], { cwd: mockCoreDirectory });
+run(
+  venvPython,
+  ["-m", "pytest", "--cov", "--basetemp", ".tmp-pytest-check", "-p", "no:cacheprovider"],
+  { cwd: mockCoreDirectory },
+);
 runNpm(["run", "check"], { cwd: contractsDirectory });
 runNpm(["run", "lint"], { cwd: webDirectory });
 runNpm(["run", "typecheck"], { cwd: webDirectory });

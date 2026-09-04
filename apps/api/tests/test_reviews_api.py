@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -104,6 +105,30 @@ async def test_create_is_async_idempotent_and_pollable(
 
 
 @pytest.mark.anyio
+async def test_concurrent_polling_returns_consistent_public_snapshots(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/reviews",
+            json={"document_id": str(document_id), "review_pack_id": str(pack_id)},
+            headers={"Idempotency-Key": "concurrent-polling"},
+        )
+        location = created.headers["Location"]
+        responses = await asyncio.gather(*(client.get(location) for _ in range(16)))
+
+    assert {response.status_code for response in responses} == {200}
+    assert {response.headers["Retry-After"] for response in responses} == {"3"}
+    assert {response.json()["review_id"] for response in responses} == {created.json()["review_id"]}
+    assert {response.json()["status"] for response in responses} == {"queued"}
+    assert {response.json()["stage"] for response in responses} == {"waiting"}
+    assert {response.json()["poll_after_ms"] for response in responses} == {3000}
+
+
+@pytest.mark.anyio
 async def test_create_distinguishes_missing_resources_and_idempotency_conflicts(
     review_resources: tuple[Settings, UUID, UUID],
 ) -> None:
@@ -194,7 +219,9 @@ async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         status_response = await client.get(f"/api/reviews/{review_id}")
         findings_response = await client.get(f"/api/reviews/{review_id}/findings")
-        unknown = await client.get(f"/api/reviews/{uuid4()}")
+        unknown_id = uuid4()
+        unknown = await client.get(f"/api/reviews/{unknown_id}")
+        unknown_findings = await client.get(f"/api/reviews/{unknown_id}/findings")
 
     status_payload = status_response.json()
     assert status_payload["status"] == "completed"
@@ -214,3 +241,5 @@ async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
     assert "core-0" not in serialized_findings
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "REVIEW_NOT_FOUND"
+    assert unknown_findings.status_code == 404
+    assert unknown_findings.json()["error"]["code"] == "REVIEW_NOT_FOUND"

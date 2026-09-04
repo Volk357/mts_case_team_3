@@ -38,6 +38,16 @@ GET http://127.0.0.1:8000/api/health
 [`docs/api-conventions.md`](../../docs/api-conventions.md). OpenAPI доступен по
 `GET /api/openapi.json`, Swagger UI — по `/api/docs`.
 
+Примеры полного HTTP-сценария и каталог публичных ошибок находятся в
+[`docs/backend-api.md`](../../docs/backend-api.md). Зафиксированный OpenAPI-контракт —
+[`openapi.json`](openapi.json). Обновить его после изменения endpoint или transport schema:
+
+```powershell
+cd apps/api
+.venv\Scripts\python scripts\generate_openapi.py
+.venv\Scripts\pytest tests\test_openapi_snapshot.py
+```
+
 ## База данных
 
 Локальные профили используют SQLite в игнорируемом каталоге `data/`. ORM-схема
@@ -64,10 +74,10 @@ Schema автоматически не создаётся при импорте 
 ## Quality gate
 
 ```powershell
-.venv\Scripts\python -m ruff check src tests alembic
-.venv\Scripts\python -m ruff format --check src tests alembic
+.venv\Scripts\python -m ruff check src tests scripts alembic
+.venv\Scripts\python -m ruff format --check src tests scripts alembic
 .venv\Scripts\python -m mypy
-.venv\Scripts\python -m pytest --cov
+.venv\Scripts\python -m pytest --cov --basetemp .tmp-pytest-check -p no:cacheprovider
 ```
 
 ## Обновление lock-файла

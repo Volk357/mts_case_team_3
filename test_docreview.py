@@ -15,7 +15,7 @@ except ImportError:                       # на свежем клоне без 
     jsonschema = None
 
 from docreview import (build_review_result, failed_result,
-                       _read_document, UnsupportedBinary)
+                       _read_document, UnsupportedBinary, BUDGET)
 
 
 def _validate(obj):
@@ -175,6 +175,93 @@ def test_unsupported_format_failed_result_valid_against_contract():
     _validate(fr)
 
 
+def _f(did, sev, q, det_layer=False, merged=1):
+    d = {"defect_id": did, "quote": q, "explanation": "почему", "suggestion": "как",
+         "severity": sev}
+    if merged > 1:
+        d["merged_count"] = merged
+    return d
+
+
+def test_high_not_dropped_by_many_formal_findings():
+    # R11: раньше был срез по позиции — 15 формальных medium вытесняли все high модели
+    formal = [_f("PLACEHOLDER_LEFT", "medium", "q%d" % i) for i in range(15)]
+    llm = [_f("INTERNAL_CONTRADICTION", "high", "h%d" % i) for i in range(8)]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-1", "p", "m",
+                            {"fragment": "x"}, 0)
+    assert len(r["findings"]) == BUDGET
+    assert sum(1 for f in r["findings"] if f["severity"] == "high") == 8
+    _validate(r)
+
+
+def test_deterministic_not_displaced_by_model_medium():
+    formal = [_f("NULLABILITY_UNSPECIFIED", "medium", "d%d" % i) for i in range(5)]
+    llm = [_f("AMBIGUOUS_LOGIC", "medium", "m%d" % i, merged=3) for i in range(25)]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-2", "p", "m",
+                            {"fragment": "x"}, 0)
+    det = [f for f in r["findings"] if f["detected_by"] == ["deterministic"]]
+    assert len(det) == 5, "детерминированные не должны вытесняться модельными"
+    assert len(r["findings"]) == BUDGET
+
+
+def test_high_first_in_output_order():
+    formal = [_f("PLACEHOLDER_LEFT", "medium", "q1")]
+    llm = [_f("AMBIGUOUS_LOGIC", "low", "l1"), _f("INTERNAL_CONTRADICTION", "high", "h1")]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-3", "p", "m",
+                            {"fragment": "x"}, 0)
+    assert r["findings"][0]["severity"] == "high"
+
+
+def test_nothing_lost_when_under_budget():
+    formal = [_f("PLACEHOLDER_LEFT", "medium", "q1")]
+    llm = [_f("AMBIGUOUS_LOGIC", "low", "l1"), _f("NO_SCHEDULE", "medium", "m1")]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-4", "p", "m",
+                            {"fragment": "x"}, 0)
+    assert len(r["findings"]) == 3
+    assert {f["quote"] for f in r["findings"]} == {"q1", "l1", "m1"}
+
+
+def test_ceiling_holds_when_protected_alone_exceeds_it():
+    formal = [_f("PLACEHOLDER_LEFT", "medium", "q%d" % i) for i in range(30)]
+    r = build_review_result(DOC, "d.txt", "txt", formal, [], "run-5", "p", "m",
+                            {"fragment": "x"}, 0)
+    assert len(r["findings"]) == BUDGET     # схема контракта: maxItems 20
+    _validate(r)
+
+
+def test_more_confident_medium_wins_the_last_slot():
+    formal = []
+    llm = ([_f("INTERNAL_CONTRADICTION", "high", "h%d" % i) for i in range(19)]
+           + [_f("AMBIGUOUS_LOGIC", "medium", "слабое замечание модели"),
+              _f("NO_SCHEDULE", "medium", "уверенное замечание модели", merged=4)])
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-6", "p", "m",
+                            {"fragment": "x"}, 0)
+    quotes = [f["quote"] for f in r["findings"]]
+    assert "уверенное замечание модели" in quotes
+    assert "слабое замечание модели" not in quotes
+
+
+def test_output_order_is_global_not_protected_first():
+    # блокер круга 1: детерминированный low стоял выше модельного medium
+    formal = [_f("VAGUE_WORDING", "low", "детерминированный low")]
+    llm = [_f("AMBIGUOUS_LOGIC", "medium", "модельный medium")]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-7", "p", "m",
+                            {"fragment": "x"}, 0)
+    assert [f["quote"] for f in r["findings"]] == ["модельный medium",
+                                                   "детерминированный low"]
+
+
+def test_protection_still_decides_who_survives():
+    # порядок общий, но отбор прежний: детерминированный low не вытесняется
+    formal = [_f("VAGUE_WORDING", "low", "детерминированный low")]
+    llm = [_f("AMBIGUOUS_LOGIC", "medium", "m%d" % i, merged=3) for i in range(25)]
+    r = build_review_result(DOC, "d.txt", "txt", formal, llm, "run-8", "p", "m",
+                            {"fragment": "x"}, 0)
+    quotes = [f["quote"] for f in r["findings"]]
+    assert "детерминированный low" in quotes and len(quotes) == BUDGET
+    assert quotes[-1] == "детерминированный low"      # выжил, но в хвосте выдачи
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -189,6 +276,14 @@ if __name__ == "__main__":
     test_txt_still_read_without_warnings()
     test_extracted_text_under_docx_name_still_works_with_warning()
     test_unsupported_format_failed_result_valid_against_contract()
+    test_high_not_dropped_by_many_formal_findings()
+    test_deterministic_not_displaced_by_model_medium()
+    test_high_first_in_output_order()
+    test_nothing_lost_when_under_budget()
+    test_ceiling_holds_when_protected_alone_exceeds_it()
+    test_more_confident_medium_wins_the_last_slot()
+    test_output_order_is_global_not_protected_first()
+    test_protection_still_decides_who_survives()
     shutil.rmtree(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                "_tmp_docreview"), ignore_errors=True)
     print("все тесты пройдены")

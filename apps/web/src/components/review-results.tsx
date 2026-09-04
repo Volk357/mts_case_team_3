@@ -5,7 +5,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { getDocument } from "@/api/documents";
 import { getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/reviews";
-import { DocumentPreview } from "@/components/document-preview";
+import { DocumentViewer } from "@/components/document-viewer";
 import { FindingsFilters, type SeverityFilter } from "@/components/findings-filters";
 import { FindingsList } from "@/components/findings-list";
 import { ReviewSummary } from "@/components/review-summary";
@@ -122,7 +122,7 @@ export function ReviewResults({ review }: { review: ReviewState }) {
             selectedFindingId={selectedFinding?.finding_id}
           />
         </section>
-        <DocumentPreview document={document.data} finding={selectedFinding} />
+        <DocumentViewer document={document.data} finding={selectedFinding} />
       </div>
     </div>
   );

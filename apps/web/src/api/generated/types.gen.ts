@@ -530,6 +530,66 @@ export type GetDocumentApiDocumentsDocumentIdGetResponses = {
 
 export type GetDocumentApiDocumentsDocumentIdGetResponse = GetDocumentApiDocumentsDocumentIdGetResponses[keyof GetDocumentApiDocumentsDocumentIdGetResponses];
 
+export type GetDocumentContentApiDocumentsDocumentIdContentGetData = {
+    body?: never;
+    path: {
+        /**
+         * Document Id
+         *
+         * Opaque resource identifier. Clients must not infer meaning from it.
+         */
+        document_id: string;
+    };
+    query?: never;
+    url: '/api/documents/{document_id}/content';
+};
+
+export type GetDocumentContentApiDocumentsDocumentIdContentGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type GetDocumentContentApiDocumentsDocumentIdContentGetError = GetDocumentContentApiDocumentsDocumentIdContentGetErrors[keyof GetDocumentContentApiDocumentsDocumentIdContentGetErrors];
+
+export type GetDocumentContentApiDocumentsDocumentIdContentGetResponses = {
+    /**
+     * Original document content for the authenticated tenant.
+     */
+    200: Blob | File;
+};
+
+export type GetDocumentContentApiDocumentsDocumentIdContentGetResponse = GetDocumentContentApiDocumentsDocumentIdContentGetResponses[keyof GetDocumentContentApiDocumentsDocumentIdContentGetResponses];
+
 export type PutFindingFeedbackApiFindingsFindingIdFeedbackPutData = {
     body: FeedbackUpsertRequest;
     headers: {

@@ -30,6 +30,13 @@ class DocumentSnapshot:
     created_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class DocumentContentSnapshot:
+    path: Path
+    filename: str
+    media_type: str
+
+
 class DocumentQueryService:
     """Return verified public metadata without exposing storage implementation."""
 
@@ -64,7 +71,27 @@ class DocumentQueryService:
                 created_at=created_at.astimezone(UTC),
             )
 
-    def _require_storage_object(self, storage_key: str, *, expected_size: int) -> None:
+    def get_content(self, document_id: UUID, *, company_id: UUID) -> DocumentContentSnapshot:
+        with self._session_factory() as session:
+            statement = select(DocumentModel).where(
+                DocumentModel.id == document_id,
+                DocumentModel.company_id == company_id,
+                DocumentModel.deleted_at.is_(None),
+            )
+            document = session.scalar(statement)
+            if document is None:
+                raise DocumentUnavailableError("document is unavailable")
+            path = self._require_storage_object(
+                document.storage_key,
+                expected_size=document.size_bytes,
+            )
+            return DocumentContentSnapshot(
+                path=path,
+                filename=document.original_filename,
+                media_type=document.media_type,
+            )
+
+    def _require_storage_object(self, storage_key: str, *, expected_size: int) -> Path:
         key = PurePosixPath(storage_key)
         if (
             not storage_key
@@ -90,3 +117,4 @@ class DocumentQueryService:
             raise DocumentFileUnavailableError(
                 "document storage object size does not match metadata"
             )
+        return resolved

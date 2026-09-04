@@ -19,6 +19,7 @@ def test_generated_openapi_matches_application() -> None:
     assert set(checked_in["paths"]) >= {
         "/api/documents",
         "/api/documents/{document_id}",
+        "/api/documents/{document_id}/content",
         "/api/review-packs",
         "/api/reviews",
         "/api/reviews/{review_id}",

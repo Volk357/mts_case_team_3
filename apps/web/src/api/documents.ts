@@ -13,6 +13,10 @@ export function getDocument(documentId: string, signal?: AbortSignal) {
   });
 }
 
+export function getDocumentContentUrl(documentId: string): string {
+  return `${appConfig.apiBaseUrl}/api/documents/${encodeURIComponent(documentId)}/content`;
+}
+
 export function uploadDocument(
   file: File,
   onProgress: (percent: number) => void,

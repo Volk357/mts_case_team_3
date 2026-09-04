@@ -102,8 +102,13 @@ it("builds the result information architecture and restores selection from the U
   ).toBeVisible();
   expect(screen.getByText("3", { selector: "strong" })).toBeVisible();
   expect(screen.getByRole("list", { name: "Замечания" })).toBeVisible();
-  expect(screen.getByText("Область просмотра документа")).toBeVisible();
-  expect(screen.getByText("Цитата 2")).toBeVisible();
+  expect(screen.getByRole("heading", { name: "Просмотр документа" })).toBeVisible();
+  const viewerSource = screen
+    .getByTitle("Просмотр документа Технические требования.pdf")
+    .getAttribute("src");
+  expect(new URLSearchParams(viewerSource?.split("#")[1] ?? "").get("search")).toBe(
+    '"Цитата 2"',
+  );
   expect(screen.getByRole("button", { name: /MISSING_SOURCE/ })).toHaveAttribute(
     "aria-pressed",
     "true",

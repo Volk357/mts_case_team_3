@@ -1,6 +1,7 @@
 """Application use cases and orchestration services."""
 
 from docreview_api.services.documents import (
+    DocumentContentSnapshot,
     DocumentFileUnavailableError,
     DocumentQueryService,
     DocumentSnapshot,
@@ -70,6 +71,7 @@ __all__ = [
     "ClaimedReviewJob",
     "ControlledProcessResult",
     "DatabaseReviewJobQueue",
+    "DocumentContentSnapshot",
     "DocumentFileUnavailableError",
     "DocumentQueryService",
     "DocumentSnapshot",

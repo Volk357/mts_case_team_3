@@ -1,5 +1,5 @@
 import { ApiError } from "@/api/client";
-import { getDocument, uploadDocument } from "@/api/documents";
+import { getDocument, getDocumentContentUrl, uploadDocument } from "@/api/documents";
 
 type EventListener = (event: ProgressEvent) => void;
 
@@ -141,4 +141,10 @@ it("loads one document through its opaque encoded id", async () => {
   const [url, init] = fetchMock.mock.calls[0] ?? [];
   expect(url).toBe("/api/documents/document%2Fid");
   expect(new Headers(init?.headers).get("Accept")).toBe("application/json");
+});
+
+it("builds a safe content URL from the configured API base", () => {
+  expect(getDocumentContentUrl("document/id")).toBe(
+    "/api/documents/document%2Fid/content",
+  );
 });

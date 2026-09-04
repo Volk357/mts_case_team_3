@@ -1,8 +1,11 @@
 """Document upload HTTP endpoint."""
 
+from pathlib import Path
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.api.schemas.common import OpaqueId
@@ -138,3 +141,51 @@ def get_document(
             "Document content is temporarily unavailable.",
         ) from error
     return _public_document(snapshot)
+
+
+@router.get(
+    "/{document_id}/content",
+    response_class=FileResponse,
+    responses={
+        200: {
+            "content": {
+                "application/pdf": {},
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {},
+            },
+            "description": "Original document content for the authenticated tenant.",
+        }
+    },
+)
+def get_document_content(
+    document_id: OpaqueId,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+) -> FileResponse:
+    """Stream verified private content without exposing its storage location."""
+
+    try:
+        content = DocumentQueryService(
+            session_factory,
+            documents_root=settings.documents_dir,
+        ).get_content(document_id, company_id=settings.default_company_id)
+    except DocumentUnavailableError as error:
+        raise ApiError(404, "DOCUMENT_NOT_FOUND", "Document was not found.") from error
+    except DocumentFileUnavailableError as error:
+        raise ApiError(
+            409,
+            "DOCUMENT_FILE_UNAVAILABLE",
+            "Document content is temporarily unavailable.",
+        ) from error
+
+    fallback_name = f"document{Path(content.filename).suffix.lower()}"
+    encoded_name = quote(content.filename)
+    disposition = f"inline; filename=\"{fallback_name}\"; filename*=UTF-8''{encoded_name}"
+    return FileResponse(
+        content.path,
+        media_type=content.media_type,
+        headers={
+            "Cache-Control": "private, no-store",
+            "Content-Disposition": disposition,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )

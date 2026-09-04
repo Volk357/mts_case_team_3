@@ -222,6 +222,70 @@ async def test_get_document_returns_verified_metadata_with_utc_date(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("filename", "media_type", "content"),
+    [
+        ("Требования.pdf", PDF_MEDIA_TYPE, b"%PDF-1.7\nviewer\n%%EOF"),
+        ("Specification.docx", DOCX_MEDIA_TYPE, docx_bytes()),
+    ],
+)
+async def test_get_document_content_streams_verified_file_inline(
+    filename: str,
+    media_type: str,
+    content: bytes,
+    upload_settings: Settings,
+) -> None:
+    app = create_app(upload_settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": (filename, content, media_type)},
+        )
+        response = await client.get(f"/api/documents/{uploaded.json()['document_id']}/content")
+        ranged = await client.get(
+            f"/api/documents/{uploaded.json()['document_id']}/content",
+            headers={"Range": "bytes=0-7"},
+        )
+
+    assert response.status_code == 200
+    assert response.content == content
+    assert response.headers["content-type"] == media_type
+    assert response.headers["cache-control"] == "private, no-store"
+    assert response.headers["x-content-type-options"] == "nosniff"
+    assert response.headers["content-disposition"].startswith("inline;")
+    assert response.headers["accept-ranges"] == "bytes"
+    assert ranged.status_code == 206
+    assert ranged.content == content[:8]
+    assert str(upload_settings.documents_dir) not in str(response.headers)
+
+
+@pytest.mark.anyio
+async def test_get_document_content_returns_safe_errors(upload_settings: Settings) -> None:
+    app = create_app(upload_settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        missing = await client.get(f"/api/documents/{UUID(int=999)}/content")
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("document.pdf", b"%PDF-1.7\n%%EOF", PDF_MEDIA_TYPE)},
+        )
+        document_id = UUID(uploaded.json()["document_id"])
+        engine = create_database_engine(upload_settings.database_url)
+        sessions = create_session_factory(engine)
+        with sessions() as session:
+            document = DocumentRepository(session).require(document_id)
+            stored_path = upload_settings.documents_dir.joinpath(*document.storage_key.split("/"))
+        engine.dispose()
+        stored_path.unlink()
+        unavailable = await client.get(f"/api/documents/{document_id}/content")
+
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "DOCUMENT_NOT_FOUND"
+    assert unavailable.status_code == 409
+    assert unavailable.json()["error"]["code"] == "DOCUMENT_FILE_UNAVAILABLE"
+    assert str(stored_path) not in unavailable.text
+
+
+@pytest.mark.anyio
 async def test_get_unknown_and_deleted_documents_returns_same_safe_not_found(
     upload_settings: Settings,
 ) -> None:

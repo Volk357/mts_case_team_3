@@ -169,6 +169,14 @@ def test_migration_upgrades_empty_database_and_downgrades_one_step(tmp_path: Pat
         constraint["name"]
         for constraint in database_inspector.get_unique_constraints("review_jobs")
     }
+    assert {
+        "ck_finding_feedback_actor_key_length",
+        "ck_finding_feedback_comment_length",
+        "ck_finding_feedback_decision_valid",
+    } <= {
+        constraint["name"]
+        for constraint in database_inspector.get_check_constraints("finding_feedback")
+    }
     migrated_engine.dispose()
     command.check(configuration)
 
@@ -315,12 +323,56 @@ def test_feedback_upsert_does_not_change_source_finding(
             comment="Checked against source",
         )
         assert updated.id == feedback_id
+        assert updated.submitted_by_user_id == user.id
+        assert updated.actor_key == "analyst-session"
+        assert updated.created_at is not None
+        assert updated.updated_at is not None
         assert finding.problem == original_problem
 
     with sessions() as session:
         feedback_count = session.scalar(select(func.count()).select_from(FindingFeedbackModel))
         assert feedback_count == 1
         assert FindingRepository(session).list_for_job(job.id)[0].problem == original_problem
+
+
+@pytest.mark.parametrize(
+    ("decision", "actor_key", "comment"),
+    [
+        ("unexpected", "analyst-session", None),
+        ("accepted", "", None),
+        ("accepted", "analyst-session", "x" * 4001),
+    ],
+)
+def test_feedback_database_rejects_values_outside_model_contract(
+    sessions: sessionmaker[Session],
+    decision: str,
+    actor_key: str,
+    comment: str | None,
+) -> None:
+    company, user, _, _, job = seed_job(sessions)
+    start_job(sessions, job.id)
+    complete_review_job(
+        sessions,
+        job.id,
+        snapshot_for(),
+        at=STARTED_AT + timedelta(seconds=2),
+    )
+
+    with sessions() as session:
+        finding = FindingRepository(session).list_for_job(job.id)[0]
+        session.add(
+            FindingFeedbackModel(
+                company_id=company.id,
+                finding_id=finding.id,
+                submitted_by_user_id=user.id,
+                actor_key=actor_key,
+                decision=decision,
+                comment=comment,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            session.flush()
+        session.rollback()
 
 
 def test_repository_rejects_cross_company_review_job(sessions: sessionmaker[Session]) -> None:

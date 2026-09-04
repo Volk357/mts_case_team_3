@@ -51,6 +51,7 @@ class FindingFeedbackService:
         actor_key: str,
         decision: FeedbackDecision,
         comment: str | None,
+        submitted_by_user_id: UUID | None = None,
     ) -> FeedbackSnapshot:
         actor = self._validate_actor_key(actor_key)
         normalized_comment = self._validate_comment(comment)
@@ -69,6 +70,7 @@ class FindingFeedbackService:
             actor_key=actor,
             decision=decision.value,
             comment=normalized_comment,
+            submitted_by_user_id=submitted_by_user_id,
         )
         return self._snapshot(feedback)
 

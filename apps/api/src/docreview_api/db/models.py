@@ -232,6 +232,19 @@ class FindingModel(Base):
 class FindingFeedbackModel(TimestampMixin, Base):
     __tablename__ = "finding_feedback"
     __table_args__ = (
+        CheckConstraint(
+            "decision IN ('accepted', 'false_positive', 'allowed_exception', "
+            "'already_described', 'not_relevant')",
+            name="decision_valid",
+        ),
+        CheckConstraint(
+            "length(actor_key) >= 1 AND length(actor_key) <= 255",
+            name="actor_key_length",
+        ),
+        CheckConstraint(
+            "comment IS NULL OR length(comment) <= 4000",
+            name="comment_length",
+        ),
         UniqueConstraint("finding_id", "actor_key", name="uq_feedback_finding_actor"),
     )
 

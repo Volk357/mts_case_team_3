@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { AppProviders } from "@/app-providers";
 import { HomePage } from "@/pages/home-page";
@@ -32,7 +33,9 @@ it("requires a valid document and Review Pack before upload", async () => {
   const user = userEvent.setup();
   render(
     <AppProviders>
-      <HomePage />
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>
     </AppProviders>,
   );
 

@@ -10,6 +10,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import type { DocumentUploadResponse } from "@/api/documents";
@@ -57,6 +58,7 @@ function reviewErrorMessage(error: unknown): string {
 }
 
 export function HomePage() {
+  const navigate = useNavigate();
   const [reviewPackId, setReviewPackId] = useState("");
   const [uploadedDocument, setUploadedDocument] = useState<DocumentUploadResponse | null>(null);
   const [submission, setSubmission] = useState<SubmissionState>({ kind: "idle" });
@@ -76,6 +78,7 @@ export function HomePage() {
       setReviewPackId("");
       setResetToken((current) => current + 1);
       setSubmission({ kind: "success", reviewId: review.review_id });
+      void navigate(`/reviews/${encodeURIComponent(review.review_id)}`);
     } catch (error) {
       setSubmission({ kind: "error", message: reviewErrorMessage(error) });
     }

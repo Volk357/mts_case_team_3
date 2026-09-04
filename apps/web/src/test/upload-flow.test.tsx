@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { AppProviders } from "@/app-providers";
@@ -66,7 +67,9 @@ async function prepareForm() {
   const user = userEvent.setup();
   render(
     <AppProviders>
-      <HomePage />
+      <MemoryRouter>
+        <HomePage />
+      </MemoryRouter>
     </AppProviders>,
   );
   const selector = await screen.findByRole("combobox", { name: "Профиль проверки" });

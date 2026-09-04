@@ -58,6 +58,8 @@ Frontend импортирует `ReviewResult`, `Finding` и связанные 
 
 - `/` — стартовая страница, выбор опубликованного Review Pack и загрузка PDF/DOCX
   с drag-and-drop и прогрессом;
+- `/reviews/:reviewId` — восстанавливаемый после reload экран статуса с автоматическим
+  polling до terminal state;
 - `/debug/health` — проверка доступности Backend API.
 
 Клиентская проверка формата и размера нужна для быстрого сообщения пользователю;

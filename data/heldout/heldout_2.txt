@@ -1,0 +1,135 @@
+Общие сведения
+Агрегат по роумингу: суточная сводка событий абонентов в сетях партнёров в разрезе страны и типа услуги.
+Название таблицы: SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY
+Кластер: KAFKA_CLUSTER_MSK_PROD
+Схема: SCHEMA_CDM_ROAMING
+Способ загрузки: Инкремент с обновлением по ключу (upsert)
+
+Решаемая проблема
+Сверка с роуминг-партнёрами занимает недели, расхождения выявляются постфактум. Витрина даёт ежедневный срез в терминах, сопоставимых с файлами TAP.
+
+Продуктовые метрики
+- Срок выявления расхождения с партнёром: с 30 до 2 суток
+- Доля событий, сопоставленных с файлами TAP: цель выше 99%
+
+Заказчики
+Финансовый блок, отдел межоператорских расчётов
+
+Нефункциональные требования
+Объём данных: Около 60 тыс. строк в суточной партиции, прирост около 15 МБ в сутки
+Задержки: Готовность витрины не позднее 08:00 UTC
+Регламент расчёта: Ежесуточно, в 06:00 UTC за предыдущие сутки
+Глубина данных: С 01.03.2024
+Часовой пояс: локальное время оператора связи
+Срок хранения по слоям: RAW — 90 дней, DDS — 400 дней, CDM — 7 лет
+Обновление: Обновление по ключу (upsert) в пределах партиции
+Поле FIELD_IMSI в витрину не выгружается. В слое RAW доступ разграничен ролью ROLE_PII_READ.
+
+Системы-источники
+TAP_GATEWAY — шлюз обмена файлами TAP с роуминг-партнёрами
+
+Data Catalog
+Ссылка на Дата-каталог: см. карточку витрины во внутренней вики
+
+Исходники проекта
+Ссылка на GitLab: https://gitlab.corp/bigdata/roaming-agg
+
+Команда
+Аналитик: USER_A
+Разработчик: USER_B
+Тестировщик: USER_C
+
+JIRA
+Задача: PROJECT-XX999 — Витрина-агрегат по роумингу.
+
+Источники данных
+Описание источника | Тип источника | Ссылка на источник | Сериализация
+События роуминга исходящие | Kafka | TOPIC_ROAMING_EVENTS | формат согласовывается
+Файлы TAP от партнёров | SFTP | /data/raw/roaming/tap_in | TAP3, ASN.1
+
+Источники обогащения данных
+Обогащение справочником партнёров выполняется по историческому срезу на бизнес-дату события, поскольку коды партнёров меняются.
+Справочник | Схема | Назначение в расчёте
+TABLE_COUNTRY_REF | SCHEMA_DIC | Справочник стран по коду MCC
+TABLE_PARTNER_REF | SCHEMA_DIC | Справочник роуминг-партнёров, историчный по бизнес-дате
+TABLE_SERVICE_REF | SCHEMA_DIC | Справочник типов услуг: голос, SMS, данные
+
+Приемники данных
+Описание данных | Кластер | Ссылка на Каталог | Сериализация
+Витрина-агрегат по роумингу | KAFKA_CLUSTER_MSK_PROD | SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY | ORC
+Витрина выгружается в HDFS по адресу /data/cdm/roaming/agg_roaming_daily.
+
+Схема потоков данных
+не применимо
+
+Алгоритм обработки потока
+Шаг 1. Фильтрация данных
+Шаг 2. Обогащение данных
+Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».
+Приоритет определения партнёра: пара (FIELD_MCC, FIELD_MNC).
+Если FIELD_MNC не заполнен — сопоставление только по FIELD_MCC с выбором партнёра по признаку основного оператора страны.
+Если FIELD_MCC не заполнен — событие направляется на ручную разметку.
+Если пара FIELD_MCC и FIELD_MNC отсутствует в справочнике партнёров, партнёру присваивается значение Unknown, событие сохраняется для последующей ручной разметки.
+Шаг 3. Агрегация
+Группировка по: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE.
+Меры рассчитываются в границах группы, правила описаны в разделе «Ограничения расчёта».
+Шаг 4. Запись в CDM
+Результат записывается в SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY в формате ORC по пути /data/cdm/roaming/agg_roaming_daily.
+
+Формирование ключа (kafka) / партиции (hdfs)
+Поле партиционирования: FIELD_BIZ_DATE
+Гранулярность строки: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE
+Правило дедупликации: Ключ обновления: FIELD_BIZ_DATE, FIELD_COUNTRY_CODE, FIELD_PARTNER_CODE, FIELD_SERVICE_TYPE. При совпадении ключа сохраняется запись с большим FIELD_PROC_TS
+
+Структура данных
+Приемники. Таблица: SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY
+Атрибут | Тип данных | Описание атрибута | Обязательность | Источник
+FIELD_BIZ_DATE | date | Бизнес-дата суток агрегации | NOT NULL | Партиция источника
+FIELD_COUNTRY_CODE | string | Код страны пребывания | NOT NULL | TABLE_COUNTRY_REF.country_code
+FIELD_PARTNER_CODE | string | Код роуминг-партнёра | — | TABLE_PARTNER_REF.partner_code
+FIELD_SERVICE_TYPE | string | Тип услуги: VOICE, SMS, DATA | NOT NULL | TABLE_SERVICE_REF.service_code
+FIELD_EVENT_CNT | bigint | Количество событий за сутки | NOT NULL | count(*)
+FIELD_DURATION_SEC | bigint | Суммарная длительность соединений (секунды) | NULLABLE | sum(FIELD_CALL_DURATION)
+FIELD_CHARGE_AMOUNT | decimal(18,4) | Начисленная сумма (валюта расчёта, SDR) | NOT NULL | sum(FIELD_CHARGE)
+FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG
+Источники. Таблица: TOPIC_ROAMING_EVENTS
+Атрибут | Тип данных | Комментарий
+FIELD_IMSI | string | Идентификатор абонента
+FIELD_MCC | string | Мобильный код страны сети пребывания
+FIELD_SERVICE_TYPE | int | Тип услуги
+FIELD_MNC | string | Код сети оператора пребывания
+FIELD_EVENT_TS | timestamp | Время события в сети партнёра, UTC
+FIELD_CALL_DURATION | int | Длительность соединения (секунды)
+FIELD_CHARGE | decimal(18,4) | Сумма начисления по событию
+FIELD_SERVICE_CODE | int | Код типа услуги
+
+Пример данных
+FIELD_BIZ_DATE | FIELD_COUNTRY_CODE | FIELD_PARTNER_CODE | FIELD_SERVICE_TYPE | FIELD_EVENT_CNT | FIELD_DURATION_SEC | FIELD_CHARGE_AMOUNT | FIELD_PROC_TS
+2025-06-01 | C001 | VAL_01 | VAL_01 | 1007 | 1007 | 120.5000 | 2025-06-01 03:15:00
+2025-06-02 | C002 | VAL_02 | VAL_02 | 2007 | 2007 | 241.0000 | 2025-06-02 03:15:00
+2025-06-03 | C003 | VAL_03 | VAL_03 | 3007 | 3007 | 361.5000 | 2025-06-03 03:15:00
+2025-06-04 | C004 | VAL_04 | VAL_04 | 4007 | 4007 | 482.0000 | 2025-06-04 03:15:00
+2025-06-05 | C005 | VAL_05 | VAL_05 | 5007 | 5007 | 602.5000 | 2025-06-05 03:15:00
+2025-06-06 | C006 | VAL_06 | VAL_06 | 6007 | 6007 | 723.0000 | 2025-06-06 03:15:00
+2025-06-07 | C007 | VAL_07 | VAL_07 | 7007 | 7007 | 843.5000 | 2025-06-07 03:15:00
+2025-06-08 | C008 | VAL_08 | VAL_08 | 8007 | 8007 | 964.0000 | 2025-06-08 03:15:00
+2025-06-09 | C009 | VAL_09 | VAL_09 | 9007 | 9007 | 1084.5000 | 2025-06-09 03:15:00
+2025-06-10 | C010 | VAL_10 | VAL_10 | 10007 | 10007 | 1205.0000 | 2025-06-10 03:15:00
+
+DDL
+CREATE TABLE SCHEMA_CDM_ROAMING.TABLE_AGG_ROAMING_DAILY (
+  FIELD_BIZ_DATE DATE NOT NULL,
+  FIELD_COUNTRY_CODE STRING NOT NULL,
+  FIELD_PARTNER_CODE STRING NOT NULL,
+  FIELD_SERVICE_TYPE STRING NOT NULL,
+  FIELD_EVENT_CNT BIGINT NOT NULL,
+  FIELD_DURATION_SEC BIGINT,
+  FIELD_CHARGE_AMOUNT DECIMAL(18,4) NOT NULL,
+  FIELD_PROC_TS TIMESTAMP NOT NULL
+)
+PARTITIONED BY (FIELD_BIZ_DATE)
+STORED AS ORC
+LOCATION '/data/cdm/roaming/agg_roaming_daily';
+
+История изменений
+не применимо

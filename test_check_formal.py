@@ -493,6 +493,21 @@ def test_heldout_document_all_defects_found():
     assert not extra, "ложные срабатывания на held-out: %s" % extra
 
 
+def test_heldout_2_expected_defects_found():
+    """Второй held-out (прогноз закоммичен до документа, коммит e1858cc).
+    Ожидание: находятся все, кроме SERIALIZATION — «формат согласовывается»
+    намеренно оставлен вне словаря, чтобы прогон остался проверкой, а не подгонкой."""
+    import json as _json
+    doc = open("data/heldout/heldout_2.txt", encoding="utf-8").read()
+    truth = _json.load(open("data/heldout/heldout_2_truth.json", encoding="utf-8"))
+    got = {f["defect_id"] for f in cf.run(doc, CFG)["findings"]}
+    known_gap = {"SERIALIZATION_UNSPECIFIED"}
+    missed = {t["defect_id"] for t in truth["defects"]} - got
+    assert missed == known_gap, "изменился состав промахов: %s" % (missed,)
+    extra = got - {t["defect_id"] for t in truth["defects"]}
+    assert not extra, "ложные срабатывания на held-out 2: %s" % extra
+
+
 def test_heldout_clean_document_zero_findings():
     """Чистая версия held-out-документа не должна давать ни одного замечания."""
     doc = open("data/heldout/heldout_1_clean.txt", encoding="utf-8").read()
@@ -576,6 +591,7 @@ if __name__ == "__main__":
     test_schema_type_mismatch_explanation_is_field_scoped()
     test_schema_type_mismatch_explanation_not_matched_by_prefix()
     test_heldout_document_all_defects_found()
+    test_heldout_2_expected_defects_found()
     test_heldout_clean_document_zero_findings()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

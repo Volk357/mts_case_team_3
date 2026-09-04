@@ -20,6 +20,11 @@ function PdfViewer({ document, finding }: { document: DocumentResponse; finding?
         height: `${highlight.height}%`,
       }
     : undefined;
+  const locationMessage = highlight
+    ? "Область замечания подсвечена по координатам анализа."
+    : finding?.location.page
+      ? "Точная координатная подсветка недоступна. Выполнен переход к странице и поиск по цитате."
+      : "Номер страницы недоступен. Выполнен поиск по цитате во всём документе.";
 
   return (
     <>
@@ -43,11 +48,7 @@ function PdfViewer({ document, finding }: { document: DocumentResponse; finding?
       {finding && (
         <div className="flex gap-3 border-t border-border bg-card px-5 py-4 text-sm text-muted-foreground">
           <LocateFixed aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-primary" />
-          <p>
-            {highlight
-              ? "Область замечания подсвечена по координатам анализа."
-              : "Точная координатная подсветка недоступна. Выполнен переход к странице и поиск по цитате."}
-          </p>
+          <p>{locationMessage}</p>
         </div>
       )}
     </>

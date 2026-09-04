@@ -262,6 +262,10 @@ export type FindingsResponse = {
      * Total
      */
     total: number;
+    /**
+     * Warnings
+     */
+    warnings: Array<ReviewWarning>;
 };
 
 /**
@@ -415,6 +419,20 @@ export type ReviewResponse = {
      * Status
      */
     status: 'queued' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled';
+};
+
+/**
+ * ReviewWarning
+ */
+export type ReviewWarning = {
+    /**
+     * Code
+     */
+    code: string | null;
+    /**
+     * Message
+     */
+    message: string;
 };
 
 export type UploadDocumentApiDocumentsPostData = {

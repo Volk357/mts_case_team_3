@@ -50,6 +50,11 @@ export function FindingCard({
   });
   const severity = severityPresentation[finding.severity];
   const locationParts = finding.location.section_path;
+  const locationLabel = finding.location.page
+    ? `Страница ${finding.location.page}`
+    : locationParts.length > 0
+      ? "Раздел документа"
+      : "Поиск по цитате";
 
   return (
     <article
@@ -75,7 +80,7 @@ export function FindingCard({
           <span className="text-xs text-muted-foreground">Замечание #{finding.ordinal}</span>
           <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
             <MapPin aria-hidden="true" className="size-3.5" />
-            {finding.location.page ? `Страница ${finding.location.page}` : "Страница не указана"}
+            {locationLabel}
           </span>
         </span>
 

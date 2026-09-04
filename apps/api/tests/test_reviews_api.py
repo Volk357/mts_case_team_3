@@ -192,6 +192,16 @@ async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
         job.process_pid = 4242
         job.model_name = "private-model"
         job.prompt_versions = {"secret": "private-prompt"}
+        job.raw_result = {
+            "warnings": [
+                "Only part of the document was parsed.",
+                {
+                    "code": "PAGE_UNKNOWN",
+                    "message": "One fragment has no page number.",
+                    "diagnostic": "private-parser-detail",
+                },
+            ]
+        }
         for ordinal in (1, 0):
             session.add(
                 FindingModel(
@@ -236,9 +246,14 @@ async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
     findings = findings_response.json()
     assert findings["total"] == 2
     assert [item["ordinal"] for item in findings["items"]] == [0, 1]
+    assert findings["warnings"] == [
+        {"code": None, "message": "Only part of the document was parsed."},
+        {"code": "PAGE_UNKNOWN", "message": "One fragment has no page number."},
+    ]
     serialized_findings = findings_response.text
     assert "private-analyzer" not in serialized_findings
     assert "core-0" not in serialized_findings
+    assert "private-parser-detail" not in serialized_findings
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "REVIEW_NOT_FOUND"
     assert unknown_findings.status_code == 404

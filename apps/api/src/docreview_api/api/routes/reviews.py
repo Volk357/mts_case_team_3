@@ -13,6 +13,7 @@ from docreview_api.api.schemas.reviews import (
     ReviewCreateRequest,
     ReviewPublicError,
     ReviewResponse,
+    ReviewWarning,
 )
 from docreview_api.config import Settings, get_settings
 from docreview_api.db.dependencies import get_session_factory
@@ -150,7 +151,7 @@ def get_review_findings(
     """Return ordered public findings, or an empty list while analysis is pending."""
 
     try:
-        findings = ReviewQueryService(session_factory).list_findings(
+        result = ReviewQueryService(session_factory).get_findings(
             review_id, company_id=settings.default_company_id
         )
     except ReviewUnavailableError as error:
@@ -167,6 +168,12 @@ def get_review_findings(
             problem=item.problem,
             clarification=item.clarification,
         )
-        for item in findings
+        for item in result.items
     ]
-    return FindingsResponse(review_id=review_id, items=items, total=len(items))
+    warnings = [ReviewWarning(code=item.code, message=item.message) for item in result.warnings]
+    return FindingsResponse(
+        review_id=review_id,
+        items=items,
+        total=len(items),
+        warnings=warnings,
+    )

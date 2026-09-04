@@ -44,9 +44,12 @@ describe("reviews API", () => {
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify(queuedReview), { status: 200 }))
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ review_id: "review/42", items: [], total: 0 }), {
-          status: 200,
-        }),
+        new Response(
+          JSON.stringify({ review_id: "review/42", items: [], total: 0, warnings: [] }),
+          {
+            status: 200,
+          },
+        ),
       );
     vi.stubGlobal("fetch", fetchMock);
 

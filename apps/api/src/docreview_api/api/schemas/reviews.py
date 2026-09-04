@@ -58,7 +58,13 @@ class FindingResponse(ApiModel):
     clarification: str
 
 
+class ReviewWarning(ApiModel):
+    code: str | None
+    message: str
+
+
 class FindingsResponse(ApiModel):
     review_id: OpaqueId
     items: list[FindingResponse]
     total: int = Field(ge=0)
+    warnings: list[ReviewWarning]

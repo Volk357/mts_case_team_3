@@ -11,6 +11,15 @@ const severityLabels: Record<ReviewFinding["severity"], string> = {
   low: "Низкие",
 };
 
+function findingCountLabel(count: number): string {
+  const lastTwoDigits = count % 100;
+  if (lastTwoDigits >= 11 && lastTwoDigits <= 14) return "замечаний";
+  const lastDigit = count % 10;
+  if (lastDigit === 1) return "замечание";
+  if (lastDigit >= 2 && lastDigit <= 4) return "замечания";
+  return "замечаний";
+}
+
 export function ReviewSummary({
   document,
   findings,
@@ -47,7 +56,7 @@ export function ReviewSummary({
         <ListChecks aria-hidden="true" className="size-6 shrink-0" />
         <div>
           <strong className="block text-2xl leading-none">{findings.length}</strong>
-          <span className="text-sm font-medium">замечаний</span>
+          <span className="text-sm font-medium">{findingCountLabel(findings.length)}</span>
         </div>
       </div>
     </Card>

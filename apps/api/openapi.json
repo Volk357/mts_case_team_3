@@ -412,12 +412,20 @@
             "minimum": 0.0,
             "title": "Total",
             "type": "integer"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewWarning"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
           "review_id",
           "items",
-          "total"
+          "total",
+          "warnings"
         ],
         "title": "FindingsResponse",
         "type": "object"
@@ -680,6 +688,32 @@
           "finished_at"
         ],
         "title": "ReviewResponse",
+        "type": "object"
+      },
+      "ReviewWarning": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReviewWarning",
         "type": "object"
       }
     }

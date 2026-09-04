@@ -49,6 +49,42 @@ class FindingSnapshot:
     clarification: str
 
 
+@dataclass(frozen=True, slots=True)
+class ReviewWarningSnapshot:
+    code: str | None
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewFindingsSnapshot:
+    items: tuple[FindingSnapshot, ...]
+    warnings: tuple[ReviewWarningSnapshot, ...]
+
+
+def _public_warnings(raw_result: dict[str, Any] | None) -> tuple[ReviewWarningSnapshot, ...]:
+    if not isinstance(raw_result, dict):
+        return ()
+    source = raw_result.get("warnings")
+    if not isinstance(source, list):
+        return ()
+
+    warnings: list[ReviewWarningSnapshot] = []
+    for warning in source:
+        if isinstance(warning, str) and warning:
+            warnings.append(ReviewWarningSnapshot(code=None, message=warning))
+        elif isinstance(warning, dict):
+            code = warning.get("code")
+            message = warning.get("message")
+            if isinstance(message, str) and message:
+                warnings.append(
+                    ReviewWarningSnapshot(
+                        code=code if isinstance(code, str) and code else None,
+                        message=message,
+                    )
+                )
+    return tuple(warnings)
+
+
 class ReviewQueryService:
     """Read review state without leaking worker or model configuration."""
 
@@ -67,15 +103,15 @@ class ReviewQueryService:
                 raise ReviewUnavailableError
             return self._snapshot(job)
 
-    def list_findings(self, review_id: UUID, *, company_id: UUID) -> tuple[FindingSnapshot, ...]:
+    def get_findings(self, review_id: UUID, *, company_id: UUID) -> ReviewFindingsSnapshot:
         with self._session_factory() as session:
-            exists = session.scalar(
-                select(ReviewJobModel.id).where(
+            job = session.scalar(
+                select(ReviewJobModel).where(
                     ReviewJobModel.id == review_id,
                     ReviewJobModel.company_id == company_id,
                 )
             )
-            if exists is None:
+            if job is None:
                 raise ReviewUnavailableError
             findings = session.scalars(
                 select(FindingModel)
@@ -85,19 +121,22 @@ class ReviewQueryService:
                 )
                 .order_by(FindingModel.ordinal)
             ).all()
-            return tuple(
-                FindingSnapshot(
-                    id=item.id,
-                    ordinal=item.ordinal,
-                    defect_id=item.defect_id,
-                    severity=item.severity,
-                    confidence=item.confidence,
-                    location=item.location,
-                    quote=item.quote,
-                    problem=item.problem,
-                    clarification=item.clarification,
-                )
-                for item in findings
+            return ReviewFindingsSnapshot(
+                items=tuple(
+                    FindingSnapshot(
+                        id=item.id,
+                        ordinal=item.ordinal,
+                        defect_id=item.defect_id,
+                        severity=item.severity,
+                        confidence=item.confidence,
+                        location=item.location,
+                        quote=item.quote,
+                        problem=item.problem,
+                        clarification=item.clarification,
+                    )
+                    for item in findings
+                ),
+                warnings=_public_warnings(job.raw_result),
             )
 
     @staticmethod

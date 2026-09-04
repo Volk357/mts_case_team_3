@@ -220,7 +220,7 @@ class UnsupportedBinary(Exception):
 # Сигнатуры двоичных контейнеров. Проверяются по содержимому, а не по
 # расширению: .docx, переименованный в .txt, тоже должен быть отбит.
 _BINARY_SIGNATURES = [
-    (b"PK\x03\x04", "docx/xlsx/pptx (zip-контейнер)"),
+    (b"PK\x03\x04", "xlsx/pptx (zip-контейнер, но не docx)"),
     (b"%PDF", "pdf"),
     (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "doc/xls (OLE2)"),
     (b"{\\rtf", "rtf"),
@@ -228,7 +228,8 @@ _BINARY_SIGNATURES = [
 
 
 def _read_document(path):
-    """Читает документ в текст. txt/md — напрямую; двоичный файл — отказ.
+    """Читает документ в текст. txt/md — напрямую, .docx — своим экстрактором,
+    прочие двоичные форматы — честный отказ.
 
     Двоичный вход отбивается ДО анализа. Иначе .docx читается как мусор,
     детерминированный слой срабатывает на строке вида «PK..[Content_Types].xml»,
@@ -238,11 +239,33 @@ def _read_document(path):
     """
     with open(path, "rb") as fh:
         raw = fh.read()
+
+    # .docx разбираем сами: таблицы нужны строками «ячейка | ячейка», а адреса
+    # гиперссылок — рядом с текстом. Плоская конвертация теряет и то и другое,
+    # из-за чего проверка ссылок ругалась на ссылку, которая в документе есть.
+    if raw.startswith(b"PK\x03\x04"):
+        import docx_text
+        try:
+            text = docx_text.extract(path)
+        except docx_text.NotADocx as e:
+            raise UnsupportedBinary(
+                "Файл — zip-контейнер, но не .docx (%s). Ядро принимает "
+                ".docx и извлечённый текст (txt/md)." % e)
+        warn = []
+        if not docx_text.count_links(path):
+            warn.append({
+                "code": "NO_EXTERNAL_LINKS",
+                "message": "В документе нет внешних гиперссылок. Замечания об "
+                           "отсутствующих ссылках следует читать с учётом этого: "
+                           "возможно, ссылки были потеряны при подготовке файла."})
+        return text, "docx", warn
+
     for sig, what in _BINARY_SIGNATURES:
         if raw.startswith(sig):
             raise UnsupportedBinary(
-                "Файл в формате %s: ядро принимает только извлечённый текст "
-                "(txt/md). Извлеките текст на стороне приложения." % what)
+                "Файл в формате %s: ядро принимает .docx и извлечённый текст "
+                "(txt/md). Для остальных форматов извлеките текст на стороне "
+                "приложения." % what)
     if b"\x00" in raw[:8192]:
         raise UnsupportedBinary(
             "Файл двоичный (NUL-байты в начале): ядро принимает только "

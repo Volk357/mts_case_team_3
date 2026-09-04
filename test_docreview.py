@@ -126,15 +126,57 @@ def _tmp(name, data):
     return path
 
 
-def test_docx_rejected_not_parsed_as_text():
-    # реальный .docx — zip-контейнер; раньше читался как мусор и давал
-    # «успешный» ответ с замечанием на строке PK..[Content_Types].xml
-    path = _tmp("d.docx", b"PK\x03\x04\x14\x00\x00\x00[Content_Types].xml\xd0\xa1")
+def test_docx_is_extracted_not_rejected():
+    """Настоящий .docx ядро теперь разбирает само: таблицы строками с « | »
+    и адреса гиперссылок сохраняются. Раньше он читался как бинарный мусор."""
+    import zipfile
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    R = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    path = _tmp("real.docx", b"")
+    body = ('<w:p><w:r><w:t>Data Catalog</w:t></w:r></w:p>'
+            '<w:p><w:r><w:t>Ссылка: </w:t></w:r><w:hyperlink r:id="r1">'
+            '<w:r><w:t>карточка</w:t></w:r></w:hyperlink></w:p>')
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("word/document.xml",
+                   '<?xml version="1.0"?><w:document xmlns:w="%s" xmlns:r="%s">'
+                   '<w:body>%s</w:body></w:document>' % (W, R, body))
+        z.writestr("word/_rels/document.xml.rels",
+                   '<?xml version="1.0"?><Relationships xmlns="http://schemas.'
+                   'openxmlformats.org/package/2006/relationships">'
+                   '<Relationship Id="r1" Type="%s/hyperlink" Target="https://dc/x" '
+                   'TargetMode="External"/></Relationships>' % R)
+    text, ext, warn = _read_document(path)
+    assert ext == "docx" and "https://dc/x" in text, (ext, text)
+    assert warn == []                     # ссылки есть — предупреждения нет
+
+
+def test_zip_that_is_not_docx_still_rejected():
+    """xlsx/pptx — тоже zip, но текста мы из них не извлекаем."""
+    import zipfile
+    path = _tmp("book.docx", b"")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("xl/workbook.xml", "<x/>")
     try:
         _read_document(path)
-        raise AssertionError("двоичный docx должен быть отбит")
+        raise AssertionError("ожидали UnsupportedBinary")
     except UnsupportedBinary as e:
         assert "docx" in str(e)
+
+
+def test_docx_without_links_warns():
+    """Если ссылок нет вовсе, замечания об их отсутствии надо читать осторожнее."""
+    import zipfile
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    path = _tmp("nolinks.docx", b"")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("word/document.xml",
+                   '<?xml version="1.0"?><w:document xmlns:w="%s"><w:body>'
+                   '<w:p><w:r><w:t>Общие сведения</w:t></w:r></w:p>'
+                   '</w:body></w:document>' % W)
+    _, ext, warn = _read_document(path)
+    assert ext == "docx" and [w["code"] for w in warn] == ["NO_EXTERNAL_LINKS"]
 
 
 def test_pdf_and_ole_rejected():
@@ -478,7 +520,9 @@ if __name__ == "__main__":
     test_confidence_in_range_and_block_id()
     test_empty_findings_valid()
     test_findings_capped_at_20()
-    test_docx_rejected_not_parsed_as_text()
+    test_docx_is_extracted_not_rejected()
+    test_zip_that_is_not_docx_still_rejected()
+    test_docx_without_links_warns()
     test_pdf_and_ole_rejected()
     test_binary_renamed_to_txt_rejected()
     test_txt_still_read_without_warnings()

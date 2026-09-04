@@ -49,5 +49,6 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     413: {"model": ErrorEnvelope, "description": "Request payload is too large"},
     415: {"model": ErrorEnvelope, "description": "Unsupported media type"},
     422: {"model": ErrorEnvelope, "description": "Request validation failed"},
+    429: {"model": ErrorEnvelope, "description": "Rate limit exceeded"},
     500: {"model": ErrorEnvelope, "description": "Internal server error"},
 }

@@ -30,6 +30,9 @@ def test_settings_defaults() -> None:
     )
     assert settings.max_review_result_size_bytes == 10 * 1024 * 1024
     assert settings.max_upload_size_bytes == 50 * 1024 * 1024
+    assert settings.max_request_size_bytes == 55 * 1024 * 1024
+    assert settings.rate_limit_requests == 120
+    assert settings.rate_limit_window_seconds == 60
     assert settings.default_company_id == UUID("00000000-0000-0000-0000-000000000001")
     assert settings.default_company_slug == "local-mvp"
     assert settings.orphan_upload_grace_period_hours == 24

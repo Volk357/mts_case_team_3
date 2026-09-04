@@ -62,6 +62,9 @@ class Settings(BaseSettings):
         default=10 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024
     )
     max_upload_size_bytes: int = Field(default=50 * 1024 * 1024, ge=1, le=1024 * 1024 * 1024)
+    max_request_size_bytes: int = Field(default=55 * 1024 * 1024, ge=1024, le=1100 * 1024 * 1024)
+    rate_limit_requests: int = Field(default=120, ge=1, le=100_000)
+    rate_limit_window_seconds: int = Field(default=60, ge=1, le=3600)
     default_company_id: UUID = UUID("00000000-0000-0000-0000-000000000001")
     default_company_slug: str = Field(default="local-mvp", min_length=1, max_length=100)
     default_company_name: str = Field(default="Local MVP Company", min_length=1, max_length=255)

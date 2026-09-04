@@ -11,6 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from docreview_api.api.middleware import RequestBodyTooLarge
 from docreview_api.api.schemas.errors import ApiError, ErrorBody, ErrorEnvelope, ErrorItem
 
 LOGGER = logging.getLogger(__name__)
@@ -65,17 +66,33 @@ async def validation_error_handler(_: Request, error: RequestValidationError) ->
 
 
 async def unexpected_error_handler(request: Request, error: Exception) -> JSONResponse:
+    correlation_id = getattr(request.state, "correlation_id", "unassigned")
     LOGGER.exception(
-        "Unhandled API error for %s %s",
+        "Unhandled API error for %s %s correlation_id=%s",
         request.method,
         request.url.path,
+        correlation_id,
         exc_info=(type(error), error, error.__traceback__),
     )
-    return _response(500, "INTERNAL_ERROR", "An unexpected error occurred.")
+    return _response(
+        500,
+        "INTERNAL_ERROR",
+        "An unexpected error occurred.",
+        headers={"X-Correlation-ID": correlation_id},
+    )
+
+
+async def request_body_too_large_handler(_: Request, __: Exception) -> JSONResponse:
+    return _response(
+        413,
+        "REQUEST_TOO_LARGE",
+        "Request body exceeds the configured size limit.",
+    )
 
 
 def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(ApiError, api_error_handler)  # type: ignore[arg-type]
+    application.add_exception_handler(RequestBodyTooLarge, request_body_too_large_handler)
     application.add_exception_handler(HTTPException, http_error_handler)  # type: ignore[arg-type]
     application.add_exception_handler(
         RequestValidationError,
@@ -100,6 +117,7 @@ def _http_error_code(status_code: int) -> str:
         405: "METHOD_NOT_ALLOWED",
         409: "CONFLICT",
         413: "PAYLOAD_TOO_LARGE",
+        429: "RATE_LIMIT_EXCEEDED",
         415: "UNSUPPORTED_MEDIA_TYPE",
         422: "UNPROCESSABLE_CONTENT",
     }.get(status_code, "HTTP_ERROR")
@@ -114,6 +132,7 @@ def _http_error_message(status_code: int) -> str:
         405: "Method Not Allowed",
         409: "Conflict",
         413: "Payload Too Large",
+        429: "Too Many Requests",
         415: "Unsupported Media Type",
         422: "Unprocessable Content",
     }.get(status_code, "Request failed.")

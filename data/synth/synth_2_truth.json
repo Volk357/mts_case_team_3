@@ -148,11 +148,11 @@
       "anchor_node": "nfr.timezone"
     },
     {
-      "defect_id": "SCHEMA_INCONSISTENCY",
+      "defect_id": "SCHEMA_TYPE_MISMATCH",
       "defect_class": "presence",
       "mutation": "changed_type_of_shared_field",
       "note": "Поле FIELD_CELL_ID описано в источнике как string, а в витрине как bigint. Расхождение не объяснено.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "FIELD_CELL_ID | string | Идентификатор соты",
       "section": "Структура данных",
       "anchor_node": "struct.src.FIELD_CELL_ID"

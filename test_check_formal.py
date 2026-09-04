@@ -409,6 +409,75 @@ def test_dangling_section_plural_form_still_flagged():
     assert "DANGLING_SECTION_REFERENCE" in ids
 
 
+_STRUCT = ("Структура данных\n"
+           "Приемники. Таблица: SCHEMA_CDM.TABLE_AGG\n"
+           "Атрибут | Тип данных | Описание атрибута | Обязательность | Источник\n"
+           "FIELD_BYTES_UP | bigint | Объём переданных данных | NOT NULL | sum(x)\n"
+           "Источники. Таблица: TABLE_RAW\n"
+           "Атрибут | Тип данных | Комментарий\n")
+
+
+def test_schema_type_mismatch_flags_different_type():
+    text = _STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
+def test_schema_type_mismatch_ok_when_types_match():
+    text = _STRUCT + "FIELD_BYTES_UP | BIGINT | Переданные байты за сессию\n"
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_ignores_single_table():
+    text = ("Таблица: TABLE_RAW\n"
+            "Поле | Тип данных | Описание\n"
+            "FIELD_A | string | описание\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_table_ends_at_line_without_separator():
+    # строки «Примера данных» не должны дочитываться как продолжение структуры
+    text = (_STRUCT + "FIELD_BYTES_UP | bigint | Переданные байты\n"
+            "\nПример данных\n"
+            "FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT\n"
+            "100 | 200 | 3\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_quote_is_verbatim():
+    text = _STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+    for f in cf.check_schema_type_mismatch(text, CFG):
+        assert f["quote"] in text
+
+
+def test_schema_type_mismatch_ignores_non_identifier_rows():
+    text = (_STRUCT + "Итого по таблице | 15 полей | —\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_ok_when_conversion_explained():
+    # блокер круга 1: правило не вправе объявлять расхождение необъяснённым, не проверив
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_BYTES_UP приводится к bigint.\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_explanation_is_field_scoped():
+    # объяснение про ДРУГОЕ поле расхождение не гасит
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_OTHER приводится к bigint.\n")
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
+def test_schema_type_mismatch_explanation_not_matched_by_prefix():
+    # блокер круга 2: «FIELD_BYTES_UP_RAW приводится к bigint» — про другое поле
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_BYTES_UP_RAW приводится к bigint.\n")
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -475,5 +544,14 @@ if __name__ == "__main__":
     test_dangling_section_all_case_forms_flagged()
     test_dangling_section_ignores_external_link_line()
     test_dangling_section_plural_form_still_flagged()
+    test_schema_type_mismatch_flags_different_type()
+    test_schema_type_mismatch_ok_when_types_match()
+    test_schema_type_mismatch_ignores_single_table()
+    test_schema_table_ends_at_line_without_separator()
+    test_schema_type_mismatch_quote_is_verbatim()
+    test_schema_type_mismatch_ignores_non_identifier_rows()
+    test_schema_type_mismatch_ok_when_conversion_explained()
+    test_schema_type_mismatch_explanation_is_field_scoped()
+    test_schema_type_mismatch_explanation_not_matched_by_prefix()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

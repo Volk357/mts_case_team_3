@@ -117,6 +117,26 @@ def test_default_ceiling_is_20():
     assert BUDGET_CEILING == 20
 
 
+def test_prompt_taxonomy_matches_defects_yaml():
+    """defects_prompt.yaml — та же таксономия для промпта: состав llm-типов
+    и их описания обязаны совпадать с defects.yaml. Расщепление типа, забытое
+    в одном файле, — это молча разъехавшийся промпт (блокер ревью 4 сентября)."""
+    import re as _re
+    import yaml as _yaml
+    full = {d["id"]: d for d in _yaml.safe_load(
+        open("defects.yaml", encoding="utf-8"))["defects"]}
+    prompt = {d["id"]: d for d in _yaml.safe_load(
+        open("defects_prompt.yaml", encoding="utf-8"))["defects"]}
+    llm = {i for i, d in full.items() if d.get("detectable_by") == "llm"}
+    assert set(prompt) == llm, (
+        "промпт-таксономия разошлась: лишние %s, недостающие %s"
+        % (sorted(set(prompt) - llm), sorted(llm - set(prompt))))
+    norm = lambda s: _re.sub(r"\s+", " ", (s or "").strip())
+    drift = [i for i in prompt
+             if norm(full[i].get("description")) != norm(prompt[i].get("description"))]
+    assert not drift, "описания разошлись: %s" % drift
+
+
 if __name__ == "__main__":
     test_under_budget_returns_input_unchanged()
     test_high_never_cut_even_over_ceiling()
@@ -128,4 +148,5 @@ if __name__ == "__main__":
     test_run_full_applies_budget_and_reports_capped()
     test_run_full_drops_deterministic_type_findings()
     test_default_ceiling_is_20()
+    test_prompt_taxonomy_matches_defects_yaml()
     print("все тесты пройдены")

@@ -502,6 +502,102 @@ def check_timezone(text, cfg):
     }]
 
 
+def _structure_tables(text, cfg):
+    """Таблицы структуры данных: [(имя таблицы, {поле: (тип, строка)})].
+
+    Таблицей считается блок строк после заголовка с колонкой «Тип данных».
+    Имя берётся из ближайшей строки «Таблица: X» выше. Блок кончается на
+    первой строке без «|»: иначе строки раздела «Пример данных» дочитались
+    бы как продолжение структуры (проверено — давало ложные пары).
+    """
+    conf = cfg.get("schema_tables")
+    if not conf:
+        return []
+    name_re = re.compile(conf["table_name_pattern"])
+    field_re = re.compile(conf["field_pattern"])
+    type_marker = conf["header_type_marker"].lower()
+    field_markers = [m.lower() for m in conf["header_field_markers"]]
+
+    out, cur, name, fld_i, typ_i = [], None, "?", None, None
+    for ln in lines_of(text):
+        if "|" not in ln:
+            cur = None                      # любая строка без таблицы закрывает блок
+            m = name_re.search(ln)
+            if m:
+                name = m.group(1)
+            continue
+        cells = [c.strip() for c in ln.split("|")]
+        low = [c.lower() for c in cells]
+        if any(type_marker in c for c in low):
+            typ_i = next(i for i, c in enumerate(low) if type_marker in c)
+            fld_i = next((i for i, c in enumerate(low)
+                          if any(fm == c for fm in field_markers)), None)
+            cur = {}
+            out.append((name, cur))
+            continue
+        if cur is None or fld_i is None or typ_i >= len(cells) or fld_i >= len(cells):
+            continue
+        field, typ = cells[fld_i], cells[typ_i]
+        if field_re.match(field) and typ:
+            cur.setdefault(field, (typ, ln.strip()))
+    return out
+
+
+def _type_change_explained(text, field, cfg):
+    """В документе сказано о приведении/преобразовании типа этого поля.
+
+    Ищем не по всему документу, а в строках, где поле названо: иначе одна
+    фраза про приведение типа в алгоритме погасила бы расхождения у всех полей.
+    Имя поля сверяется как ЦЕЛЫЙ идентификатор: подстрокой «FIELD_A» нашлось бы
+    в «FIELD_AB», и объяснение про соседнее поле гасило бы чужое расхождение.
+    """
+    markers = [m.lower() for m in cfg["schema_tables"].get("explained_markers", [])]
+    if not markers:
+        return False
+    field_re = re.compile(r"\b" + re.escape(field) + r"\b", re.I)
+    for ln in lines_of(text):
+        low = ln.lower()
+        if field_re.search(ln) and any(m in low for m in markers):
+            return True
+    return False
+
+
+def check_schema_type_mismatch(text, cfg):
+    """Одноимённое поле описано разными типами в разных таблицах структуры.
+
+    Расхождение, для которого в документе сказано о приведении типа,
+    дефектом не считается: приведение при загрузке — законная практика,
+    дефект — именно необъяснённое расхождение.
+    """
+    tables = _structure_tables(text, cfg)
+    seen, bad = {}, []
+    for name, fields in tables:
+        for field, (typ, line) in fields.items():
+            if field in seen:
+                first_name, first_type, _ = seen[field]
+                if norm(first_type) != norm(typ) and \
+                        not _type_change_explained(text, field, cfg):
+                    bad.append((field, first_name, first_type, name, typ, line))
+                continue
+            seen[field] = (name, typ, line)
+    if not bad:
+        return []
+    field, t1_name, t1, t2_name, t2, line = bad[0]
+    return [{
+        "quote": line,
+        "defect_id": "SCHEMA_TYPE_MISMATCH",
+        "explanation": (
+            "Поле %s описано разными типами: в таблице %s — %s, в таблице %s — %s. "
+            "Расхождение в документе не объяснено: непонятно, ошибка это или "
+            "приведение типа при загрузке. Полей с расхождением типа: %d."
+            % (field, t1_name, t1, t2_name, t2, len(bad))),
+        "suggestion": ("Привести типы к одному либо описать приведение типа "
+                       "при загрузке."),
+        "severity": "medium",
+        "detail": [b[0] for b in bad],
+    }]
+
+
 def _present_section_names(text, cfg):
     """Имена разделов, реально присутствующих в документе.
 
@@ -566,7 +662,8 @@ def check_dangling_section(text, cfg):
 
 CHECKS = [check_sections, check_nullability, check_placeholders,
           check_data_catalog, check_hdfs, check_vague_wording, check_no_filter,
-          check_serialization, check_timezone, check_dangling_section]
+          check_serialization, check_timezone, check_dangling_section,
+          check_schema_type_mismatch]
 
 
 def run(text, cfg):

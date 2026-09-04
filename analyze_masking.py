@@ -11,10 +11,12 @@
 применяется только к КОМПАРАТИВНЫМ типам: дефект которых ПО ОПРЕДЕЛЕНИЮ требует
 двух сторон, и удаление одной делает его нераспознаваемым в принципе.
 
-  SCHEMA_INCONSISTENCY   расхождение типов между источником и витриной. Якорь
+  SCHEMA_TYPE_MISMATCH   расхождение типов между источником и витриной. Якорь
                          struct.src.<поле>, обязательная вторая сторона
                          struct.recv.<поле>. INCOMPLETE_SCHEMA удаляет struct.recv
-                         → сравнивать не с чем → masked.
+                         → сравнивать не с чем → masked. (Тип назывался
+                         SCHEMA_INCONSISTENCY до расщепления 4 сентября:
+                         детерминированная половина выделена в SCHEMA_TYPE_MISMATCH.)
   INTERNAL_CONTRADICTION два противоречащих утверждения. Вторая сторона —
                          исходное утверждение о способе загрузки (common.load).
                          В планах не удаляется → на деле не masked.
@@ -74,7 +76,7 @@ def second_side(defect):
     типов пусто — их доказательство одно-локационно и не маскируется."""
     did = defect["defect_id"]
     a = defect.get("anchor_node") or ""
-    if did == "SCHEMA_INCONSISTENCY" and a.startswith("struct.src."):
+    if did == "SCHEMA_TYPE_MISMATCH" and a.startswith("struct.src."):
         return ["struct.recv." + a.split(".", 2)[2]]
     if did == "INTERNAL_CONTRADICTION":
         return ["common.load"]

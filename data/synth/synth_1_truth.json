@@ -95,11 +95,11 @@
       "anchor_node": "struct.recv.FIELD_BYTES_DOWN_TOTAL"
     },
     {
-      "defect_id": "SCHEMA_INCONSISTENCY",
+      "defect_id": "SCHEMA_TYPE_MISMATCH",
       "defect_class": "presence",
       "mutation": "changed_type_of_shared_field",
       "note": "Поле FIELD_BYTES_UP описано в источнике как string, а в витрине как bigint. Расхождение не объяснено.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "FIELD_BYTES_UP | string | Переданные байты за сессию",
       "section": "Структура данных",
       "anchor_node": "struct.src.FIELD_BYTES_UP"

@@ -154,10 +154,10 @@ def r_schema_inconsistency(d):
     name, src_type, recv_type = sh
     new_type = "string" if src_type != "string" else "bigint"
     return dict(
-        defect_id="SCHEMA_INCONSISTENCY", defect_class=PRESENCE,
+        defect_id="SCHEMA_TYPE_MISMATCH", defect_class=PRESENCE,
         op="set_cell", target="struct.src." + name, col=1, value=new_type,
         anchor="struct.src." + name,
-        mutation="changed_type_of_shared_field", detectable_by=LLM,
+        mutation="changed_type_of_shared_field", detectable_by=DET,
         note="Поле " + name + " описано в источнике как " + new_type +
              ", а в витрине как " + recv_type + ". Расхождение не объяснено.")
 
@@ -383,7 +383,7 @@ RECIPES = {
     "AMBIGUOUS_LOGIC": r_ambiguous_logic,
     "UNSPECIFIED_FORMAT": r_unspecified_format,
     "DUPLICATE_SEMANTICS": r_duplicate_semantics,
-    "SCHEMA_INCONSISTENCY": r_schema_inconsistency,
+    "SCHEMA_TYPE_MISMATCH": r_schema_inconsistency,
     "MISSING_SOURCE_LOCATION": r_missing_source_location,
     "PLACEHOLDER_LEFT": r_placeholder_left,
     "PLACEHOLDER_LEFT_JIRA": r_placeholder_left_jira,

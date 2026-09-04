@@ -20,6 +20,12 @@ const ACCEPTED_FILES = `${PDF_MEDIA_TYPE},${DOCX_MEDIA_TYPE},.pdf,.docx`;
 
 type UploadPhase = "idle" | "ready" | "uploading" | "success" | "error";
 
+interface FileDropzoneProps {
+  uploadAllowed?: boolean;
+  uploadBlockedReason?: string;
+  onUploadComplete?: (document: DocumentUploadResponse) => void;
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
@@ -50,7 +56,11 @@ function uploadErrorMessage(error: unknown): string {
   return "Не удалось загрузить документ. Попробуйте ещё раз.";
 }
 
-export function FileDropzone() {
+export function FileDropzone({
+  uploadAllowed = true,
+  uploadBlockedReason,
+  onUploadComplete,
+}: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
@@ -95,6 +105,7 @@ export function FileDropzone() {
       const result = await uploadDocument(file, setProgress, controller.signal);
       setReceipt(result);
       setPhase("success");
+      onUploadComplete?.(result);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setPhase("error");
@@ -194,14 +205,14 @@ export function FileDropzone() {
         )}
 
         {message && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger">
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{message}</span>
           </div>
         )}
 
         {phase === "success" && receipt && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
             <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>Документ загружен и готов к проверке.</span>
           </div>
@@ -214,11 +225,24 @@ export function FileDropzone() {
               Заменить файл
             </Button>
             {phase !== "success" && (
-              <Button onClick={() => void startUpload()} type="button">
+              <Button
+                aria-describedby={!uploadAllowed ? "upload-blocked-reason" : undefined}
+                disabled={!uploadAllowed}
+                onClick={() => void startUpload()}
+                type="button"
+              >
                 Загрузить документ
               </Button>
             )}
           </div>
+        )}
+        {file && phase !== "uploading" && !uploadAllowed && uploadBlockedReason && (
+          <p
+            className="mt-3 text-right text-sm text-muted-foreground"
+            id="upload-blocked-reason"
+          >
+            {uploadBlockedReason}
+          </p>
         )}
       </div>
     </Card>

@@ -1,4 +1,4 @@
-import { ApiError, parseApiError, requestJson } from "@/api/client";
+import { ApiError, authHeaders, parseApiError, requestJson } from "@/api/client";
 import { appConfig } from "@/config";
 
 export interface DocumentUploadResponse {
@@ -29,6 +29,10 @@ export function uploadDocument(
     form.append("document", file, file.name);
     request.open("POST", `${appConfig.apiBaseUrl}/api/documents`);
     request.setRequestHeader("Accept", "application/json");
+    // загрузка идёт через XHR ради индикатора прогресса — заголовок ставим руками
+    for (const [name, value] of Object.entries(authHeaders())) {
+      request.setRequestHeader(name, value);
+    }
     request.responseType = "json";
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && event.total > 0) {

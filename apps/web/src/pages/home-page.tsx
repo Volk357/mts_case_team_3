@@ -26,13 +26,10 @@ export function HomePage() {
   return (
     <div className="space-y-12">
       <section className="max-w-3xl space-y-6 py-8">
-        <div className="inline-flex rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-sm font-medium text-primary">
-          Quality gate для корпоративной документации
-        </div>
-        <h1 className="text-5xl leading-tight font-semibold tracking-tight">
+        <h1 className="max-w-3xl text-[2.75rem] leading-[1.15] font-semibold tracking-tight">
           Найдите вопросы к документу до передачи в разработку
         </h1>
-        <p className="max-w-2xl text-lg leading-8 text-muted-foreground">
+        <p className="max-w-2xl text-lg leading-8 text-text-secondary">
           DocReview проверяет готовый документ по правилам вашей организации и показывает, где
           информации недостаточно для однозначной реализации.
         </p>
@@ -51,9 +48,9 @@ export function HomePage() {
       <section aria-label="Преимущества" className="grid gap-4 md:grid-cols-3">
         {benefits.map(({ icon: Icon, title, text }) => (
           <Card className="p-6" key={title}>
-            <Icon aria-hidden="true" className="mb-5 size-6 text-primary" />
+            <Icon aria-hidden="true" className="mb-5 size-5 text-accent" />
             <h2 className="mb-2 font-semibold">{title}</h2>
-            <p className="text-sm leading-6 text-muted-foreground">{text}</p>
+            <p className="text-sm leading-6 text-text-secondary">{text}</p>
           </Card>
         ))}
       </section>

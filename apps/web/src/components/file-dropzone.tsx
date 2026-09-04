@@ -6,9 +6,12 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { uploadDocument, type DocumentUploadResponse } from "@/api/documents";
+import { getReviewPacks } from "@/api/review-packs";
+import { createReview } from "@/api/reviews";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { appConfig } from "@/config";
@@ -18,7 +21,7 @@ const PDF_MEDIA_TYPE = "application/pdf";
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const ACCEPTED_FILES = `${PDF_MEDIA_TYPE},${DOCX_MEDIA_TYPE},.pdf,.docx`;
 
-type UploadPhase = "idle" | "ready" | "uploading" | "success" | "error";
+type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -58,6 +61,7 @@ export function FileDropzone() {
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<DocumentUploadResponse | null>(null);
+  const navigate = useNavigate();
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -79,7 +83,7 @@ export function FileDropzone() {
   };
 
   const openPicker = () => {
-    if (phase === "uploading") return;
+    if (phase === "uploading" || phase === "starting") return;
     if (inputRef.current) inputRef.current.value = "";
     inputRef.current?.click();
   };
@@ -101,6 +105,33 @@ export function FileDropzone() {
       setMessage(uploadErrorMessage(error));
     } finally {
       abortRef.current = null;
+    }
+  };
+
+  // Загрузка и проверка — один шаг для человека: документ загружают, чтобы
+  // его проверили, а не чтобы он лежал. Пакет правил берём первый доступный:
+  // выбор профиля появится, когда пакетов станет больше одного.
+  const startReview = async () => {
+    if (!receipt || phase === "starting") return;
+    setPhase("starting");
+    setMessage(null);
+    try {
+      const packs = await getReviewPacks();
+      const pack = packs.items[0];
+      if (!pack) {
+        setPhase("error");
+        setMessage("В контуре не настроен ни один профиль проверки. Обратитесь к администратору.");
+        return;
+      }
+      const review = await createReview(
+        receipt.document_id,
+        pack.review_pack_id,
+        crypto.randomUUID(),
+      );
+      navigate(`/reviews/${review.review_id}`);
+    } catch (error) {
+      setPhase("error");
+      setMessage(uploadErrorMessage(error));
     }
   };
 
@@ -200,10 +231,13 @@ export function FileDropzone() {
           </div>
         )}
 
-        {phase === "success" && receipt && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        {(phase === "success" || phase === "starting") && receipt && (
+          <div
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-(--radius-sm) bg-green-soft px-4 py-3 text-sm text-green"
+          >
             <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>Документ загружен и готов к проверке.</span>
+            <span>Документ загружен. Проверка занимает около минуты.</span>
           </div>
         )}
 
@@ -213,7 +247,11 @@ export function FileDropzone() {
               <RefreshCw aria-hidden="true" className="size-4" />
               Заменить файл
             </Button>
-            {phase !== "success" && (
+            {phase === "success" || phase === "starting" ? (
+              <Button disabled={phase === "starting"} onClick={() => void startReview()} type="button">
+                {phase === "starting" ? "Запускаем проверку" : "Проверить документ"}
+              </Button>
+            ) : (
               <Button onClick={() => void startUpload()} type="button">
                 Загрузить документ
               </Button>

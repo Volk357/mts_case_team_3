@@ -1,4 +1,5 @@
 import { appConfig } from "@/config";
+import { currentToken } from "@/auth/session";
 
 export class ApiError extends Error {
   constructor(
@@ -33,11 +34,18 @@ export function parseApiError(body: unknown): { code?: string; message?: string 
   };
 }
 
+/** Заголовок авторизации, если вход выполнен. Проверяет его nginx на /api/. */
+export function authHeaders(): Record<string, string> {
+  const token = currentToken();
+  return token ? { Authorization: `Basic ${token}` } : {};
+}
+
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
+      ...authHeaders(),
       ...init?.headers,
     },
   });

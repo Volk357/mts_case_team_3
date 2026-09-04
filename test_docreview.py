@@ -147,7 +147,7 @@ def test_docx_is_extracted_not_rejected():
                    'openxmlformats.org/package/2006/relationships">'
                    '<Relationship Id="r1" Type="%s/hyperlink" Target="https://dc/x" '
                    'TargetMode="External"/></Relationships>' % R)
-    text, ext, warn = _read_document(path)
+    text, ext, warn, _sha = _read_document(path)
     assert ext == "docx" and "https://dc/x" in text, (ext, text)
     assert warn == []                     # ссылки есть — предупреждения нет
 
@@ -176,7 +176,7 @@ def test_docx_without_links_warns():
                    '<?xml version="1.0"?><w:document xmlns:w="%s"><w:body>'
                    '<w:p><w:r><w:t>Общие сведения</w:t></w:r></w:p>'
                    '</w:body></w:document>' % W)
-    _, ext, warn = _read_document(path)
+    _, ext, warn, _sha = _read_document(path)
     assert ext == "docx" and [w["code"] for w in warn] == ["NO_EXTERNAL_LINKS"]
 
 
@@ -201,14 +201,14 @@ def test_binary_renamed_to_txt_rejected():
 
 def test_txt_still_read_without_warnings():
     path = _tmp("ok.txt", "Общие сведения\nЧасовой пояс: UTC\n".encode("utf-8"))
-    text, ext, warn = _read_document(path)
+    text, ext, warn, _sha = _read_document(path)
     assert ext == "txt" and warn == [] and "Часовой пояс" in text
 
 
 def test_extracted_text_under_docx_name_still_works_with_warning():
     # приложение уже извлекло текст, но сохранило под исходным именем
     path = _tmp("extracted.docx", "Общие сведения\n".encode("utf-8"))
-    text, ext, warn = _read_document(path)
+    text, ext, warn, _sha = _read_document(path)
     assert ext == "docx" and [w["code"] for w in warn] == ["PARSER_FALLBACK"]
     assert "Общие сведения" in text
 
@@ -536,6 +536,36 @@ def test_model_config_lookup_order():
             os.environ[MODEL_CONFIG_ENV] = old
 
 
+def test_document_sha256_is_of_file_bytes_not_text():
+    """Приложение сверяет document.sha256 с хешем ЗАГРУЖЕННОГО ФАЙЛА и бракует
+    результат при расхождении (review_result.py: «result document SHA-256 does
+    not match Document»). Проверяем на .docx: там хеш файла и хеш извлечённого
+    текста РАЗНЫЕ по построению, поэтому подмена одного другим сразу видна.
+    На .txt дефект не воспроизводится — байты совпадают с текстом."""
+    import hashlib as _h
+    import zipfile
+    W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    path = _tmp("hashed.docx", b"")
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("[Content_Types].xml", "<Types/>")
+        z.writestr("word/document.xml",
+                   '<?xml version="1.0"?><w:document xmlns:w="%s"><w:body>'
+                   '<w:p><w:r><w:t>Часовой пояс: UTC</w:t></w:r></w:p>'
+                   '</w:body></w:document>' % W)
+    raw = open(path, "rb").read()
+    text, ext, _, digest = _read_document(path)
+
+    assert ext == "docx"
+    assert digest == _h.sha256(raw).hexdigest(), "хеш обязан быть от байтов файла"
+    assert digest != _h.sha256(text.encode("utf-8")).hexdigest(), \
+        "тест бессмысленен, если хеши совпадают"
+
+    result = build_review_result(text, "hashed.docx", ext, [], [], "r", "p", "m",
+                                 {"fragment": "x"}, 0, document_sha256=digest)
+    assert result["document"]["sha256"] == digest
+    _validate(result)
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -545,6 +575,7 @@ if __name__ == "__main__":
     test_empty_findings_valid()
     test_findings_capped_at_20()
     test_docx_is_extracted_not_rejected()
+    test_document_sha256_is_of_file_bytes_not_text()
     test_zip_that_is_not_docx_still_rejected()
     test_docx_without_links_warns()
     test_pdf_and_ole_rejected()

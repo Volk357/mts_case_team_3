@@ -155,7 +155,8 @@ def _rank_union(formal_findings, llm_findings, ceiling=BUDGET):
 def build_review_result(text, filename, document_type, formal_findings,
                         llm_findings, run_id, pack, model_name,
                         prompt_versions, total_ms, warnings=None,
-                        total_candidates=None, verified_candidates=None, cfg=None):
+                        total_candidates=None, verified_candidates=None, cfg=None,
+                        document_sha256=None):
     """Чистая сборка ReviewResult (completed). Тестируется без модели.
 
     cfg — уже загруженный шаблон (из Review Pack, если он его содержит). Если
@@ -186,7 +187,10 @@ def build_review_result(text, filename, document_type, formal_findings,
         "document": {
             "filename": filename,
             "document_type": document_type,
-            "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            # Хеш ФАЙЛА, а не текста: приложение сверяет его с загруженным
+            # документом. Запасной вариант по тексту оставлен для тестов,
+            # которые собирают результат без файла на диске.
+            "sha256": document_sha256 or hashlib.sha256(text.encode("utf-8")).hexdigest(),
         },
         "engine": {"version": ENGINE_VERSION},
         "review_pack": {"id": pack_id, "version": pack_version},
@@ -228,7 +232,14 @@ _BINARY_SIGNATURES = [
 
 
 def _read_document(path):
-    """Читает документ в текст. txt/md — напрямую, .docx — своим экстрактором,
+    """Читает документ. Возвращает (текст, тип, предупреждения, sha256 ФАЙЛА).
+
+    Хеш считается по БАЙТАМ файла, а не по извлечённому тексту: приложение
+    сверяет `document.sha256` из результата с хешем загруженного файла и при
+    расхождении бракует результат целиком. Для .docx хеш текста не совпал бы
+    никогда — на этом сквозной сценарий и падал.
+
+    txt/md читаются напрямую, .docx разбирается своим экстрактором,
     прочие двоичные форматы — честный отказ.
 
     Двоичный вход отбивается ДО анализа. Иначе .docx читается как мусор,
@@ -239,6 +250,7 @@ def _read_document(path):
     """
     with open(path, "rb") as fh:
         raw = fh.read()
+    digest = hashlib.sha256(raw).hexdigest()
 
     # .docx разбираем сами: таблицы нужны строками «ячейка | ячейка», а адреса
     # гиперссылок — рядом с текстом. Плоская конвертация теряет и то и другое,
@@ -258,7 +270,7 @@ def _read_document(path):
                 "message": "В документе нет внешних гиперссылок. Замечания об "
                            "отсутствующих ссылках следует читать с учётом этого: "
                            "возможно, ссылки были потеряны при подготовке файла."})
-        return text, "docx", warn
+        return text, "docx", warn, digest
 
     for sig, what in _BINARY_SIGNATURES:
         if raw.startswith(sig):
@@ -274,13 +286,13 @@ def _read_document(path):
     text = raw.decode("utf-8", errors="replace")
     ext = os.path.splitext(path)[1].lower().lstrip(".")
     if ext in ("txt", "md", "markdown", ""):
-        return text, ext or "txt", []
+        return text, ext or "txt", [], digest
     # Расширение не текстовое, но содержимое — текст (например, приложение уже
     # извлекло его и сохранило под исходным именем). Работаем, но предупреждаем.
     warn = [{"code": "PARSER_FALLBACK",
              "message": "Формат %s без структурного парсера; содержимое прочитано "
                         "как текст, привязка к странице/таблице недоступна." % ext}]
-    return text, ext, warn
+    return text, ext, warn, digest
 
 
 DEFAULT_PACK_ID = "mts-net"
@@ -461,7 +473,7 @@ def cmd_analyze(args):
     t0 = time.time()
     run_id = args.run_id
     try:
-        text, doc_type, warnings = _read_document(args.file)
+        text, doc_type, warnings, document_sha256 = _read_document(args.file)
     except UnsupportedBinary as e:
         _write(args.output, failed_result(run_id, "UNSUPPORTED_DOCUMENT",
                                           "read", str(e), False))
@@ -535,7 +547,8 @@ def cmd_analyze(args):
             {"fragment": "dict2", "global": "global"},
             (time.time() - t0) * 1000, warnings,
             total_candidates=llm["found_raw"] + len(formal),
-            verified_candidates=llm["verified"] + len(formal), cfg=cfg)
+            verified_candidates=llm["verified"] + len(formal), cfg=cfg,
+            document_sha256=document_sha256)
     except ModelUnavailable as e:
         # retriable=True: сеть или эндпоинт модели, повтор осмыслен
         _write(args.output, failed_result(run_id, "MODEL_UNAVAILABLE", "analyze",

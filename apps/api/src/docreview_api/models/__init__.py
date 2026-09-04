@@ -1,5 +1,6 @@
 """Application domain and persistence models."""
 
+from docreview_api.models.finding_feedback import FeedbackDecision
 from docreview_api.models.review_job_state import (
     ALLOWED_TRANSITIONS,
     FAILED_STATUSES,
@@ -23,6 +24,7 @@ __all__ = [
     "ALLOWED_TRANSITIONS",
     "FAILED_STATUSES",
     "TERMINAL_STATUSES",
+    "FeedbackDecision",
     "FindingProjection",
     "InvalidReviewJobState",
     "InvalidReviewJobTransition",

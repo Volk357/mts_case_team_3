@@ -1,5 +1,6 @@
 import { useEffect, useRef, type KeyboardEvent } from "react";
 
+import type { FindingFeedback } from "@/api/feedback";
 import type { ReviewFinding } from "@/api/reviews";
 import { FindingCard } from "@/components/finding-card";
 
@@ -7,10 +8,14 @@ export function FindingsList({
   findings,
   selectedFindingId,
   onSelect,
+  feedbackByFindingId = {},
+  onFeedbackSaved,
 }: {
   findings: ReviewFinding[];
   selectedFindingId?: string;
   onSelect: (findingId: string) => void;
+  feedbackByFindingId?: Record<string, FindingFeedback>;
+  onFeedbackSaved?: (feedback: FindingFeedback) => void;
 }) {
   const selectionButtons = useRef<Array<HTMLButtonElement | null>>([]);
   const previousSelectedId = useRef(selectedFindingId);
@@ -71,9 +76,11 @@ export function FindingsList({
           <li key={finding.finding_id}>
             <FindingCard
               finding={finding}
+              onFeedbackSaved={onFeedbackSaved}
               onSelect={() => onSelect(finding.finding_id)}
               onSelectionKeyDown={(event) => moveSelection(event, index)}
               selected={selected}
+              savedFeedback={feedbackByFindingId[finding.finding_id]}
               selectionButtonId={`finding-selection-${finding.finding_id}`}
               selectionButtonRef={(element) => {
                 selectionButtons.current[index] = element;

@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from docreview_api.db.models import FindingFeedbackModel, FindingModel
+from docreview_api.db.models import FindingFeedbackModel, FindingModel, ReviewJobModel
 from docreview_api.models.finding_feedback import FeedbackDecision
 from docreview_api.repositories.database import FindingFeedbackRepository
 
@@ -17,6 +17,10 @@ MAX_FEEDBACK_COMMENT_LENGTH = 4000
 
 class FindingUnavailableError(LookupError):
     """The finding does not exist in the requesting tenant."""
+
+
+class ReviewUnavailableError(LookupError):
+    """The review does not exist in the requesting tenant."""
 
 
 class InvalidFeedbackError(ValueError):
@@ -73,6 +77,35 @@ class FindingFeedbackService:
             submitted_by_user_id=submitted_by_user_id,
         )
         return self._snapshot(feedback)
+
+    def list_for_review(
+        self,
+        *,
+        company_id: UUID,
+        review_id: UUID,
+        actor_key: str,
+    ) -> tuple[FeedbackSnapshot, ...]:
+        actor = self._validate_actor_key(actor_key)
+        review_exists = self._session.scalar(
+            select(ReviewJobModel.id).where(
+                ReviewJobModel.id == review_id,
+                ReviewJobModel.company_id == company_id,
+            )
+        )
+        if review_exists is None:
+            raise ReviewUnavailableError
+
+        feedback = self._session.scalars(
+            select(FindingFeedbackModel)
+            .join(FindingModel, FindingModel.id == FindingFeedbackModel.finding_id)
+            .where(
+                FindingModel.review_job_id == review_id,
+                FindingFeedbackModel.company_id == company_id,
+                FindingFeedbackModel.actor_key == actor,
+            )
+            .order_by(FindingModel.ordinal)
+        ).all()
+        return tuple(self._snapshot(item) for item in feedback)
 
     @staticmethod
     def _validate_actor_key(value: str) -> str:

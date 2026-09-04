@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
+import type { FindingFeedback } from "@/api/feedback";
 import type { ReviewFinding } from "@/api/reviews";
 import { AppProviders } from "@/app-providers";
 import { FindingCard } from "@/components/finding-card";
@@ -30,10 +31,10 @@ const finding: ReviewFinding = {
   clarification: "Уточнить дополнительное правило сортировки",
 };
 
-function renderCard(onSelect = vi.fn()) {
+function renderCard(onSelect = vi.fn(), savedFeedback?: FindingFeedback) {
   render(
     <AppProviders>
-      <FindingCard finding={finding} onSelect={onSelect} selected />
+      <FindingCard finding={finding} onSelect={onSelect} savedFeedback={savedFeedback} selected />
     </AppProviders>,
   );
   return onSelect;
@@ -77,12 +78,64 @@ it("saves analyst feedback without changing the selected finding", async () => {
     finding.finding_id,
     expect.stringMatching(/^web-analyst-/),
     "accepted",
+    null,
   );
   expect(screen.getByRole("button", { name: "Полезно" })).toHaveAttribute(
     "aria-pressed",
     "true",
   );
   expect(onSelect).not.toHaveBeenCalled();
+});
+
+it("explains decisions only when requested", async () => {
+  const user = userEvent.setup();
+  renderCard();
+
+  expect(screen.queryByText(/Замечание точное и требует доработки/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Что означают варианты?" }));
+
+  expect(screen.getByText(/Замечание точное и требует доработки/)).toBeVisible();
+  expect(screen.getByText(/исключение согласовано/)).toBeVisible();
+});
+
+it("restores saved feedback, changes it and saves an optional comment", async () => {
+  const user = userEvent.setup();
+  const savedFeedback: FindingFeedback = {
+    feedback_id: "feedback-1",
+    finding_id: finding.finding_id,
+    decision: "already_described",
+    comment: "См. раздел 4",
+    created_at: "2026-09-04T07:00:00Z",
+    updated_at: "2026-09-04T07:00:00Z",
+  };
+  putFindingFeedbackMock
+    .mockResolvedValueOnce({ ...savedFeedback, decision: "accepted", comment: "См. раздел 4" })
+    .mockResolvedValueOnce({ ...savedFeedback, decision: "accepted", comment: "Проверено вручную" });
+  renderCard(vi.fn(), savedFeedback);
+
+  expect(screen.getByRole("button", { name: "Уже описано" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(screen.getByText("Сохранённая оценка загружена.")).toBeVisible();
+  expect(screen.getByText("Комментарий сохранён")).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "Изменить комментарий" }));
+  expect(screen.getByDisplayValue("См. раздел 4")).toBeVisible();
+
+  await user.click(screen.getByRole("button", { name: "Полезно" }));
+  expect(await screen.findByText("Оценка сохранена.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Полезно" })).toHaveAttribute("aria-pressed", "true");
+
+  await user.clear(screen.getByLabelText("Комментарий к оценке"));
+  await user.type(screen.getByLabelText("Комментарий к оценке"), "Проверено вручную");
+  await user.click(screen.getByRole("button", { name: "Сохранить комментарий" }));
+
+  expect(putFindingFeedbackMock).toHaveBeenLastCalledWith(
+    finding.finding_id,
+    expect.stringMatching(/^web-analyst-/),
+    "accepted",
+    "Проверено вручную",
+  );
 });
 
 it("lets the analyst select the card independently from feedback", async () => {

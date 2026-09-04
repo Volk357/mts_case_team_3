@@ -1,12 +1,28 @@
 import { requestJson } from "@/api/client";
 import type {
   FeedbackDecision,
+  FeedbackListResponse,
   FeedbackResponse,
   FeedbackUpsertRequest,
 } from "@/api/generated";
 
 export type { FeedbackDecision } from "@/api/generated";
 export type FindingFeedback = FeedbackResponse;
+export type ReviewFeedback = FeedbackListResponse;
+
+export function getReviewFeedback(
+  reviewId: string,
+  actorKey: string,
+  signal?: AbortSignal,
+) {
+  return requestJson<FeedbackListResponse>(
+    `/api/reviews/${encodeURIComponent(reviewId)}/feedback`,
+    {
+      headers: { "X-Actor-Key": actorKey },
+      signal,
+    },
+  );
+}
 
 export function putFindingFeedback(
   findingId: string,

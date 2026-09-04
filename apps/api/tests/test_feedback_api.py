@@ -137,6 +137,48 @@ async def test_feedback_upsert_changes_decision_without_mutating_finding(
 
 
 @pytest.mark.anyio
+async def test_feedback_list_restores_only_the_current_actor_decisions(
+    feedback_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, finding_id, _ = feedback_resources
+    app = create_app(settings)
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions() as session:
+        finding = session.get(FindingModel, finding_id)
+        assert finding is not None
+        review_id = finding.review_job_id
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        saved = await client.put(
+            f"/api/findings/{finding_id}/feedback",
+            json={"decision": "already_described", "comment": "See section 4"},
+            headers={"X-Actor-Key": "browser-session-1"},
+        )
+        restored = await client.get(
+            f"/api/reviews/{review_id}/feedback",
+            headers={"X-Actor-Key": "browser-session-1"},
+        )
+        another_actor = await client.get(
+            f"/api/reviews/{review_id}/feedback",
+            headers={"X-Actor-Key": "browser-session-2"},
+        )
+        missing_review = await client.get(
+            f"/api/reviews/{uuid4()}/feedback",
+            headers={"X-Actor-Key": "browser-session-1"},
+        )
+
+    assert saved.status_code == 200
+    assert restored.status_code == 200
+    assert restored.json()["total"] == 1
+    assert restored.json()["items"][0] == saved.json()
+    assert another_actor.json()["items"] == []
+    assert missing_review.status_code == 404
+    assert missing_review.json()["error"]["code"] == "REVIEW_NOT_FOUND"
+
+
+@pytest.mark.anyio
 async def test_feedback_validates_decision_actor_and_tenant_boundary(
     feedback_resources: tuple[Settings, UUID, UUID],
 ) -> None:
@@ -204,4 +246,8 @@ async def test_feedback_contract_is_published_in_openapi(
         "allowed_exception",
         "already_described",
         "not_relevant",
+    }
+    list_operation = schema["paths"]["/api/reviews/{review_id}/feedback"]["get"]
+    assert list_operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/FeedbackListResponse"
     }

@@ -121,6 +121,26 @@ export type ErrorItem = {
 export type FeedbackDecision = 'accepted' | 'false_positive' | 'allowed_exception' | 'already_described' | 'not_relevant';
 
 /**
+ * FeedbackListResponse
+ */
+export type FeedbackListResponse = {
+    /**
+     * Items
+     */
+    items: Array<FeedbackResponse>;
+    /**
+     * Review Id
+     *
+     * Opaque resource identifier. Clients must not infer meaning from it.
+     */
+    review_id: string;
+    /**
+     * Total
+     */
+    total: number;
+};
+
+/**
  * FeedbackResponse
  */
 export type FeedbackResponse = {
@@ -898,6 +918,72 @@ export type GetReviewApiReviewsReviewIdGetResponses = {
 };
 
 export type GetReviewApiReviewsReviewIdGetResponse = GetReviewApiReviewsReviewIdGetResponses[keyof GetReviewApiReviewsReviewIdGetResponses];
+
+export type ListReviewFeedbackApiReviewsReviewIdFeedbackGetData = {
+    body?: never;
+    headers: {
+        /**
+         * X-Actor-Key
+         */
+        'X-Actor-Key': string;
+    };
+    path: {
+        /**
+         * Review Id
+         *
+         * Opaque resource identifier. Clients must not infer meaning from it.
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/reviews/{review_id}/feedback';
+};
+
+export type ListReviewFeedbackApiReviewsReviewIdFeedbackGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type ListReviewFeedbackApiReviewsReviewIdFeedbackGetError = ListReviewFeedbackApiReviewsReviewIdFeedbackGetErrors[keyof ListReviewFeedbackApiReviewsReviewIdFeedbackGetErrors];
+
+export type ListReviewFeedbackApiReviewsReviewIdFeedbackGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: FeedbackListResponse;
+};
+
+export type ListReviewFeedbackApiReviewsReviewIdFeedbackGetResponse = ListReviewFeedbackApiReviewsReviewIdFeedbackGetResponses[keyof ListReviewFeedbackApiReviewsReviewIdFeedbackGetResponses];
 
 export type GetReviewFindingsApiReviewsReviewIdFindingsGetData = {
     body?: never;

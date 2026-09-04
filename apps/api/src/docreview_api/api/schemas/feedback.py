@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from pydantic import StringConstraints
+from pydantic import Field, StringConstraints
 
 from docreview_api.api.schemas.common import ApiModel, OpaqueId, UtcDateTime
 from docreview_api.models.finding_feedback import FeedbackDecision
@@ -22,3 +22,9 @@ class FeedbackResponse(ApiModel):
     comment: str | None
     created_at: UtcDateTime
     updated_at: UtcDateTime
+
+
+class FeedbackListResponse(ApiModel):
+    review_id: OpaqueId
+    items: list[FeedbackResponse]
+    total: int = Field(ge=0)

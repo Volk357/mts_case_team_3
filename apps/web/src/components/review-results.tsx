@@ -5,6 +5,11 @@ import { useSearchParams } from "react-router-dom";
 
 import { getDocument, type DocumentResponse } from "@/api/documents";
 import {
+  getReviewFeedback,
+  type FindingFeedback,
+  type ReviewFeedback,
+} from "@/api/feedback";
+import {
   getReviewFindings,
   type ReviewFinding,
   type ReviewFindings,
@@ -19,10 +24,12 @@ import { ReviewSummary } from "@/components/review-summary";
 import { ReviewWarnings } from "@/components/review-warnings";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { getFeedbackActorKey } from "@/lib/feedback-actor";
 
 const EMPTY_FINDINGS: ReviewFinding[] = [];
 
 export function ReviewResults({ review }: { review: ReviewState }) {
+  const actorKey = useMemo(() => getFeedbackActorKey(), []);
   const document = useQuery({
     queryKey: ["documents", review.document_id],
     queryFn: ({ signal }) => getDocument(review.document_id, signal),
@@ -33,8 +40,13 @@ export function ReviewResults({ review }: { review: ReviewState }) {
     queryFn: ({ signal }) => getReviewFindings(review.review_id, signal),
     retry: false,
   });
+  const feedback = useQuery({
+    queryKey: ["reviews", review.review_id, "feedback", actorKey],
+    queryFn: ({ signal }) => getReviewFeedback(review.review_id, actorKey, signal),
+    retry: false,
+  });
 
-  if (document.isPending || findings.isPending) {
+  if (document.isPending || findings.isPending || feedback.isPending) {
     return (
       <Card aria-live="polite" className="flex items-center gap-3 p-8 text-muted-foreground">
         <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
@@ -68,22 +80,37 @@ export function ReviewResults({ review }: { review: ReviewState }) {
     );
   }
 
-  return <ReviewResultsView document={document.data} findings={findings.data} review={review} />;
+  return (
+    <ReviewResultsView
+      document={document.data}
+      feedback={feedback.data}
+      feedbackUnavailable={feedback.isError}
+      findings={findings.data}
+      review={review}
+    />
+  );
 }
 
 export function ReviewResultsView({
   review,
   document,
   findings,
+  feedback,
+  feedbackUnavailable = false,
 }: {
   review: ReviewState;
   document: DocumentResponse;
   findings: ReviewFindings;
+  feedback?: ReviewFeedback;
+  feedbackUnavailable?: boolean;
 }) {
   const findingsViewport = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [defectType, setDefectType] = useState("all");
+  const [feedbackByFindingId, setFeedbackByFindingId] = useState<Record<string, FindingFeedback>>(
+    () => Object.fromEntries((feedback?.items ?? []).map((item) => [item.finding_id, item])),
+  );
   const allFindings = findings.items ?? EMPTY_FINDINGS;
   const warnings = findings.warnings ?? [];
   const defectTypes = useMemo(
@@ -151,6 +178,11 @@ export function ReviewResultsView({
     <div className="space-y-6">
       <ReviewSummary document={document} findings={allFindings} />
       <ReviewWarnings warnings={warnings} />
+      {feedbackUnavailable && (
+        <Card className="border-warning/30 bg-warning/5 px-5 py-3 text-sm text-warning" role="status">
+          Не удалось загрузить сохранённые оценки. Новую оценку всё ещё можно отправить.
+        </Card>
+      )}
       {allFindings.length === 0 ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
           <EmptyFindingsState />
@@ -194,7 +226,14 @@ export function ReviewResultsView({
                 ref={findingsViewport}
               >
                 <FindingsList
+                  feedbackByFindingId={feedbackByFindingId}
                   findings={filteredFindings}
+                  onFeedbackSaved={(saved) =>
+                    setFeedbackByFindingId((current) => ({
+                      ...current,
+                      [saved.finding_id]: saved,
+                    }))
+                  }
                   onSelect={selectFinding}
                   selectedFindingId={selectedFinding?.finding_id}
                 />

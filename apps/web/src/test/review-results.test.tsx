@@ -7,8 +7,9 @@ import type { ReviewFinding, ReviewState } from "@/api/reviews";
 import { AppProviders } from "@/app-providers";
 import { ReviewResults } from "@/components/review-results";
 
-const { getDocumentMock, getReviewFindingsMock } = vi.hoisted(() => ({
+const { getDocumentMock, getReviewFeedbackMock, getReviewFindingsMock } = vi.hoisted(() => ({
   getDocumentMock: vi.fn(),
+  getReviewFeedbackMock: vi.fn(),
   getReviewFindingsMock: vi.fn(),
 }));
 
@@ -20,6 +21,11 @@ vi.mock("@/api/documents", async (importOriginal) => {
 vi.mock("@/api/reviews", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/api/reviews")>();
   return { ...original, getReviewFindings: getReviewFindingsMock };
+});
+
+vi.mock("@/api/feedback", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/api/feedback")>();
+  return { ...original, getReviewFeedback: getReviewFeedbackMock };
 });
 
 const document: DocumentResponse = {
@@ -88,6 +94,11 @@ function renderResults(initialEntry = "/reviews/review-42") {
 beforeEach(() => {
   sessionStorage.clear();
   getDocumentMock.mockReset().mockResolvedValue(document);
+  getReviewFeedbackMock.mockReset().mockResolvedValue({
+    review_id: review.review_id,
+    items: [],
+    total: 0,
+  });
   getReviewFindingsMock.mockReset().mockResolvedValue({
     review_id: review.review_id,
     items: findings,
@@ -114,6 +125,39 @@ it("builds the result information architecture and restores selection from the U
   expect(screen.getByRole("button", { name: /MISSING_SOURCE/ })).toHaveAttribute(
     "aria-pressed",
     "true",
+  );
+});
+
+it("restores the current browser session feedback from the backend", async () => {
+  getReviewFeedbackMock.mockResolvedValueOnce({
+    review_id: review.review_id,
+    items: [
+      {
+        feedback_id: "feedback-2",
+        finding_id: "finding-2",
+        decision: "already_described",
+        comment: "См. описание источника выше",
+        created_at: "2026-09-04T07:02:00Z",
+        updated_at: "2026-09-04T07:02:00Z",
+      },
+    ],
+    total: 1,
+  });
+
+  renderResults();
+
+  const findingButton = await screen.findByRole("button", { name: /#2.*MISSING_SOURCE/ });
+  const card = findingButton.closest("article");
+  expect(card).not.toBeNull();
+  expect(within(card as HTMLElement).getByRole("button", { name: "Уже описано" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  expect(within(card as HTMLElement).getByText("Комментарий сохранён")).toBeVisible();
+  expect(getReviewFeedbackMock).toHaveBeenCalledWith(
+    review.review_id,
+    expect.stringMatching(/^web-analyst-/),
+    expect.any(AbortSignal),
   );
 });
 

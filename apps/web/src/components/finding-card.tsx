@@ -1,10 +1,9 @@
-import { useMutation } from "@tanstack/react-query";
-import { Check, ChevronRight, MapPin, MessageSquareText } from "lucide-react";
-import { useState, type KeyboardEventHandler, type Ref } from "react";
+import { ChevronRight, MapPin } from "lucide-react";
+import type { KeyboardEventHandler, Ref } from "react";
 
-import { putFindingFeedback, type FeedbackDecision } from "@/api/feedback";
+import type { FindingFeedback } from "@/api/feedback";
 import type { ReviewFinding } from "@/api/reviews";
-import { getFeedbackActorKey } from "@/lib/feedback-actor";
+import { FeedbackControls } from "@/components/feedback-controls";
 import { cn } from "@/lib/utils";
 
 const severityPresentation: Record<
@@ -17,14 +16,6 @@ const severityPresentation: Record<
   low: { label: "Низкое", className: "bg-muted text-muted-foreground" },
 };
 
-const feedbackOptions: Array<{ decision: FeedbackDecision; label: string }> = [
-  { decision: "accepted", label: "Полезно" },
-  { decision: "false_positive", label: "Ложная тревога" },
-  { decision: "already_described", label: "Уже описано" },
-  { decision: "allowed_exception", label: "Допустимое исключение" },
-  { decision: "not_relevant", label: "Не относится" },
-];
-
 export function FindingCard({
   finding,
   selected,
@@ -33,6 +24,8 @@ export function FindingCard({
   selectionButtonRef,
   selectionTabIndex,
   onSelectionKeyDown,
+  savedFeedback,
+  onFeedbackSaved,
 }: {
   finding: ReviewFinding;
   selected: boolean;
@@ -41,13 +34,9 @@ export function FindingCard({
   selectionButtonRef?: Ref<HTMLButtonElement>;
   selectionTabIndex?: number;
   onSelectionKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
+  savedFeedback?: FindingFeedback;
+  onFeedbackSaved?: (feedback: FindingFeedback) => void;
 }) {
-  const [decision, setDecision] = useState<FeedbackDecision>();
-  const feedback = useMutation({
-    mutationFn: (nextDecision: FeedbackDecision) =>
-      putFindingFeedback(finding.finding_id, getFeedbackActorKey(), nextDecision),
-    onSuccess: (saved) => setDecision(saved.decision),
-  });
   const severity = severityPresentation[finding.severity];
   const locationParts = finding.location.section_path;
   const locationLabel = finding.location.page
@@ -116,36 +105,11 @@ export function FindingCard({
         </span>
       </button>
 
-      <fieldset className="border-t border-border px-5 py-4" disabled={feedback.isPending}>
-        <legend className="flex items-center gap-2 px-1 text-xs font-medium text-muted-foreground">
-          <MessageSquareText aria-hidden="true" className="size-3.5" />
-          Оцените замечание
-        </legend>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {feedbackOptions.map((option) => (
-            <button
-              aria-pressed={decision === option.decision}
-              className={cn(
-                "inline-flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition",
-                decision === option.decision
-                  ? "border-success/30 bg-success/10 text-success"
-                  : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground",
-              )}
-              key={option.decision}
-              onClick={() => feedback.mutate(option.decision)}
-              type="button"
-            >
-              {decision === option.decision && <Check aria-hidden="true" className="size-3.5" />}
-              {option.label}
-            </button>
-          ))}
-        </div>
-        <p aria-live="polite" className="mt-2 min-h-5 text-xs text-muted-foreground">
-          {feedback.isPending && "Сохраняем оценку…"}
-          {feedback.isSuccess && "Оценка сохранена."}
-          {feedback.isError && "Не удалось сохранить оценку. Попробуйте ещё раз."}
-        </p>
-      </fieldset>
+      <FeedbackControls
+        findingId={finding.finding_id}
+        onSaved={onFeedbackSaved}
+        savedFeedback={savedFeedback}
+      />
     </article>
   );
 }

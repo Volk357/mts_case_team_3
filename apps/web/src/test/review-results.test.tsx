@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 
@@ -75,7 +75,7 @@ function LocationProbe() {
 }
 
 function renderResults(initialEntry = "/reviews/review-42") {
-  render(
+  return render(
     <AppProviders>
       <MemoryRouter initialEntries={[initialEntry]}>
         <ReviewResults review={review} />
@@ -86,6 +86,7 @@ function renderResults(initialEntry = "/reviews/review-42") {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   getDocumentMock.mockReset().mockResolvedValue(document);
   getReviewFindingsMock.mockReset().mockResolvedValue({
     review_id: review.review_id,
@@ -131,4 +132,49 @@ it("filters findings and keeps the active finding in the URL", async () => {
   await user.selectOptions(screen.getByLabelText("Уровень серьёзности"), "all");
   await user.click(screen.getByRole("button", { name: /MISSING_SOURCE/ }));
   expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-2");
+});
+
+it("navigates between findings with controls and the keyboard", async () => {
+  const user = userEvent.setup();
+  renderResults();
+
+  const firstFinding = await screen.findByRole("button", { name: /#1.*AMBIGUOUS_LOGIC/ });
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-1"));
+  expect(screen.getByText("1 из 3")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Предыдущее замечание" })).toBeDisabled();
+
+  await user.click(screen.getByRole("button", { name: "Следующее замечание" }));
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-2"));
+  expect(screen.getByText("2 из 3")).toBeVisible();
+  expect(screen.getByRole("button", { name: /#2.*MISSING_SOURCE/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await user.click(firstFinding);
+  await user.keyboard("{ArrowDown}");
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-2"));
+  expect(screen.getByRole("button", { name: /#2.*MISSING_SOURCE/ })).toHaveFocus();
+
+  await user.keyboard("{End}");
+  await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("finding=finding-3"));
+  expect(screen.getByRole("button", { name: /#3.*AMBIGUOUS_LOGIC/ })).toHaveFocus();
+  expect(screen.getByRole("button", { name: "Следующее замечание" })).toBeDisabled();
+});
+
+it("restores the findings list scroll position for the review", async () => {
+  const firstRender = renderResults();
+  await screen.findByRole("heading", { name: "Технические требования.pdf" });
+  const viewport = screen.getByLabelText("Прокручиваемый список замечаний");
+
+  Object.defineProperty(viewport, "scrollTop", { configurable: true, value: 275, writable: true });
+  fireEvent.scroll(viewport);
+  expect(sessionStorage.getItem("docreview.findings-scroll.review-42")).toBe("275");
+
+  firstRender.unmount();
+  renderResults();
+  await screen.findByRole("heading", { name: "Технические требования.pdf" });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Прокручиваемый список замечаний").scrollTop).toBe(275),
+  );
 });

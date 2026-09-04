@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { Check, ChevronRight, MapPin, MessageSquareText } from "lucide-react";
-import { useState } from "react";
+import { useState, type KeyboardEventHandler, type Ref } from "react";
 
 import { putFindingFeedback, type FeedbackDecision } from "@/api/feedback";
 import type { ReviewFinding } from "@/api/reviews";
@@ -29,10 +29,18 @@ export function FindingCard({
   finding,
   selected,
   onSelect,
+  selectionButtonId,
+  selectionButtonRef,
+  selectionTabIndex,
+  onSelectionKeyDown,
 }: {
   finding: ReviewFinding;
   selected: boolean;
   onSelect: () => void;
+  selectionButtonId?: string;
+  selectionButtonRef?: Ref<HTMLButtonElement>;
+  selectionTabIndex?: number;
+  onSelectionKeyDown?: KeyboardEventHandler<HTMLButtonElement>;
 }) {
   const [decision, setDecision] = useState<FeedbackDecision>();
   const feedback = useMutation({
@@ -53,7 +61,11 @@ export function FindingCard({
       <button
         aria-pressed={selected}
         className="w-full p-5 text-left hover:bg-muted/30"
+        id={selectionButtonId}
         onClick={onSelect}
+        onKeyDown={onSelectionKeyDown}
+        ref={selectionButtonRef}
+        tabIndex={selectionTabIndex}
         type="button"
       >
         <span className="flex flex-wrap items-center gap-2">

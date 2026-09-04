@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { getDocument } from "@/api/documents";
@@ -8,6 +8,7 @@ import { getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/r
 import { DocumentViewer } from "@/components/document-viewer";
 import { FindingsFilters, type SeverityFilter } from "@/components/findings-filters";
 import { FindingsList } from "@/components/findings-list";
+import { FindingsNavigation } from "@/components/findings-navigation";
 import { ReviewSummary } from "@/components/review-summary";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import { Card } from "@/components/ui/card";
 const EMPTY_FINDINGS: ReviewFinding[] = [];
 
 export function ReviewResults({ review }: { review: ReviewState }) {
+  const findingsViewport = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [severity, setSeverity] = useState<SeverityFilter>("all");
   const [defectType, setDefectType] = useState("all");
@@ -47,6 +49,10 @@ export function ReviewResults({ review }: { review: ReviewState }) {
   const selectedFinding =
     filteredFindings.find((finding) => finding.finding_id === requestedFindingId) ??
     filteredFindings[0];
+  const selectedFindingIndex = selectedFinding
+    ? filteredFindings.findIndex((finding) => finding.finding_id === selectedFinding.finding_id)
+    : -1;
+  const scrollStorageKey = `docreview.findings-scroll.${review.review_id}`;
 
   useEffect(() => {
     const nextFindingId = selectedFinding?.finding_id;
@@ -56,10 +62,35 @@ export function ReviewResults({ review }: { review: ReviewState }) {
     setSearchParams(next, { replace: true });
   }, [requestedFindingId, searchParams, selectedFinding?.finding_id, setSearchParams]);
 
+  useEffect(() => {
+    const viewport = findingsViewport.current;
+    if (!viewport || !findings.isSuccess) return;
+
+    try {
+      const savedPosition = Number.parseInt(sessionStorage.getItem(scrollStorageKey) ?? "0", 10);
+      if (Number.isFinite(savedPosition)) viewport.scrollTop = savedPosition;
+    } catch {
+      // Results remain usable when browser storage is unavailable.
+    }
+  }, [findings.isSuccess, scrollStorageKey]);
+
   const selectFinding = (findingId: string) => {
     const next = new URLSearchParams(searchParams);
     next.set("finding", findingId);
     setSearchParams(next, { replace: true });
+  };
+
+  const selectAtIndex = (index: number) => {
+    const finding = filteredFindings[index];
+    if (finding) selectFinding(finding.finding_id);
+  };
+
+  const rememberScrollPosition = (event: UIEvent<HTMLDivElement>) => {
+    try {
+      sessionStorage.setItem(scrollStorageKey, String(event.currentTarget.scrollTop));
+    } catch {
+      // Scrolling does not depend on storage availability.
+    }
   };
 
   if (document.isPending || findings.isPending) {
@@ -116,11 +147,24 @@ export function ReviewResults({ review }: { review: ReviewState }) {
               Показано: {filteredFindings.length} из {allFindings.length}
             </span>
           </div>
-          <FindingsList
-            findings={filteredFindings}
-            onSelect={selectFinding}
-            selectedFindingId={selectedFinding?.finding_id}
+          <FindingsNavigation
+            currentIndex={selectedFindingIndex}
+            onNext={() => selectAtIndex(selectedFindingIndex + 1)}
+            onPrevious={() => selectAtIndex(selectedFindingIndex - 1)}
+            total={filteredFindings.length}
           />
+          <div
+            aria-label="Прокручиваемый список замечаний"
+            className="overscroll-contain lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto lg:pr-2"
+            onScroll={rememberScrollPosition}
+            ref={findingsViewport}
+          >
+            <FindingsList
+              findings={filteredFindings}
+              onSelect={selectFinding}
+              selectedFindingId={selectedFinding?.finding_id}
+            />
+          </div>
         </section>
         <DocumentViewer document={document.data} finding={selectedFinding} />
       </div>

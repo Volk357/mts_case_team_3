@@ -368,11 +368,35 @@ def resolve_pack(pack):
             in_pack("glossary.yaml"), warnings)
 
 
+MODEL_CONFIG_ENV = "DOCREVIEW_MODEL_CONFIG"
+MODEL_CONFIG_DEFAULT = "model-config.yaml"
+
+
+def find_model_config(explicit=None):
+    """Где взять параметры модели, по убыванию приоритета.
+
+    1. `--model-config` — как описано в контракте;
+    2. переменная окружения DOCREVIEW_MODEL_CONFIG;
+    3. `model-config.yaml` рядом с ядром.
+
+    Пункты 2 и 3 нужны не для красоты. `ProcessRunner` вычищает окружение
+    дочернего процесса, а `AnalysisJobExecutor` собирает `AnalysisProcessRequest`
+    без `model_config_path` — значит `--model-config` приложение сейчас
+    не передаёт вообще, и ядро осталось бы без эндпоинта модели. Пока это
+    не поправлено на стороне приложения, конфиг рядом с ядром позволяет
+    развернуть рабочий контур, не трогая чужой код.
+    """
+    if explicit:
+        return explicit
+    from_env = os.environ.get(MODEL_CONFIG_ENV)
+    if from_env:
+        return from_env
+    beside_core = os.path.join(CORE_DIR, MODEL_CONFIG_DEFAULT)
+    return beside_core if os.path.isfile(beside_core) else None
+
+
 def load_model_config(path):
-    """`--model-config` — единственный канал, по которому приложение может
-    передать ядру эндпоинт и имя модели: `ProcessRunner` вычищает окружение
-    дочернего процесса, поэтому OLLAMA_URL из окружения приложения до нас
-    не доходит. Формат — YAML или JSON.
+    """Параметры модели из YAML или JSON.
 
     Понимаем ключи: base_url | url | endpoint, model | name, num_ctx, timeout.
     Возвращает словарь; пустой, если путь не задан.
@@ -462,7 +486,7 @@ def cmd_analyze(args):
         return EXIT_REVIEW_PACK
 
     try:
-        model_conf = load_model_config(args.model_config)
+        model_conf = load_model_config(find_model_config(args.model_config))
     except ModelConfigInvalid as e:
         _write(args.output, failed_result(
             run_id, "MODEL_CONFIG_INVALID", "analyze", str(e), False))

@@ -17,7 +17,8 @@ except ImportError:                       # на свежем клоне без 
 from docreview import (build_review_result, failed_result,
                        _read_document, UnsupportedBinary, BUDGET,
                        resolve_pack, ReviewPackMissing, _core_path, main,
-                       load_model_config, ModelConfigInvalid, _write_artifacts)
+                       load_model_config, ModelConfigInvalid, _write_artifacts,
+                       find_model_config, MODEL_CONFIG_ENV)
 
 
 def _validate(obj):
@@ -512,6 +513,29 @@ def test_broken_pack_glossary_is_pack_error_not_internal():
     assert json.load(open(out, encoding="utf-8"))["error"]["code"] == "REVIEW_PACK_INVALID"
 
 
+def test_model_config_lookup_order():
+    """Приложение сейчас НЕ передаёт --model-config (AnalysisProcessRequest
+    собирается без model_config_path), а окружение подпроцесса вычищается.
+    Без запасных источников развёрнутое ядро осталось бы без эндпоинта."""
+    explicit = _tmp("explicit.yaml", b"base_url: http://explicit/api\n")
+    from_env = _tmp("env.yaml", b"base_url: http://env/api\n")
+    old = os.environ.get(MODEL_CONFIG_ENV)
+    try:
+        os.environ[MODEL_CONFIG_ENV] = from_env
+        assert find_model_config(explicit) == explicit      # флаг важнее всего
+        assert find_model_config(None) == from_env          # затем окружение
+        os.environ.pop(MODEL_CONFIG_ENV)
+        beside = find_model_config(None)                    # затем рядом с ядром
+        core_default = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "model-config.yaml")
+        assert beside == (core_default if os.path.isfile(core_default) else None)
+    finally:
+        if old is None:
+            os.environ.pop(MODEL_CONFIG_ENV, None)
+        else:
+            os.environ[MODEL_CONFIG_ENV] = old
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -537,6 +561,7 @@ if __name__ == "__main__":
     test_resolve_pack_identifier_without_path()
     test_model_config_is_the_channel_for_endpoint()
     test_model_config_missing_file_is_reported()
+    test_model_config_lookup_order()
     test_rejected_candidates_go_to_artifacts_not_result()
     test_artifacts_skipped_without_flag()
     test_pack_manifest_must_declare_id_and_version()

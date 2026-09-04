@@ -236,6 +236,36 @@ def test_data_catalog_ignores_when_section_absent():
     assert cf.check_data_catalog(text, CFG) == []
 
 
+def test_data_catalog_content_no_url_is_clarification_not_high():
+    # реальный DOCX: URL — гиперлинк, теряется при конвертации; раздел не пустой.
+    # R1: не давить ложным high в демо — мягкое clarification, дефект не скрыт.
+    for body in ("Ссылка на Дата-каталог:",
+                 "Каталог данных: см. Confluence",
+                 "Дата-каталог в вики компании",
+                 "Catalog owner: команда DWH"):
+        text = f"Data Catalog\n{body}\nИсходники проекта\n"
+        fs = cf.check_data_catalog(text, CFG)
+        assert len(fs) == 1 and fs[0]["defect_id"] == "DATA_CATALOG_MISSING"
+        assert fs[0]["severity"] == "clarification", f"ожидали clarification на: {body}"
+
+
+def test_data_catalog_empty_section_is_high():
+    # раздел есть, но пустой — ссылки точно нет, настоящий дефект high
+    text = "Data Catalog\n\nИсходники проекта\n"
+    fs = cf.check_data_catalog(text, CFG)
+    assert len(fs) == 1 and fs[0]["defect_id"] == "DATA_CATALOG_MISSING"
+    assert fs[0]["severity"] == "high"
+
+
+def test_data_catalog_never_suppresses_defect():
+    # ни один непустой/пустой раздел без URL не должен молча пройти (без ложных пропусков)
+    for body in ("Ссылка на Дата-каталог не указана", "Прямая ссылка отсутствует",
+                 "", "Catalog owner", "Дата-каталог: см. вики"):
+        text = f"Data Catalog\n{body}\nИсходники проекта\n"
+        ids = [f["defect_id"] for f in cf.check_data_catalog(text, CFG)]
+        assert "DATA_CATALOG_MISSING" in ids, f"дефект пропущен на: {body!r}"
+
+
 def test_data_catalog_link_in_other_section_does_not_count():
     # ссылка в СОСЕДНЕМ разделе не закрывает отсутствие ссылки в Data Catalog
     text = "Data Catalog\n\nИсходники проекта\nhttps://gitlab.corp/x\n"
@@ -284,6 +314,9 @@ if __name__ == "__main__":
     test_data_catalog_flags_section_without_link()
     test_data_catalog_ok_when_link_present()
     test_data_catalog_ignores_when_section_absent()
+    test_data_catalog_content_no_url_is_clarification_not_high()
+    test_data_catalog_empty_section_is_high()
+    test_data_catalog_never_suppresses_defect()
     test_data_catalog_link_in_other_section_does_not_count()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

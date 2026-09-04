@@ -23,6 +23,8 @@ type UploadPhase = "idle" | "ready" | "uploading" | "success" | "error";
 interface FileDropzoneProps {
   uploadAllowed?: boolean;
   uploadBlockedReason?: string;
+  onSelectionChange?: (file: File | null) => void;
+  onUploadStateChange?: (uploading: boolean) => void;
   onUploadComplete?: (document: DocumentUploadResponse) => void;
 }
 
@@ -59,6 +61,8 @@ function uploadErrorMessage(error: unknown): string {
 export function FileDropzone({
   uploadAllowed = true,
   uploadBlockedReason,
+  onSelectionChange,
+  onUploadStateChange,
   onUploadComplete,
 }: FileDropzoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -79,11 +83,13 @@ export function FileDropzone({
     setProgress(0);
     if (validationError) {
       setFile(null);
+      onSelectionChange?.(null);
       setPhase("error");
       setMessage(validationError);
       return;
     }
     setFile(nextFile);
+    onSelectionChange?.(nextFile);
     setPhase("ready");
     setMessage(null);
   };
@@ -95,12 +101,13 @@ export function FileDropzone({
   };
 
   const startUpload = async () => {
-    if (!file || phase === "uploading") return;
+    if (!file || phase === "uploading" || !uploadAllowed) return;
     const controller = new AbortController();
     abortRef.current = controller;
     setPhase("uploading");
     setMessage(null);
     setProgress(0);
+    onUploadStateChange?.(true);
     try {
       const result = await uploadDocument(file, setProgress, controller.signal);
       setReceipt(result);
@@ -112,7 +119,20 @@ export function FileDropzone({
       setMessage(uploadErrorMessage(error));
     } finally {
       abortRef.current = null;
+      onUploadStateChange?.(false);
     }
+  };
+
+  const clearSelection = () => {
+    if (phase === "uploading") return;
+    setFile(null);
+    setPhase("idle");
+    setProgress(0);
+    setMessage(null);
+    setReceipt(null);
+    setDragging(false);
+    if (inputRef.current) inputRef.current.value = "";
+    onSelectionChange?.(null);
   };
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -220,6 +240,11 @@ export function FileDropzone({
 
         {file && phase !== "uploading" && (
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
+            {phase !== "success" && (
+              <Button onClick={clearSelection} type="button" variant="ghost">
+                Убрать файл
+              </Button>
+            )}
             <Button onClick={openPicker} type="button" variant="secondary">
               <RefreshCw aria-hidden="true" className="size-4" />
               Заменить файл

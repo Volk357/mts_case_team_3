@@ -52,6 +52,18 @@ it("accepts drag-and-drop and lets the user replace the selection", async () => 
   expect(screen.queryByText("Первый.pdf")).not.toBeInTheDocument();
 });
 
+it("lets the user remove a valid file before submission", async () => {
+  const user = userEvent.setup();
+  render(<FileDropzone />);
+
+  await user.upload(fileInput(), pdf("Черновик.pdf"));
+  await user.click(screen.getByRole("button", { name: "Убрать файл" }));
+
+  expect(screen.queryByText("Черновик.pdf")).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Загрузить документ" })).not.toBeInTheDocument();
+  expect(screen.getByText("Перетащите файл сюда")).toBeVisible();
+});
+
 it("explains client-side size and format errors", async () => {
   const user = userEvent.setup();
   render(<FileDropzone />);

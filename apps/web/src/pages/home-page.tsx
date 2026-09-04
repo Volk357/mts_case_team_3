@@ -1,6 +1,19 @@
-import { ArrowDown, Building2, FileSearch, PencilOff, ShieldCheck } from "lucide-react";
+import {
+  ArrowDown,
+  Building2,
+  CheckCircle2,
+  CircleAlert,
+  FileSearch,
+  LoaderCircle,
+  PencilOff,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 import { useState } from "react";
 
+import { ApiError } from "@/api/client";
+import type { DocumentUploadResponse } from "@/api/documents";
+import { createReview } from "@/api/reviews";
 import { FileDropzone } from "@/components/file-dropzone";
 import { ReviewPackSelector } from "@/components/review-pack-selector";
 import { Button } from "@/components/ui/button";
@@ -24,8 +37,54 @@ const benefits = [
   },
 ];
 
+type SubmissionState =
+  | { kind: "idle" }
+  | { kind: "creating" }
+  | { kind: "success"; reviewId: string }
+  | { kind: "error"; message: string };
+
+function reviewErrorMessage(error: unknown): string {
+  if (error instanceof ApiError) {
+    if (error.status === 0) return "Не удалось подключиться к серверу. Повторите запуск.";
+    if (error.code === "REVIEW_PACK_NOT_FOUND") {
+      return "Выбранный профиль проверки больше недоступен. Выберите другой профиль.";
+    }
+    if (error.code === "DOCUMENT_NOT_FOUND") {
+      return "Загруженный документ больше недоступен. Загрузите его повторно.";
+    }
+  }
+  return "Не удалось запустить проверку. Попробуйте ещё раз.";
+}
+
 export function HomePage() {
   const [reviewPackId, setReviewPackId] = useState("");
+  const [uploadedDocument, setUploadedDocument] = useState<DocumentUploadResponse | null>(null);
+  const [submission, setSubmission] = useState<SubmissionState>({ kind: "idle" });
+  const [resetToken, setResetToken] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const startReview = async (document: DocumentUploadResponse) => {
+    if (!reviewPackId || submission.kind === "creating") return;
+    setSubmission({ kind: "creating" });
+    try {
+      const review = await createReview(
+        document.document_id,
+        reviewPackId,
+        `web-${document.document_id}-${reviewPackId}`,
+      );
+      setUploadedDocument(null);
+      setReviewPackId("");
+      setResetToken((current) => current + 1);
+      setSubmission({ kind: "success", reviewId: review.review_id });
+    } catch (error) {
+      setSubmission({ kind: "error", message: reviewErrorMessage(error) });
+    }
+  };
+
+  const onUploadComplete = (document: DocumentUploadResponse) => {
+    setUploadedDocument(document);
+    void startReview(document);
+  };
 
   return (
     <div className="space-y-12">
@@ -49,11 +108,55 @@ export function HomePage() {
       </section>
 
       <section aria-label="Подготовка проверки" className="max-w-3xl space-y-6">
-        <ReviewPackSelector onChange={setReviewPackId} value={reviewPackId} />
+        <ReviewPackSelector
+          disabled={isUploading || submission.kind === "creating"}
+          onChange={setReviewPackId}
+          value={reviewPackId}
+        />
         <FileDropzone
-          uploadAllowed={Boolean(reviewPackId)}
+          key={resetToken}
+          onSelectionChange={() => {
+            setUploadedDocument(null);
+            setSubmission({ kind: "idle" });
+          }}
+          onUploadComplete={onUploadComplete}
+          onUploadStateChange={setIsUploading}
+          uploadAllowed={Boolean(reviewPackId) && submission.kind !== "creating"}
           uploadBlockedReason="Сначала выберите профиль проверки."
         />
+        {submission.kind === "creating" && (
+          <div aria-live="polite" className="flex items-center gap-3 rounded-xl bg-primary/5 px-4 py-3 text-sm text-primary">
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+            Документ загружен. Создаём проверку…
+          </div>
+        )}
+        {submission.kind === "error" && (
+          <div className="space-y-3 rounded-xl bg-danger/10 px-4 py-3" role="alert">
+            <div className="flex gap-3 text-sm text-danger">
+              <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+              <span>{submission.message}</span>
+            </div>
+            {uploadedDocument && (
+              <Button
+                onClick={() => void startReview(uploadedDocument)}
+                size="sm"
+                type="button"
+                variant="secondary"
+              >
+                <RefreshCw aria-hidden="true" className="size-4" />
+                Повторить запуск
+              </Button>
+            )}
+          </div>
+        )}
+        {submission.kind === "success" && (
+          <div aria-live="polite" className="flex gap-3 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+            <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+            <span>
+              Проверка запущена. Идентификатор: <code>{submission.reviewId}</code>
+            </span>
+          </div>
+        )}
         <div className="flex gap-3 rounded-2xl border border-primary/15 bg-primary/5 px-5 py-4">
           <PencilOff aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
           <div>

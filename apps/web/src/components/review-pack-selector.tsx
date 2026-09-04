@@ -8,9 +8,14 @@ import { Card } from "@/components/ui/card";
 interface ReviewPackSelectorProps {
   value: string;
   onChange: (reviewPackId: string) => void;
+  disabled?: boolean;
 }
 
-export function ReviewPackSelector({ value, onChange }: ReviewPackSelectorProps) {
+export function ReviewPackSelector({
+  value,
+  onChange,
+  disabled = false,
+}: ReviewPackSelectorProps) {
   const catalog = useQuery({
     queryKey: ["review-packs"],
     queryFn: ({ signal }) => getReviewPacks(signal),
@@ -65,6 +70,7 @@ export function ReviewPackSelector({ value, onChange }: ReviewPackSelectorProps)
               <select
                 aria-describedby="review-pack-help"
                 className="mt-4 h-11 w-full rounded-xl border border-border bg-card px-3 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
+                disabled={disabled}
                 id="review-pack"
                 onChange={(event) => onChange(event.target.value)}
                 value={value}

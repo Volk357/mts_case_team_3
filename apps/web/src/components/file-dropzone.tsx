@@ -170,11 +170,13 @@ export function FileDropzone({
           type="file"
         />
         <div
+          aria-describedby={message ? "upload-message" : !file ? "upload-instructions" : undefined}
+          aria-disabled={phase === "uploading"}
           aria-label="Область загрузки документа"
           className={cn(
             "group flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
             dragging ? "border-primary bg-primary/5" : "border-border bg-muted/35 hover:border-primary/50 hover:bg-primary/[0.03]",
-            phase === "uploading" && "cursor-wait",
+            phase === "uploading" && "cursor-wait opacity-70",
           )}
           onClick={openPicker}
           onDragEnter={(event) => {
@@ -209,7 +211,9 @@ export function FileDropzone({
                 <UploadCloud aria-hidden="true" className="size-7" />
               </span>
               <p className="mt-4 font-semibold">Перетащите файл сюда</p>
-              <p className="mt-1 text-sm text-muted-foreground">или нажмите, чтобы выбрать</p>
+              <p className="mt-1 text-sm text-muted-foreground" id="upload-instructions">
+                или нажмите, чтобы выбрать
+              </p>
             </>
           )}
         </div>
@@ -225,6 +229,7 @@ export function FileDropzone({
               aria-valuemax={100}
               aria-valuemin={0}
               aria-valuenow={progress}
+              aria-valuetext={`Загружено ${progress}%`}
               className="h-2 overflow-hidden rounded-full bg-muted"
               role="progressbar"
             >
@@ -234,7 +239,11 @@ export function FileDropzone({
         )}
 
         {message && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger">
+          <div
+            className="mt-5 flex gap-3 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger"
+            id="upload-message"
+            role="alert"
+          >
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{message}</span>
           </div>

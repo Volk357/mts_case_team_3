@@ -95,12 +95,12 @@ export function HomePage() {
   };
 
   return (
-    <div className="space-y-12">
-      <section className="max-w-3xl space-y-6 py-8">
+    <div className="space-y-8 sm:space-y-12">
+      <section className="max-w-3xl space-y-6 py-4 sm:py-8">
         <div className="inline-flex rounded-full border border-primary/20 bg-primary/5 px-3 py-1 text-sm font-medium text-primary">
           Quality gate для корпоративной документации
         </div>
-        <h1 className="text-5xl leading-tight font-semibold tracking-tight">
+        <h1 className="text-4xl leading-tight font-semibold tracking-tight text-balance sm:text-5xl">
           Найдите вопросы к документу до передачи в разработку
         </h1>
         <p className="max-w-2xl text-lg leading-8 text-muted-foreground">

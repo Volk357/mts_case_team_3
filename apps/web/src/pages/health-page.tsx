@@ -35,13 +35,13 @@ export function HealthPage() {
               <CircleCheck aria-hidden="true" className="size-6" />
               Backend доступен
             </div>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-3 text-sm">
+            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr] sm:gap-y-3">
               <dt className="text-muted-foreground">Сервис</dt>
-              <dd>{health.data.service}</dd>
+              <dd className="mb-2 break-all sm:mb-0">{health.data.service}</dd>
               <dt className="text-muted-foreground">Окружение</dt>
-              <dd>{health.data.environment}</dd>
+              <dd className="mb-2 break-all sm:mb-0">{health.data.environment}</dd>
               <dt className="text-muted-foreground">Версия</dt>
-              <dd>{health.data.version}</dd>
+              <dd className="break-all">{health.data.version}</dd>
             </dl>
           </div>
         )}

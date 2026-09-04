@@ -80,7 +80,7 @@ export function ReviewPage() {
         />
       )}
 
-      <p className="text-xs text-muted-foreground">
+      <p className="break-all text-xs text-muted-foreground">
         ID проверки: <code>{reviewId}</code>
       </p>
     </section>

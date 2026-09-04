@@ -87,7 +87,16 @@ it("polls queued and running states until the review becomes terminal", async ()
   renderReviewRoute();
 
   expect(await screen.findByText("Проверка ожидает запуска")).toBeVisible();
+  expect(screen.getByRole("listitem", { current: "step" })).toHaveTextContent("В очереди");
+  expect(screen.getByText("Проверка ожидает запуска").closest("[aria-live]")).toHaveAttribute(
+    "aria-busy",
+    "true",
+  );
   expect(await screen.findByText("Проверка завершена", {}, { timeout: 2_000 })).toBeVisible();
+  expect(screen.getByText("Проверка завершена").closest("[aria-live]")).toHaveAttribute(
+    "aria-busy",
+    "false",
+  );
   await waitFor(() => expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3));
   await new Promise((resolve) => setTimeout(resolve, 40));
   expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3);

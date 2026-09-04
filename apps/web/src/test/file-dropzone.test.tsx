@@ -52,6 +52,21 @@ it("accepts drag-and-drop and lets the user replace the selection", async () => 
   expect(screen.queryByText("Первый.pdf")).not.toBeInTheDocument();
 });
 
+it("opens the file picker from the keyboard", async () => {
+  const user = userEvent.setup();
+  render(<FileDropzone />);
+  const dropzone = screen.getByRole("button", { name: "Область загрузки документа" });
+  const input = fileInput();
+  const click = vi.spyOn(input, "click");
+
+  await user.tab();
+  expect(dropzone).toHaveFocus();
+  await user.keyboard("{Enter}");
+  expect(click).toHaveBeenCalledTimes(1);
+  await user.keyboard(" ");
+  expect(click).toHaveBeenCalledTimes(2);
+});
+
 it("lets the user remove a valid file before submission", async () => {
   const user = userEvent.setup();
   render(<FileDropzone />);
@@ -97,6 +112,14 @@ it("renders upload progress and a successful result", async () => {
   expect(screen.getByRole("progressbar", { name: "Прогресс загрузки" })).toHaveAttribute(
     "aria-valuenow",
     "42",
+  );
+  expect(screen.getByRole("progressbar", { name: "Прогресс загрузки" })).toHaveAttribute(
+    "aria-valuetext",
+    "Загружено 42%",
+  );
+  expect(screen.getByRole("button", { name: "Область загрузки документа" })).toHaveAttribute(
+    "aria-disabled",
+    "true",
   );
 
   act(() => {

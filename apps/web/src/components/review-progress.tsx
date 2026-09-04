@@ -1,6 +1,5 @@
 import {
   CheckCircle2,
-  CircleAlert,
   Clock3,
   FileClock,
   LoaderCircle,
@@ -56,7 +55,7 @@ export function ReviewProgress({
               <li
                 aria-current={active ? "step" : undefined}
                 className={cn(
-                  "flex items-center gap-3 rounded-xl border px-4 py-3 text-sm",
+                  "flex min-h-14 items-center gap-3 rounded-xl border px-4 py-3 text-sm",
                   complete && "border-success/20 bg-success/5 text-success",
                   active && "border-primary/30 bg-primary/5 text-primary",
                   !complete && !active && "border-border text-muted-foreground",
@@ -75,57 +74,59 @@ export function ReviewProgress({
         </ol>
       </Card>
 
-      {review.status === "queued" && (
-        <Card aria-live="polite" className="flex gap-4 p-6 sm:p-8">
-          <Clock3 aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-primary" />
-          <div>
-            <h2 className="font-semibold">Проверка ожидает запуска</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Документ принят. Можно оставить страницу открытой — состояние обновится
-              автоматически.
-            </p>
-          </div>
-        </Card>
-      )}
+      <div
+        aria-atomic="true"
+        aria-busy={review.status === "queued" || review.status === "running"}
+        aria-live="polite"
+        className="min-h-52"
+      >
+        {review.status === "queued" && (
+          <Card className="flex min-h-52 gap-4 p-6 sm:p-8">
+            <Clock3 aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-primary" />
+            <div>
+              <h2 className="font-semibold">Проверка ожидает запуска</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Документ принят. Можно оставить страницу открытой — состояние обновится
+                автоматически.
+              </p>
+            </div>
+          </Card>
+        )}
 
-      {review.status === "running" && (
-        <Card aria-live="polite" className="flex gap-4 p-6 sm:p-8">
-          <ScanSearch aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-primary" />
-          <div>
-            <h2 className="font-semibold">Идёт анализ документа</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Проверяем структуру, полноту и однозначность требований. Обновлять страницу вручную
-              не нужно.
-            </p>
-          </div>
-        </Card>
-      )}
+        {review.status === "running" && (
+          <Card className="flex min-h-52 gap-4 p-6 sm:p-8">
+            <ScanSearch aria-hidden="true" className="mt-0.5 size-6 shrink-0 text-primary" />
+            <div>
+              <h2 className="font-semibold">Идёт анализ документа</h2>
+              {isLongRunning(review, now) ? (
+                <p className="mt-2 text-sm leading-6 text-warning">
+                  Проверка занимает больше обычного, но продолжается. Результат появится здесь
+                  автоматически.
+                </p>
+              ) : (
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  Проверяем структуру, полноту и однозначность требований. Обновлять страницу вручную
+                  не нужно.
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
 
-      {isLongRunning(review, now) && (
-        <div className="flex gap-3 rounded-xl bg-warning/10 px-4 py-3 text-sm text-warning">
-          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-          <span>
-            Проверка занимает больше обычного, но продолжает выполняться. Результат появится здесь
-            автоматически.
-          </span>
-        </div>
-      )}
+        {review.status === "completed" && (
+          <Card className="flex min-h-52 gap-4 border-success/20 p-6 sm:p-8">
+            <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-success" />
+            <div>
+              <h2 className="text-lg font-semibold">Проверка завершена</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                Результат готов. Автоматическое обновление остановлено.
+              </p>
+            </div>
+          </Card>
+        )}
 
-      {review.status === "completed" && (
-        <Card aria-live="polite" className="flex gap-4 border-success/20 p-6 sm:p-8">
-          <CheckCircle2 aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-success" />
-          <div>
-            <h2 className="text-lg font-semibold">Проверка завершена</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              Результат готов. Автоматическое обновление остановлено.
-            </p>
-          </div>
-        </Card>
-      )}
-
-      {failed && (
-        <ReviewFailureState correlationId={correlationId} review={review} />
-      )}
+        {failed && <ReviewFailureState correlationId={correlationId} review={review} />}
+      </div>
     </div>
   );
 }

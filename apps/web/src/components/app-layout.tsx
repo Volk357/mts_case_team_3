@@ -4,8 +4,14 @@ import { Link, Outlet } from "react-router-dom";
 export function AppLayout() {
   return (
     <div className="min-h-screen">
+      <a
+        className="fixed top-3 left-3 z-50 -translate-y-20 rounded-lg bg-card px-4 py-2 font-semibold shadow-lg transition-transform focus:translate-y-0"
+        href="#main-content"
+      >
+        Перейти к содержимому
+      </a>
       <header className="border-b border-border/80 bg-card/80 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link className="flex items-center gap-3 font-semibold tracking-tight" to="/">
             <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
               <FileCheck2 aria-hidden="true" className="size-5" />
@@ -13,14 +19,14 @@ export function AppLayout() {
             DocReview
           </Link>
           <Link
-            className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+            className="text-right text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
             to="/debug/health"
           >
             Состояние системы
           </Link>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12">
+      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12" id="main-content">
         <Outlet />
       </main>
     </div>

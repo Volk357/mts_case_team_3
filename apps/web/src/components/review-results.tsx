@@ -3,8 +3,13 @@ import { CircleAlert, Info, LoaderCircle, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 
-import { getDocument } from "@/api/documents";
-import { getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/reviews";
+import { getDocument, type DocumentResponse } from "@/api/documents";
+import {
+  getReviewFindings,
+  type ReviewFinding,
+  type ReviewFindings,
+  type ReviewState,
+} from "@/api/reviews";
 import { DocumentViewer } from "@/components/document-viewer";
 import { EmptyFindingsState } from "@/components/empty-findings-state";
 import { FindingsFilters, type SeverityFilter } from "@/components/findings-filters";
@@ -18,10 +23,6 @@ import { Card } from "@/components/ui/card";
 const EMPTY_FINDINGS: ReviewFinding[] = [];
 
 export function ReviewResults({ review }: { review: ReviewState }) {
-  const findingsViewport = useRef<HTMLDivElement>(null);
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [severity, setSeverity] = useState<SeverityFilter>("all");
-  const [defectType, setDefectType] = useState("all");
   const document = useQuery({
     queryKey: ["documents", review.document_id],
     queryFn: ({ signal }) => getDocument(review.document_id, signal),
@@ -32,69 +33,6 @@ export function ReviewResults({ review }: { review: ReviewState }) {
     queryFn: ({ signal }) => getReviewFindings(review.review_id, signal),
     retry: false,
   });
-
-  const allFindings = findings.data?.items ?? EMPTY_FINDINGS;
-  const warnings = findings.data?.warnings ?? [];
-  const defectTypes = useMemo(
-    () => [...new Set(allFindings.map((finding) => finding.defect_id))].sort(),
-    [allFindings],
-  );
-  const filteredFindings = useMemo(
-    () =>
-      allFindings.filter(
-        (finding) =>
-          (severity === "all" || finding.severity === severity) &&
-          (defectType === "all" || finding.defect_id === defectType),
-      ),
-    [allFindings, defectType, severity],
-  );
-  const requestedFindingId = searchParams.get("finding") ?? undefined;
-  const selectedFinding =
-    filteredFindings.find((finding) => finding.finding_id === requestedFindingId) ??
-    filteredFindings[0];
-  const selectedFindingIndex = selectedFinding
-    ? filteredFindings.findIndex((finding) => finding.finding_id === selectedFinding.finding_id)
-    : -1;
-  const scrollStorageKey = `docreview.findings-scroll.${review.review_id}`;
-
-  useEffect(() => {
-    const nextFindingId = selectedFinding?.finding_id;
-    if (!nextFindingId || nextFindingId === requestedFindingId) return;
-    const next = new URLSearchParams(searchParams);
-    next.set("finding", nextFindingId);
-    setSearchParams(next, { replace: true });
-  }, [requestedFindingId, searchParams, selectedFinding?.finding_id, setSearchParams]);
-
-  useEffect(() => {
-    const viewport = findingsViewport.current;
-    if (!viewport || !findings.isSuccess) return;
-
-    try {
-      const savedPosition = Number.parseInt(sessionStorage.getItem(scrollStorageKey) ?? "0", 10);
-      if (Number.isFinite(savedPosition)) viewport.scrollTop = savedPosition;
-    } catch {
-      // Results remain usable when browser storage is unavailable.
-    }
-  }, [findings.isSuccess, scrollStorageKey]);
-
-  const selectFinding = (findingId: string) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("finding", findingId);
-    setSearchParams(next, { replace: true });
-  };
-
-  const selectAtIndex = (index: number) => {
-    const finding = filteredFindings[index];
-    if (finding) selectFinding(finding.finding_id);
-  };
-
-  const rememberScrollPosition = (event: UIEvent<HTMLDivElement>) => {
-    try {
-      sessionStorage.setItem(scrollStorageKey, String(event.currentTarget.scrollTop));
-    } catch {
-      // Scrolling does not depend on storage availability.
-    }
-  };
 
   if (document.isPending || findings.isPending) {
     return (
@@ -130,14 +68,93 @@ export function ReviewResults({ review }: { review: ReviewState }) {
     );
   }
 
+  return <ReviewResultsView document={document.data} findings={findings.data} review={review} />;
+}
+
+export function ReviewResultsView({
+  review,
+  document,
+  findings,
+}: {
+  review: ReviewState;
+  document: DocumentResponse;
+  findings: ReviewFindings;
+}) {
+  const findingsViewport = useRef<HTMLDivElement>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [severity, setSeverity] = useState<SeverityFilter>("all");
+  const [defectType, setDefectType] = useState("all");
+  const allFindings = findings.items ?? EMPTY_FINDINGS;
+  const warnings = findings.warnings ?? [];
+  const defectTypes = useMemo(
+    () => [...new Set(allFindings.map((finding) => finding.defect_id))].sort(),
+    [allFindings],
+  );
+  const filteredFindings = useMemo(
+    () =>
+      allFindings.filter(
+        (finding) =>
+          (severity === "all" || finding.severity === severity) &&
+          (defectType === "all" || finding.defect_id === defectType),
+      ),
+    [allFindings, defectType, severity],
+  );
+  const requestedFindingId = searchParams.get("finding") ?? undefined;
+  const selectedFinding =
+    filteredFindings.find((finding) => finding.finding_id === requestedFindingId) ??
+    filteredFindings[0];
+  const selectedFindingIndex = selectedFinding
+    ? filteredFindings.findIndex((finding) => finding.finding_id === selectedFinding.finding_id)
+    : -1;
+  const scrollStorageKey = `docreview.findings-scroll.${review.review_id}`;
+
+  useEffect(() => {
+    const nextFindingId = selectedFinding?.finding_id;
+    if (!nextFindingId || nextFindingId === requestedFindingId) return;
+    const next = new URLSearchParams(searchParams);
+    next.set("finding", nextFindingId);
+    setSearchParams(next, { replace: true });
+  }, [requestedFindingId, searchParams, selectedFinding?.finding_id, setSearchParams]);
+
+  useEffect(() => {
+    const viewport = findingsViewport.current;
+    if (!viewport) return;
+
+    try {
+      const savedPosition = Number.parseInt(sessionStorage.getItem(scrollStorageKey) ?? "0", 10);
+      if (Number.isFinite(savedPosition)) viewport.scrollTop = savedPosition;
+    } catch {
+      // Results remain usable when browser storage is unavailable.
+    }
+  }, [scrollStorageKey]);
+
+  const selectFinding = (findingId: string) => {
+    const next = new URLSearchParams(searchParams);
+    next.set("finding", findingId);
+    setSearchParams(next, { replace: true });
+  };
+
+  const selectAtIndex = (index: number) => {
+    const finding = filteredFindings[index];
+    if (finding) selectFinding(finding.finding_id);
+  };
+
+  const rememberScrollPosition = (event: UIEvent<HTMLDivElement>) => {
+    try {
+      sessionStorage.setItem(scrollStorageKey, String(event.currentTarget.scrollTop));
+    } catch {
+      // Scrolling does not depend on storage availability.
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <ReviewSummary document={document.data} findings={allFindings} />
+      <ReviewSummary document={document} findings={allFindings} />
       <ReviewWarnings warnings={warnings} />
       {allFindings.length === 0 ? (
         <div className="grid items-start gap-6 lg:grid-cols-[minmax(18rem,0.8fr)_minmax(0,1.2fr)]">
           <EmptyFindingsState />
-          <DocumentViewer document={document.data} />
+          <DocumentViewer document={document} />
         </div>
       ) : (
         <>
@@ -183,7 +200,7 @@ export function ReviewResults({ review }: { review: ReviewState }) {
                 />
               </div>
             </section>
-            <DocumentViewer document={document.data} finding={selectedFinding} />
+            <DocumentViewer document={document} finding={selectedFinding} />
           </div>
         </>
       )}

@@ -301,6 +301,36 @@ PACK_MANIFEST_NAMES = ("pack.yaml", "pack.yml", "manifest.yaml", "manifest.yml")
 _VERSION_SEGMENT = re.compile(r"^v?\d+(?:\.\d+)*$")
 
 
+def _verified_formal(result, text, warnings):
+    """Оставляет детерминированные находки, чья цитата есть в документе побуквенно.
+
+    До этого проверка существовала только в самостоятельном CLI check_formal,
+    где она печатала предупреждение и ничего не отбрасывала, а боевой путь брал
+    `findings` напрямую. Получалось, что тезис «замечание без совпадения с текстом
+    отбрасывается» держался на построении проверок, а не на коде.
+
+    Цена измерена перед внесением: на 5 synth-документах и их чистых версиях,
+    на извлечённом .docx и на трёх реальных документах — 42 находки, ни одна
+    не отсеивается. То есть это страховка от будущей правки регулярки, а не
+    фильтр, меняющий полноту сегодня. Если он всё же сработает, наружу уйдёт
+    предупреждение: молча терять находку хуже, чем показать её потерю.
+    """
+    import check_formal                      # импорт локальный, как везде в модуле:
+                                            # ядро запускается и из чужого cwd
+    findings = result["findings"]
+    bad = check_formal.verify_quotes(result, text)
+    if not bad:
+        return findings
+    warnings.append({
+        "code": "FORMAL_QUOTE_NOT_FOUND",
+        "message": ("Детерминированных замечаний отброшено: %d — цитата не найдена "
+                    "в документе побуквенно. Это дефект проверки, а не документа."
+                    % len(bad)),
+    })
+    dropped = set(bad)
+    return [f for f in findings if f["quote"] not in dropped]
+
+
 def resolve_pack(pack):
     """Разбирает `--pack`: путь к каталогу пакета ИЛИ к его manifest-файлу
     (так это описано в INTEGRATION_CONTRACT.md), либо голый идентификатор.
@@ -534,7 +564,7 @@ def cmd_analyze(args):
         except Exception as e:                      # noqa: BLE001
             raise ReviewPackInvalid("не удалось разобрать правила пакета: %s" % e)
         known = run_review.extract_known_objects(text)
-        formal = check_formal.run(text, cfg)["findings"]
+        formal = _verified_formal(check_formal.run(text, cfg), text, warnings)
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,

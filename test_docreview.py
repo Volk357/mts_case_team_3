@@ -566,6 +566,44 @@ def test_document_sha256_is_of_file_bytes_not_text():
     _validate(result)
 
 
+def test_formal_findings_with_missing_quote_are_dropped_with_a_warning():
+    """Тезис «замечание без совпадения с текстом отбрасывается» до этого держался
+    на построении проверок: verify_quotes вызывался только из самостоятельного CLI
+    и там лишь печатал предупреждение, а боевой путь брал findings напрямую.
+    Проверяем сам фильтр, а не построение: подсовываем находку с цитатой, которой
+    в документе нет."""
+    from docreview import _verified_formal
+
+    text = "Часовой пояс не указан.\nОбновление ежедневно."
+    good = {"defect_id": "TIMEZONE_UNDEFINED", "quote": "Часовой пояс не указан."}
+    invented = {"defect_id": "NO_SCHEDULE", "quote": "Регламент обновления — раз в час."}
+    warnings = []
+
+    kept = _verified_formal({"findings": [good, invented]}, text, warnings)
+
+    assert [f["quote"] for f in kept] == [good["quote"]]
+    assert [w["code"] for w in warnings] == ["FORMAL_QUOTE_NOT_FOUND"]
+    assert "1" in warnings[0]["message"]
+
+
+def test_formal_findings_present_in_text_pass_untouched():
+    """Цена фильтра измерена и равна нулю: на 5 synth-документах, их чистых
+    версиях, извлечённом .docx и трёх реальных документах ни одна из 42 находок
+    не отсеивается. Здесь закрепляем, что при совпадении цитат фильтр не трогает
+    ни состав, ни порядок и не добавляет предупреждений."""
+    from docreview import _verified_formal
+
+    text = "Часовой пояс не указан.\nФильтрация не описана."
+    findings = [{"defect_id": "TIMEZONE_UNDEFINED", "quote": "Часовой пояс не указан."},
+                {"defect_id": "NO_FILTER_DESCRIPTION", "quote": "Фильтрация не описана."}]
+    warnings = []
+
+    kept = _verified_formal({"findings": list(findings)}, text, warnings)
+
+    assert kept == findings
+    assert warnings == []
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -576,6 +614,8 @@ if __name__ == "__main__":
     test_findings_capped_at_20()
     test_docx_is_extracted_not_rejected()
     test_document_sha256_is_of_file_bytes_not_text()
+    test_formal_findings_with_missing_quote_are_dropped_with_a_warning()
+    test_formal_findings_present_in_text_pass_untouched()
     test_zip_that_is_not_docx_still_rejected()
     test_docx_without_links_warns()
     test_pdf_and_ole_rejected()

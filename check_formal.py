@@ -454,9 +454,57 @@ def check_serialization(text, cfg):
     }]
 
 
+def check_timezone(text, cfg):
+    """Поле «Часовой пояс» заполнено, но конкретный пояс не назван.
+
+    Детерминированно: метка поля стоит в начале строки, значение берётся
+    после «:» или «|» (если строка обрывается — следующая непустая строка),
+    и в значении ищется хотя бы одно конкретное обозначение пояса
+    (UTC / GMT / МСК / смещение / IANA). Ни одного — замечание.
+    Значение вида «Местное время региона» границы периода не задаёт.
+
+    Второй случай — пояс назван, но разделы трактуют его по-разному —
+    выделен в отдельный тип TIMEZONE_INCONSISTENT: он кросс-фрагментный
+    и остаётся за моделью (defects_prompt.yaml, GLOBAL_TYPES)."""
+    conf = cfg.get("timezone")
+    if not conf:
+        return []
+    label_re = re.compile(conf["label_pattern"], re.I)
+    zone_res = [re.compile(p, re.I) for p in conf["zone_patterns"]]
+    lines = lines_of(text)
+    bad = []
+    for i, ln in enumerate(lines):
+        if ":" not in ln and "|" not in ln:
+            continue
+        sep = min([p for p in (ln.find(":"), ln.find("|")) if p >= 0])
+        label = norm(strip_numbering(ln[:sep]))
+        if not label_re.match(label):
+            continue
+        value = ln[sep + 1:].strip(" |")
+        if not value:                       # значение перенесено на следующую строку
+            value = next((n.strip() for n in lines[i + 1:] if n.strip()), "")
+        if any(r.search(value) for r in zone_res):
+            continue
+        bad.append(ln.strip())
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "TIMEZONE_UNDEFINED",
+        "explanation": (
+            "В поле «Часовой пояс» не назван конкретный пояс (UTC, смещение "
+            "или зона IANA). Границы периода в правилах фильтрации становятся "
+            "нетрактуемыми: разные источники сдвинут их по-разному."),
+        "suggestion": ("Указать конкретный часовой пояс (например, UTC) и поле, "
+                       "несущее метку смещения."),
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
 CHECKS = [check_sections, check_nullability, check_placeholders,
           check_data_catalog, check_hdfs, check_vague_wording, check_no_filter,
-          check_serialization]
+          check_serialization, check_timezone]
 
 
 def run(text, cfg):

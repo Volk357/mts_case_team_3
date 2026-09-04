@@ -300,6 +300,46 @@ def test_serialization_ignores_other_section_column():
     assert cf.check_serialization(text, CFG) == []
 
 
+def test_timezone_flags_local_time_value():
+    text = "Часовой пояс: Местное время региона\n"
+    ids = [f["defect_id"] for f in cf.check_timezone(text, CFG)]
+    assert "TIMEZONE_UNDEFINED" in ids
+
+
+def test_timezone_ok_when_utc():
+    assert cf.check_timezone("Часовой пояс: UTC\n", CFG) == []
+
+
+def test_timezone_ok_in_table_row():
+    assert cf.check_timezone("Часовой пояс | UTC\n", CFG) == []
+
+
+def test_timezone_ok_on_offset_and_iana():
+    for value in ("UTC+3", "+03:00", "Europe/Moscow", "МСК"):
+        assert cf.check_timezone("Часовой пояс: " + value + "\n", CFG) == [], value
+
+
+def test_timezone_no_fp_on_source_field_description():
+    # метка не в начале строки — это описание поля источника, а не поле «Часовой пояс»
+    text = ("Коррекция часового пояса для временных меток:\n"
+            "выполняется на стороне источника\n"
+            "FIELD_TIME_ZONE_SHIFT | string | Сдвиг часового пояса\n")
+    assert cf.check_timezone(text, CFG) == []
+
+
+def test_timezone_value_on_next_line():
+    assert cf.check_timezone("Часовой пояс:\nUTC\n", CFG) == []
+    ids = [f["defect_id"] for f in
+           cf.check_timezone("Часовой пояс:\nМестное время региона\n", CFG)]
+    assert "TIMEZONE_UNDEFINED" in ids
+
+
+def test_timezone_quote_is_verbatim():
+    text = "Часовой пояс: Местное время региона\n"
+    for f in cf.check_timezone(text, CFG):
+        assert f["quote"] in text
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -349,5 +389,12 @@ if __name__ == "__main__":
     test_serialization_ignores_when_no_sources_section()
     test_serialization_ignores_other_section_column()
     test_data_catalog_link_in_other_section_does_not_count()
+    test_timezone_flags_local_time_value()
+    test_timezone_ok_when_utc()
+    test_timezone_ok_in_table_row()
+    test_timezone_ok_on_offset_and_iana()
+    test_timezone_no_fp_on_source_field_description()
+    test_timezone_value_on_next_line()
+    test_timezone_quote_is_verbatim()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

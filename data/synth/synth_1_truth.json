@@ -189,7 +189,7 @@
       "defect_class": "presence",
       "mutation": "timezone_replaced_by_local",
       "note": "Часовой пояс требований изменён на местное время, при этом правило фильтрации в шаге 1 определяет границы периода по UTC. Поле с меткой смещения не названо.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "Часовой пояс: Местное время региона",
       "section": "Нефункциональные требования",
       "anchor_node": "nfr.timezone"

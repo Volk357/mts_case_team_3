@@ -218,7 +218,7 @@ def r_timezone_undefined(d):
     return dict(
         defect_id="TIMEZONE_UNDEFINED", defect_class=PRESENCE,
         op="set_text", target="nfr.timezone", anchor="nfr.timezone",
-        mutation="timezone_replaced_by_local", detectable_by=LLM,
+        mutation="timezone_replaced_by_local", detectable_by=DET,
         text="Местное время региона",
         note="Часовой пояс требований изменён на местное время, при этом "
              "правило фильтрации в шаге 1 определяет границы периода по UTC. "

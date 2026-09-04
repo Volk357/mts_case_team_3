@@ -241,7 +241,7 @@ def r_serialization_unspecified(d):
         defect_id="SERIALIZATION_UNSPECIFIED", defect_class=PRESENCE,
         op="set_cell", target="sources.row1", col=3, value="—",
         anchor="sources.row1", mutation="cleared_serialization_cell",
-        detectable_by=LLM,
+        detectable_by=DET,
         note="Для источника не указана сериализация: ни формат, ни схема, "
              "ни способ десериализации. Требование кейсодателя №1.")
 

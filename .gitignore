@@ -1,45 +1,76 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
+# === Репозиторий PUBLIC — защита кейс-данных ===
+
+# Документы кейсодателя (обезличенные, но реальные)
+vitrina.txt
+potoki.txt
+istochnik.txt
+
+# Реальные прогоны и отчёты (содержат цитаты из документов кейсодателя)
+results/
+review_vitrina.md
+review_vitrina.pdf
+
+# Архив (старые результаты, отчёты, дубли, исходники сдачи)
+архив/
+Archive.zip
+
+# Внутренние стратегические материалы (цитаты кейсодателя, метрики, стратегия)
+CLAUDE.md
+review-log.md
+taxonomy_coverage.md
+PRODUCT_MATERIALS.md
+PROJECT_DESCRIPTION.md
+CONTEXT_GENERATOR.md
+RED_TEAM.md
+
+# Материалы сдачи — грузятся на платформу, не в public git
+submission/
+
+# Медиа/бинарники в КОРНЕ (презентации, скриншоты кейса); ассеты приложения не трогаем
+/*.pdf
+/*.pptx
+/*.zip
+/*.jpeg
+/*.jpg
+/*.png
+
+# === Секреты и инфраструктура ===
+.env
+.env.local
+.env.*.local
+nikita_ollama.conf
+*.conf
+# Локальные VPN-профили (могут содержать приватные ключи)
+/cfg/
+
+# === Приложение (Node/Python runtime) ===
+node_modules/
+dist/
+coverage/
+.vite/
+*.tsbuildinfo
+.venv/
 .cache/
 .coverage
 .pytest_cache/
 .tmp-pytest-*/
 .mypy_cache/
 .ruff_cache/
-.venv/
+*.egg-info/
 
-# Node
-node_modules/
-dist/
-coverage/
-.vite/
-*.tsbuildinfo
-
-# Editors and operating systems
-.idea/
-.DS_Store
-Thumbs.db
-
-# Runtime artifacts and secrets
-.env
-.env.local
-.env.*.local
-data/
+# Runtime-артефакты приложения (НЕ трогаем data/synth — это эталон, он в трекинге)
 runs/
 artifacts/
 documents/
 
-# Local VPN profiles may contain private keys
-/cfg/
-
-# Private case-holder inputs and model outputs (public repository)
-/vitrina.txt
-/potoki.txt
-/istochnik.txt
-/results/
-/review_vitrina.md
-/review_vitrina.pdf
-/nikita_ollama.conf
-/Archive.zip
+# === Служебное / OS ===
+__pycache__/
+*.py[cod]
+*.bak
+*.bak[0-9]
+*.debug
+*.myedits
+*.pre_schema
+.idea/
+.DS_Store
+Thumbs.db

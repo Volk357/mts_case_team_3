@@ -248,7 +248,7 @@
       "defect_class": "presence",
       "mutation": "cleared_serialization_cell",
       "note": "Для источника не указана сериализация: ни формат, ни схема, ни способ десериализации. Требование кейсодателя №1.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "События подключения услуг | Kafka | TOPIC_PROV_SERVICE_EVENTS | —",
       "section": "Источники данных",
       "anchor_node": "sources.row1"

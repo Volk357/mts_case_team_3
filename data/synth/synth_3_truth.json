@@ -84,7 +84,7 @@
       "defect_class": "presence",
       "mutation": "cleared_serialization_cell",
       "note": "Для источника не указана сериализация: ни формат, ни схема, ни способ десериализации. Требование кейсодателя №1.",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "События изменения статуса договора | Kafka | TOPIC_CRM_CONTRACT_EVENTS | —",
       "section": "Источники данных",
       "anchor_node": "sources.row1"

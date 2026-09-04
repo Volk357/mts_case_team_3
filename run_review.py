@@ -46,7 +46,7 @@ import yaml
 # Эндпоинт модели берётся из окружения (в репозиторий адрес не коммитим).
 # Пример: export OLLAMA_URL=http://<host>:11434/api/chat
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/chat")
-MODEL = "qwen3:30b-a3b"
+MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:30b-a3b")
 NUM_CTX = 32768
 TIMEOUT = 900
 

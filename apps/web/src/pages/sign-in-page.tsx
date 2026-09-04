@@ -96,7 +96,7 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
               <input
                 autoComplete="username"
                 autoFocus
-                className="h-11 w-full rounded-(--radius-sm) border border-border bg-card px-3.5 text-[0.9375rem] transition-colors outline-none placeholder:text-text-muted focus:border-accent"
+                className="h-11 w-full rounded-(--radius-sm) border border-border bg-card px-3.5 text-[0.9375rem] transition-colors placeholder:text-text-muted focus:border-accent"
                 id="login"
                 name="login"
                 onChange={(event) => setLogin(event.target.value)}
@@ -112,7 +112,7 @@ export function SignInPage({ onSignedIn }: SignInPageProps) {
               <div className="relative">
                 <input
                   autoComplete="current-password"
-                  className="h-11 w-full rounded-(--radius-sm) border border-border bg-card pr-12 pl-3.5 text-[0.9375rem] transition-colors outline-none focus:border-accent"
+                  className="h-11 w-full rounded-(--radius-sm) border border-border bg-card pr-12 pl-3.5 text-[0.9375rem] transition-colors focus:border-accent"
                   id="password"
                   name="password"
                   onChange={(event) => setPassword(event.target.value)}

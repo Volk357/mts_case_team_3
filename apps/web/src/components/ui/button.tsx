@@ -5,7 +5,13 @@ import type { ButtonHTMLAttributes } from "react";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-(--radius-sm) text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:pointer-events-none disabled:opacity-50",
+  // Своего кольца фокуса у кнопки нет намеренно. Оно было `ring-primary/40` —
+  // бирюзовый под 40% прозрачности на светлом фоне даёт контраст ~1.6:1 при
+  // норме 3:1 (WCAG 2.2, 1.4.11), и держалось только потому, что базовое
+  // правило лежало вне слоя и перебивало отключение обводки. Индикатор фокуса
+  // в приложении один — обводка из `@layer base`, 2px accent, контраст 5:1
+  // на тёмно-синей шапке и 3.3:1 на светлом фоне.
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-(--radius-sm) text-sm font-semibold transition-colors disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {

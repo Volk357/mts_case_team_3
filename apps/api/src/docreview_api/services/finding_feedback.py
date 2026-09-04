@@ -60,9 +60,12 @@ class FindingFeedbackService:
         actor = self._validate_actor_key(actor_key)
         normalized_comment = self._validate_comment(comment)
         finding = self._session.scalar(
-            select(FindingModel).where(
+            select(FindingModel)
+            .join(ReviewJobModel, ReviewJobModel.id == FindingModel.review_job_id)
+            .where(
                 FindingModel.id == finding_id,
                 FindingModel.company_id == company_id,
+                ReviewJobModel.company_id == company_id,
             )
         )
         if finding is None:

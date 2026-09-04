@@ -226,6 +226,35 @@ async def test_feedback_validates_decision_actor_and_tenant_boundary(
 
 
 @pytest.mark.anyio
+async def test_feedback_rejects_finding_with_cross_tenant_review_parent(
+    feedback_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, finding_id, foreign_finding_id = feedback_resources
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        finding = session.get(FindingModel, finding_id)
+        foreign_finding = session.get(FindingModel, foreign_finding_id)
+        assert finding is not None
+        assert foreign_finding is not None
+        review = session.get(ReviewJobModel, finding.review_job_id)
+        assert review is not None
+        review.company_id = foreign_finding.company_id
+    engine.dispose()
+
+    app = create_app(settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.put(
+            f"/api/findings/{finding_id}/feedback",
+            json={"decision": "accepted"},
+            headers={"X-Actor-Key": "browser-session-1"},
+        )
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "FINDING_NOT_FOUND"
+
+
+@pytest.mark.anyio
 async def test_feedback_contract_is_published_in_openapi(
     feedback_resources: tuple[Settings, UUID, UUID],
 ) -> None:

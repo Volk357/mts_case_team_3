@@ -11,6 +11,7 @@ from sqlalchemy import Engine, func, inspect, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+import docreview_api.repositories.database as database_repository
 from docreview_api.db import Base, create_database_engine, create_session_factory
 from docreview_api.db.models import (
     CompanyModel,
@@ -291,6 +292,7 @@ def test_failed_completion_rolls_back_job_and_all_findings(
 
 def test_feedback_upsert_does_not_change_source_finding(
     sessions: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     company, user, _, _, job = seed_job(sessions)
     start_job(sessions, job.id)
@@ -300,6 +302,11 @@ def test_feedback_upsert_does_not_change_source_finding(
         snapshot_for(),
         at=STARTED_AT + timedelta(seconds=2),
     )
+
+    first_saved_at = STARTED_AT + timedelta(seconds=3)
+    changed_at = STARTED_AT + timedelta(seconds=4)
+    saved_times = iter((first_saved_at, changed_at))
+    monkeypatch.setattr(database_repository, "utc_now", lambda: next(saved_times))
 
     with sessions.begin() as session:
         finding = FindingRepository(session).list_for_job(job.id)[0]
@@ -314,6 +321,7 @@ def test_feedback_upsert_does_not_change_source_finding(
             comment=None,
         )
         feedback_id = first.id
+        created_at = first.created_at
         updated = repository.upsert(
             company_id=company.id,
             finding_id=finding.id,
@@ -325,8 +333,9 @@ def test_feedback_upsert_does_not_change_source_finding(
         assert updated.id == feedback_id
         assert updated.submitted_by_user_id == user.id
         assert updated.actor_key == "analyst-session"
-        assert updated.created_at is not None
-        assert updated.updated_at is not None
+        assert created_at == first_saved_at.replace(tzinfo=None)
+        assert updated.created_at == first_saved_at.replace(tzinfo=None)
+        assert updated.updated_at == changed_at.replace(tzinfo=None)
         assert finding.problem == original_problem
 
     with sessions() as session:

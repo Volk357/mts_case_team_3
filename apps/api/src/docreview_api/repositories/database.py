@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Generic, TypeVar, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as postgresql_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -19,6 +21,7 @@ from docreview_api.db.models import (
     ReviewJobModel,
     ReviewPackReferenceModel,
     UserModel,
+    utc_now,
 )
 from docreview_api.models.review_job_state import (
     FAILED_STATUSES,
@@ -144,6 +147,8 @@ class FindingFeedbackRepository(Repository[FindingFeedbackModel]):
         comment: str | None,
         submitted_by_user_id: UUID | None = None,
     ) -> FindingFeedbackModel:
+        """Atomically create or replace an actor's current decision."""
+
         finding = self.session.get(FindingModel, finding_id)
         if finding is None:
             raise EntityNotFoundError(f"FindingModel {finding_id} was not found")
@@ -156,26 +161,49 @@ class FindingFeedbackRepository(Repository[FindingFeedbackModel]):
             if user.company_id != company_id:
                 raise TenantBoundaryError("feedback and user must belong to the same company")
 
-        statement = select(FindingFeedbackModel).where(
-            FindingFeedbackModel.finding_id == finding_id,
-            FindingFeedbackModel.actor_key == actor_key,
-        )
-        feedback = self.session.scalar(statement)
-        if feedback is None:
-            feedback = FindingFeedbackModel(
-                company_id=company_id,
-                finding_id=finding_id,
-                submitted_by_user_id=submitted_by_user_id,
-                actor_key=actor_key,
-                decision=decision,
-                comment=comment,
+        now = utc_now()
+        values = {
+            "id": uuid4(),
+            "company_id": company_id,
+            "finding_id": finding_id,
+            "submitted_by_user_id": submitted_by_user_id,
+            "actor_key": actor_key,
+            "decision": decision,
+            "comment": comment,
+            "created_at": now,
+            "updated_at": now,
+        }
+        updates = {
+            "submitted_by_user_id": submitted_by_user_id,
+            "decision": decision,
+            "comment": comment,
+            "updated_at": now,
+        }
+        dialect_name = self.session.get_bind().dialect.name
+        if dialect_name == "sqlite":
+            sqlite_statement = sqlite_insert(FindingFeedbackModel).values(**values)
+            sqlite_statement = sqlite_statement.on_conflict_do_update(
+                index_elements=["finding_id", "actor_key"],
+                set_=updates,
             )
-            self.session.add(feedback)
+            feedback_id = self.session.scalar(sqlite_statement.returning(FindingFeedbackModel.id))
+        elif dialect_name == "postgresql":
+            postgresql_statement = postgresql_insert(FindingFeedbackModel).values(**values)
+            postgresql_statement = postgresql_statement.on_conflict_do_update(
+                constraint="uq_feedback_finding_actor",
+                set_=updates,
+            )
+            feedback_id = self.session.scalar(
+                postgresql_statement.returning(FindingFeedbackModel.id)
+            )
         else:
-            feedback.submitted_by_user_id = submitted_by_user_id
-            feedback.decision = decision
-            feedback.comment = comment
-        self.session.flush()
+            raise RuntimeError(f"unsupported feedback upsert dialect: {dialect_name}")
+
+        if feedback_id is None:  # pragma: no cover - RETURNING is a database invariant
+            raise RuntimeError("feedback upsert did not return an identifier")
+        feedback = self.session.get(FindingFeedbackModel, feedback_id, populate_existing=True)
+        if feedback is None:  # pragma: no cover - row was returned by the same transaction
+            raise RuntimeError("feedback upsert did not persist a row")
         return feedback
 
 

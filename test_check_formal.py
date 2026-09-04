@@ -340,6 +340,75 @@ def test_timezone_quote_is_verbatim():
         assert f["quote"] in text
 
 
+def test_dangling_section_flags_missing_section():
+    text = ("Алгоритм обработки потока\n"
+            "Перечень мер приведён в разделе «Показатели витрины».\n")
+    ids = [f["defect_id"] for f in cf.check_dangling_section(text, CFG)]
+    assert "DANGLING_SECTION_REFERENCE" in ids
+
+
+def test_dangling_section_ok_when_section_present():
+    text = ("Структура данных\n"
+            "Перечень мер приведён в разделе «Структура данных».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_ok_when_referenced_by_alias():
+    # раздел присутствует под одним синонимом, ссылка зовёт его другим
+    text = ("Общие сведения\n"
+            "Состав описан в разделе «Общая информация».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_ignores_reference_without_name():
+    # «см. выше» без имени раздела — не формальное правило, остаётся модели
+    text = "Определяется по FIELD_OL_SERVICE_TYPE (см. выше).\nСм. раздел ниже.\n"
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_counts_table_cell_headings():
+    # раздел объявлен первой ячейкой строки таблицы, а не отдельной строкой
+    text = ("Часовой пояс | UTC\n"
+            "Ссылка приведена в разделе «Часовой пояс».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_quote_is_verbatim():
+    text = ("Алгоритм обработки потока\n"
+            "Перечень мер приведён в разделе «Показатели витрины».\n")
+    for f in cf.check_dangling_section(text, CFG):
+        assert f["quote"] in text
+
+
+def test_dangling_section_ignores_word_with_same_root():
+    # блокеры кругов 1–2: однокоренные слова — не ссылка на раздел
+    for text in ("Используйте разделитель «точка с запятой».\n",
+                 "Описание дано в подразделе «Внешний алгоритм».\n",
+                 "Разделка «туши» выполняется вручную.\n"):
+        assert cf.check_dangling_section(text, CFG) == [], text
+
+
+def test_dangling_section_all_case_forms_flagged():
+    for text in ("Перечень приведён в разделе «Показатели витрины».\n",
+                 "Данные описаны в разделах «Показатели витрины».\n",
+                 "Содержание раздела «Показатели витрины» отсутствует.\n",
+                 "Ссылка на раздел «Показатели витрины» ведёт в никуда.\n"):
+        ids = [f["defect_id"] for f in cf.check_dangling_section(text, CFG)]
+        assert "DANGLING_SECTION_REFERENCE" in ids, text
+
+
+def test_dangling_section_ignores_external_link_line():
+    # блокер круга 1: рядом URL — цель внешняя (EXTERNAL_LINKS_IN_CONFLUENCE)
+    assert cf.check_dangling_section(
+        "См. раздел «Внешний алгоритм» (https://confluence/x).\n", CFG) == []
+
+
+def test_dangling_section_plural_form_still_flagged():
+    ids = [f["defect_id"] for f in cf.check_dangling_section(
+        "Данные описаны в разделах «Показатели витрины».\n", CFG)]
+    assert "DANGLING_SECTION_REFERENCE" in ids
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -396,5 +465,15 @@ if __name__ == "__main__":
     test_timezone_no_fp_on_source_field_description()
     test_timezone_value_on_next_line()
     test_timezone_quote_is_verbatim()
+    test_dangling_section_flags_missing_section()
+    test_dangling_section_ok_when_section_present()
+    test_dangling_section_ok_when_referenced_by_alias()
+    test_dangling_section_ignores_reference_without_name()
+    test_dangling_section_counts_table_cell_headings()
+    test_dangling_section_quote_is_verbatim()
+    test_dangling_section_ignores_word_with_same_root()
+    test_dangling_section_all_case_forms_flagged()
+    test_dangling_section_ignores_external_link_line()
+    test_dangling_section_plural_form_still_flagged()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

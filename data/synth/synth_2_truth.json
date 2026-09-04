@@ -222,11 +222,11 @@
       "anchor_node": "algo.s3.group"
     },
     {
-      "defect_id": "DANGLING_REFERENCE",
+      "defect_id": "DANGLING_SECTION_REFERENCE",
       "defect_class": "presence",
       "mutation": "reference_to_missing_section",
       "note": "Ссылка на раздел «Показатели витрины», которого в документе нет. Исходно ссылка вела на раздел «Структура данных».",
-      "detectable_by": "llm",
+      "detectable_by": "deterministic",
       "quote": "Меры рассчитываются в границах группы, перечень мер приведён в разделе «Показатели витрины».",
       "section": "Алгоритм обработки потока",
       "anchor_node": "algo.s3.calc"

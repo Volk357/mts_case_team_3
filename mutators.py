@@ -82,9 +82,9 @@ def _shared_field(d):
 
 def r_dangling_reference(d):
     return dict(
-        defect_id="DANGLING_REFERENCE", defect_class=PRESENCE,
+        defect_id="DANGLING_SECTION_REFERENCE", defect_class=PRESENCE,
         op="set_text", target="algo.s3.calc", anchor="algo.s3.calc",
-        mutation="reference_to_missing_section", detectable_by=LLM,
+        mutation="reference_to_missing_section", detectable_by=DET,
         text="Меры рассчитываются в границах группы, перечень мер приведён "
              "в разделе «Показатели витрины».",
         note="Ссылка на раздел «Показатели витрины», которого в документе "
@@ -376,7 +376,7 @@ def r_template_section_missing_ddl(d):
 
 
 RECIPES = {
-    "DANGLING_REFERENCE": r_dangling_reference,
+    "DANGLING_SECTION_REFERENCE": r_dangling_reference,
     "INTERNAL_CONTRADICTION": r_internal_contradiction,
     "INCOMPLETE_SCHEMA": r_incomplete_schema,
     "UNDEFINED_EDGE_CASE": r_undefined_edge_case,

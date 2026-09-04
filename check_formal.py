@@ -502,9 +502,71 @@ def check_timezone(text, cfg):
     }]
 
 
+def _present_section_names(text, cfg):
+    """Имена разделов, реально присутствующих в документе.
+
+    Берём заголовки и первые ячейки строк таблиц — там же, где раздел ищет
+    find_sections. Если найден любой синоним раздела шаблона, присутствующими
+    считаются все его синонимы: ссылка вправе звать раздел другим именем.
+    """
+    raw = lines_of(text)
+    present = {norm(strip_numbering(ln)) for ln in raw if ln.strip()}
+    for ln in raw:
+        if "|" in ln:
+            present.add(norm(strip_numbering(ln.split("|")[0])))
+    present.discard("")
+    for sec in cfg.get("sections", []):
+        aliases = {norm(a) for a in sec.get("aliases", [])}
+        if aliases & present:
+            present |= aliases
+    return present
+
+
+def check_dangling_section(text, cfg):
+    """Ссылка на раздел, названного в кавычках, в документе нет.
+
+    Детерминированно: имя раздела берётся из самого текста ссылки, наличие
+    проверяется по заголовкам и первым ячейкам таблиц. Обороты без имени
+    («см. выше», «указанные ниже») сюда не входят — без имени правило
+    перестаёт быть формальным, это остаётся модели (DANGLING_REFERENCE).
+    Строка, где рядом стоит URL, не проверяется: цель внешняя, а внешняя
+    ссылка — норма по конвенции EXTERNAL_LINKS_IN_CONFLUENCE.
+    """
+    conf = cfg.get("section_reference")
+    if not conf:
+        return []
+    ref_re = re.compile(conf["pattern"], re.I)
+    external = [m.lower() for m in conf.get("external_markers", [])]
+    present = _present_section_names(text, cfg)
+    bad, names = [], []
+    for ln in lines_of(text):
+        if any(m in ln.lower() for m in external):
+            continue                    # цель внешняя: ссылка живёт в Confluence
+        for m in ref_re.finditer(ln):
+            name = norm(m.group(1))
+            if not name or name in present:
+                continue
+            bad.append(ln.strip())
+            names.append(m.group(1))
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "DANGLING_SECTION_REFERENCE",
+        "explanation": (
+            "Ссылка ведёт на раздел «%s», которого в документе нет. "
+            "Читатель не найдёт названного содержания. Ссылок на "
+            "отсутствующие разделы: %d." % (names[0], len(bad))),
+        "suggestion": ("Исправить ссылку на существующий раздел либо добавить "
+                       "названный раздел в документ."),
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
 CHECKS = [check_sections, check_nullability, check_placeholders,
           check_data_catalog, check_hdfs, check_vague_wording, check_no_filter,
-          check_serialization, check_timezone]
+          check_serialization, check_timezone, check_dangling_section]
 
 
 def run(text, cfg):

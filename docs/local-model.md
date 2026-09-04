@@ -8,7 +8,7 @@
 
 | Параметр | Значение |
 |---|---|
-| Base URL | `http://10.0.0.8:11434` |
+| Base URL | `http://<OLLAMA_HOST>:11434` |
 | OpenAI-compatible endpoint | `/v1/chat/completions` |
 | Model | `qwen3:30b-a3b` |
 | Runtime | Ollama на RTX 4090, модель целиком в GPU |
@@ -16,7 +16,7 @@
 ## Проверка доступности
 
 ```powershell
-Invoke-RestMethod http://10.0.0.8:11434/api/tags
+Invoke-RestMethod http://<OLLAMA_HOST>:11434/api/tags
 ```
 
 Ожидаемый результат — JSON со списком моделей, содержащим `qwen3:30b-a3b`.

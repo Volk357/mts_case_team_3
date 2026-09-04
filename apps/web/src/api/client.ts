@@ -1,23 +1,19 @@
 import { appConfig } from "@/config";
+import type { ErrorEnvelope } from "@/api/generated";
 
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
+    readonly correlationId?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-export interface ApiErrorEnvelope {
-  error: {
-    code: string;
-    message: string;
-    details: Array<{ location: string[]; reason: string }>;
-  };
-}
+export type ApiErrorEnvelope = ErrorEnvelope;
 
 export function parseApiError(body: unknown): { code?: string; message?: string } {
   if (!body || typeof body !== "object" || !("error" in body)) return {};
@@ -49,6 +45,7 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
       error.message ?? `API request failed with status ${response.status}`,
       response.status,
       error.code,
+      response.headers.get("X-Correlation-ID") ?? undefined,
     );
   }
 

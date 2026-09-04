@@ -1,16 +1,11 @@
 import { ApiError, parseApiError, requestJson } from "@/api/client";
+import type {
+  DocumentResponse,
+  DocumentUploadResponse,
+} from "@/api/generated";
 import { appConfig } from "@/config";
 
-export interface DocumentUploadResponse {
-  document_id: string;
-  filename: string;
-  size_bytes: number;
-  media_type: string;
-}
-
-export interface DocumentResponse extends DocumentUploadResponse {
-  created_at: string;
-}
+export type { DocumentResponse, DocumentUploadResponse } from "@/api/generated";
 
 export function getDocument(documentId: string, signal?: AbortSignal) {
   return requestJson<DocumentResponse>(`/api/documents/${encodeURIComponent(documentId)}`, {
@@ -47,6 +42,7 @@ export function uploadDocument(
           error.message ?? `API request failed with status ${request.status}`,
           request.status,
           error.code,
+          request.getResponseHeader("X-Correlation-ID") ?? undefined,
         ),
       );
     });

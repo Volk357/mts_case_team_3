@@ -52,6 +52,10 @@ class FakeXMLHttpRequest extends FakeEventTarget {
 
   setRequestHeader(): void {}
 
+  getResponseHeader(): string | null {
+    return null;
+  }
+
   send(body: Document | XMLHttpRequestBodyInit | null): void {
     this.body = body;
     this.upload.emit(

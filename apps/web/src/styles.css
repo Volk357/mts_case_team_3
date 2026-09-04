@@ -11,6 +11,9 @@
   --color-border: #dfe3ec;
   --color-card: #ffffff;
   --color-card-foreground: #172033;
+  --color-success: #047857;
+  --color-danger: #b42318;
+  --color-warning: #b54708;
   --radius-card: 1.25rem;
 }
 
@@ -33,6 +36,11 @@ body {
   background:
     radial-gradient(circle at 10% 0%, rgb(105 85 217 / 10%), transparent 30rem),
     var(--color-background);
+}
+
+::selection {
+  color: var(--color-primary-foreground);
+  background: var(--color-primary);
 }
 
 button,

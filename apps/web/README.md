@@ -34,15 +34,25 @@ npm run test
 npm run build
 ```
 
-Типы результата анализа генерируются из корневой JSON Schema:
+Удалённое серверное состояние управляется через TanStack Query; локальное состояние
+форм — через React state, адресуемое состояние — через URL и параметры маршрута. Это
+не позволяет дублировать данные API в глобальном клиентском store.
+
+Типы результата анализа генерируются из корневой JSON Schema, а transport-типы API —
+из сохранённой OpenAPI-схемы backend:
 
 ```powershell
 npm run contracts:generate
 npm run contracts:check
+npm run api:generate
+npm run api:check
 ```
 
 Frontend импортирует `ReviewResult`, `Finding` и связанные типы только через
-`src/api/contracts.ts`. Ручное объявление типа `Finding` блокируется ESLint.
+`src/api/contracts.ts`. Ответы документов, Review Packs, review и feedback импортируются
+из `src/api/generated`, а не описываются вручную. Ручное объявление типа `Finding`
+блокируется ESLint. Верхнеуровневый error boundary заменяет аварийный экран безопасным
+сообщением без текста исключения.
 
 Маршруты текущего каркаса:
 

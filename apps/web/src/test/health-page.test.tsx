@@ -3,6 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 
 import { App } from "@/app";
+import { AppProviders } from "@/app-providers";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -26,9 +27,11 @@ describe("Health page", () => {
     );
 
     render(
-      <MemoryRouter initialEntries={["/debug/health"]}>
-        <App />
-      </MemoryRouter>,
+      <AppProviders>
+        <MemoryRouter initialEntries={["/debug/health"]}>
+          <App />
+        </MemoryRouter>
+      </AppProviders>,
     );
 
     expect(await screen.findByText("Backend доступен")).toBeInTheDocument();
@@ -39,9 +42,11 @@ describe("Health page", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Connection refused")));
 
     render(
-      <MemoryRouter initialEntries={["/debug/health"]}>
-        <App />
-      </MemoryRouter>,
+      <AppProviders>
+        <MemoryRouter initialEntries={["/debug/health"]}>
+          <App />
+        </MemoryRouter>
+      </AppProviders>,
     );
 
     expect(await screen.findByText("Backend недоступен")).toBeInTheDocument();

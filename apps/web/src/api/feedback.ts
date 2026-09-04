@@ -1,20 +1,12 @@
 import { requestJson } from "@/api/client";
+import type {
+  FeedbackDecision,
+  FeedbackResponse,
+  FeedbackUpsertRequest,
+} from "@/api/generated";
 
-export type FeedbackDecision =
-  | "accepted"
-  | "false_positive"
-  | "allowed_exception"
-  | "already_described"
-  | "not_relevant";
-
-export interface FindingFeedback {
-  feedback_id: string;
-  finding_id: string;
-  decision: FeedbackDecision;
-  comment: string | null;
-  created_at: string;
-  updated_at: string;
-}
+export type { FeedbackDecision } from "@/api/generated";
+export type FindingFeedback = FeedbackResponse;
 
 export function putFindingFeedback(
   findingId: string,
@@ -23,7 +15,8 @@ export function putFindingFeedback(
   comment: string | null = null,
   signal?: AbortSignal,
 ) {
-  return requestJson<FindingFeedback>(
+  const body: FeedbackUpsertRequest = { decision, comment };
+  return requestJson<FeedbackResponse>(
     `/api/findings/${encodeURIComponent(findingId)}/feedback`,
     {
       method: "PUT",
@@ -31,7 +24,7 @@ export function putFindingFeedback(
         "Content-Type": "application/json",
         "X-Actor-Key": actorKey,
       },
-      body: JSON.stringify({ decision, comment }),
+      body: JSON.stringify(body),
       signal,
     },
   );

@@ -1,16 +1,8 @@
 import { requestJson } from "@/api/client";
+import type { ReviewPackListResponse, ReviewPackResponse } from "@/api/generated";
 
-export interface ReviewPack {
-  review_pack_id: string;
-  display_name: string;
-  document_type: string;
-  version: string;
-}
-
-export interface ReviewPackCatalog {
-  items: ReviewPack[];
-  total: number;
-}
+export type ReviewPack = ReviewPackResponse;
+export type ReviewPackCatalog = ReviewPackListResponse;
 
 export function getReviewPacks(signal?: AbortSignal) {
   return requestJson<ReviewPackCatalog>("/api/review-packs", { signal });

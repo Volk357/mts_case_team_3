@@ -1,11 +1,7 @@
 import { requestJson } from "@/api/client";
+import type { HealthResponse } from "@/api/generated";
 
-export interface HealthResponse {
-  status: "ok";
-  service: string;
-  environment: "development" | "test" | "demo" | "production";
-  version: string;
-}
+export type { HealthResponse } from "@/api/generated";
 
 export function getHealth(signal?: AbortSignal) {
   return requestJson<HealthResponse>("/api/health", { signal });

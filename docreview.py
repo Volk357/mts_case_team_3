@@ -133,16 +133,51 @@ def failed_result(run_id, code, stage, message, retriable):
     }
 
 
+class UnsupportedBinary(Exception):
+    """Файл двоичный: извлекать текст ядро не умеет (парсер — POST-submission)."""
+
+
+# Сигнатуры двоичных контейнеров. Проверяются по содержимому, а не по
+# расширению: .docx, переименованный в .txt, тоже должен быть отбит.
+_BINARY_SIGNATURES = [
+    (b"PK\x03\x04", "docx/xlsx/pptx (zip-контейнер)"),
+    (b"%PDF", "pdf"),
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "doc/xls (OLE2)"),
+    (b"{\\rtf", "rtf"),
+]
+
+
 def _read_document(path):
-    """Читает документ в текст. txt/md — напрямую; pdf/docx — POST-submission."""
+    """Читает документ в текст. txt/md — напрямую; двоичный файл — отказ.
+
+    Двоичный вход отбивается ДО анализа. Иначе .docx читается как мусор,
+    детерминированный слой срабатывает на строке вида «PK..[Content_Types].xml»,
+    и наружу это выглядит как валидный ответ, а не как ошибка (проверено на
+    реальном документе 4 сентября). Честный отказ лучше правдоподобной ерунды.
+    Извлечение текста из pdf/docx — задача приложения (или POST-submission).
+    """
+    with open(path, "rb") as fh:
+        raw = fh.read()
+    for sig, what in _BINARY_SIGNATURES:
+        if raw.startswith(sig):
+            raise UnsupportedBinary(
+                "Файл в формате %s: ядро принимает только извлечённый текст "
+                "(txt/md). Извлеките текст на стороне приложения." % what)
+    if b"\x00" in raw[:8192]:
+        raise UnsupportedBinary(
+            "Файл двоичный (NUL-байты в начале): ядро принимает только "
+            "извлечённый текст (txt/md).")
+
+    text = raw.decode("utf-8", errors="replace")
     ext = os.path.splitext(path)[1].lower().lstrip(".")
     if ext in ("txt", "md", "markdown", ""):
-        return open(path, encoding="utf-8", errors="replace").read(), ext or "txt", []
-    # pdf/docx: полноценный парсер — POST-submission. Пробуем прочитать как текст.
+        return text, ext or "txt", []
+    # Расширение не текстовое, но содержимое — текст (например, приложение уже
+    # извлекло его и сохранило под исходным именем). Работаем, но предупреждаем.
     warn = [{"code": "PARSER_FALLBACK",
-             "message": "Формат %s без структурного парсера; прочитан как текст, "
-                        "привязка к странице/таблице недоступна." % ext}]
-    return open(path, encoding="utf-8", errors="replace").read(), ext, warn
+             "message": "Формат %s без структурного парсера; содержимое прочитано "
+                        "как текст, привязка к странице/таблице недоступна." % ext}]
+    return text, ext, warn
 
 
 def cmd_analyze(args):
@@ -150,6 +185,10 @@ def cmd_analyze(args):
     run_id = args.run_id
     try:
         text, doc_type, warnings = _read_document(args.file)
+    except UnsupportedBinary as e:
+        _write(args.output, failed_result(run_id, "CORE_UNSUPPORTED_FORMAT",
+                                          "read", str(e), False))
+        return 3
     except OSError as e:
         _write(args.output, failed_result(run_id, "CORE_INPUT_UNREADABLE",
                                           "read", str(e), False))

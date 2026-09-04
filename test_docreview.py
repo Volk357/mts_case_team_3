@@ -7,13 +7,15 @@
 """
 import json
 import os
+import shutil
 
 try:
     import jsonschema
 except ImportError:                       # на свежем клоне без зависимости
     jsonschema = None
 
-from docreview import build_review_result, failed_result
+from docreview import (build_review_result, failed_result,
+                       _read_document, UnsupportedBinary)
 
 
 def _validate(obj):
@@ -113,6 +115,66 @@ def test_findings_capped_at_20():
     _validate(r)
 
 
+def _tmp(name, data):
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_tmp_docreview")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, name)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return path
+
+
+def test_docx_rejected_not_parsed_as_text():
+    # реальный .docx — zip-контейнер; раньше читался как мусор и давал
+    # «успешный» ответ с замечанием на строке PK..[Content_Types].xml
+    path = _tmp("d.docx", b"PK\x03\x04\x14\x00\x00\x00[Content_Types].xml\xd0\xa1")
+    try:
+        _read_document(path)
+        raise AssertionError("двоичный docx должен быть отбит")
+    except UnsupportedBinary as e:
+        assert "docx" in str(e)
+
+
+def test_pdf_and_ole_rejected():
+    for name, head in (("d.pdf", b"%PDF-1.7\n"), ("d.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")):
+        try:
+            _read_document(_tmp(name, head + b"\x00\x01binary"))
+            raise AssertionError(name + " должен быть отбит")
+        except UnsupportedBinary:
+            pass
+
+
+def test_binary_renamed_to_txt_rejected():
+    # проверка по содержимому, а не по расширению
+    path = _tmp("renamed.txt", b"PK\x03\x04\x14\x00 whatever")
+    try:
+        _read_document(path)
+        raise AssertionError("переименованный docx должен быть отбит")
+    except UnsupportedBinary:
+        pass
+
+
+def test_txt_still_read_without_warnings():
+    path = _tmp("ok.txt", "Общие сведения\nЧасовой пояс: UTC\n".encode("utf-8"))
+    text, ext, warn = _read_document(path)
+    assert ext == "txt" and warn == [] and "Часовой пояс" in text
+
+
+def test_extracted_text_under_docx_name_still_works_with_warning():
+    # приложение уже извлекло текст, но сохранило под исходным именем
+    path = _tmp("extracted.docx", "Общие сведения\n".encode("utf-8"))
+    text, ext, warn = _read_document(path)
+    assert ext == "docx" and [w["code"] for w in warn] == ["PARSER_FALLBACK"]
+    assert "Общие сведения" in text
+
+
+def test_unsupported_format_failed_result_valid_against_contract():
+    fr = failed_result("run-10", "CORE_UNSUPPORTED_FORMAT", "read",
+                       "Файл в формате docx", False)
+    assert fr["status"] == "failed" and fr["error"]["retriable"] is False
+    _validate(fr)
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -121,4 +183,12 @@ if __name__ == "__main__":
     test_confidence_in_range_and_block_id()
     test_empty_findings_valid()
     test_findings_capped_at_20()
+    test_docx_rejected_not_parsed_as_text()
+    test_pdf_and_ole_rejected()
+    test_binary_renamed_to_txt_rejected()
+    test_txt_still_read_without_warnings()
+    test_extracted_text_under_docx_name_still_works_with_warning()
+    test_unsupported_format_failed_result_valid_against_contract()
+    shutil.rmtree(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               "_tmp_docreview"), ignore_errors=True)
     print("все тесты пройдены")

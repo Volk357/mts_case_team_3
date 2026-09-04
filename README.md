@@ -84,6 +84,7 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 - [Backend](apps/api/README.md);
 - [Frontend](apps/web/README.md);
 - [Контракты](contracts/README.md);
+- [Сценарий демонстрации и замеренный тайминг](docs/demo-runbook.md);
 - [Локальная модель](docs/local-model.md);
 - [Модель данных приложения](docs/application-data-model.md);
 - [Политика хранения и tenant-scoped удаления](docs/storage-retention-policy.md);

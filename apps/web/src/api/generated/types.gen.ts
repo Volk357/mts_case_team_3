@@ -17,6 +17,28 @@ export type BodyUploadDocumentApiDocumentsPost = {
 };
 
 /**
+ * DefectFalsePositiveMetric
+ */
+export type DefectFalsePositiveMetric = {
+    /**
+     * Defect Id
+     */
+    defect_id: string;
+    /**
+     * Evaluated Decisions
+     */
+    evaluated_decisions: number;
+    /**
+     * False Positive Decisions
+     */
+    false_positive_decisions: number;
+    /**
+     * False Positive Rate
+     */
+    false_positive_rate?: number | null;
+};
+
+/**
  * DocumentResponse
  *
  * Verified public metadata for one stored document.
@@ -138,6 +160,52 @@ export type FeedbackListResponse = {
      * Total
      */
     total: number;
+};
+
+/**
+ * FeedbackMetricsResponse
+ */
+export type FeedbackMetricsResponse = {
+    /**
+     * Accepted Decisions
+     */
+    accepted_decisions: number;
+    /**
+     * Accepted Share
+     */
+    accepted_share?: number | null;
+    /**
+     * Average Time To First Decision Seconds
+     */
+    average_time_to_first_decision_seconds?: number | null;
+    /**
+     * Evaluated Findings
+     */
+    evaluated_findings: number;
+    /**
+     * False Positive By Defect
+     */
+    false_positive_by_defect: Array<DefectFalsePositiveMetric>;
+    /**
+     * Quality Scope
+     */
+    quality_scope: string;
+    /**
+     * Total Decisions
+     */
+    total_decisions: number;
+    /**
+     * Total Findings
+     */
+    total_findings: number;
+    /**
+     * Unevaluated Findings
+     */
+    unevaluated_findings: number;
+    /**
+     * Unevaluated Share
+     */
+    unevaluated_share?: number | null;
 };
 
 /**
@@ -691,6 +759,72 @@ export type ExportFeedbackApiFeedbackExportGetResponses = {
      */
     200: unknown;
 };
+
+export type GetFeedbackMetricsApiFeedbackMetricsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Finding Created From
+         */
+        finding_created_from?: string | null;
+        /**
+         * Finding Created To
+         */
+        finding_created_to?: string | null;
+        /**
+         * Review Pack Id
+         */
+        review_pack_id?: string | null;
+    };
+    url: '/api/feedback/metrics';
+};
+
+export type GetFeedbackMetricsApiFeedbackMetricsGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type GetFeedbackMetricsApiFeedbackMetricsGetError = GetFeedbackMetricsApiFeedbackMetricsGetErrors[keyof GetFeedbackMetricsApiFeedbackMetricsGetErrors];
+
+export type GetFeedbackMetricsApiFeedbackMetricsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: FeedbackMetricsResponse;
+};
+
+export type GetFeedbackMetricsApiFeedbackMetricsGetResponse = GetFeedbackMetricsApiFeedbackMetricsGetResponses[keyof GetFeedbackMetricsApiFeedbackMetricsGetResponses];
 
 export type PutFindingFeedbackApiFindingsFindingIdFeedbackPutData = {
     body: FeedbackUpsertRequest;

@@ -16,6 +16,45 @@
         "title": "Body_upload_document_api_documents_post",
         "type": "object"
       },
+      "DefectFalsePositiveMetric": {
+        "additionalProperties": false,
+        "properties": {
+          "defect_id": {
+            "title": "Defect Id",
+            "type": "string"
+          },
+          "evaluated_decisions": {
+            "minimum": 0.0,
+            "title": "Evaluated Decisions",
+            "type": "integer"
+          },
+          "false_positive_decisions": {
+            "minimum": 0.0,
+            "title": "False Positive Decisions",
+            "type": "integer"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          }
+        },
+        "required": [
+          "defect_id",
+          "evaluated_decisions",
+          "false_positive_decisions"
+        ],
+        "title": "DefectFalsePositiveMetric",
+        "type": "object"
+      },
       "DocumentResponse": {
         "additionalProperties": false,
         "description": "Verified public metadata for one stored document.",
@@ -190,6 +229,96 @@
           "total"
         ],
         "title": "FeedbackListResponse",
+        "type": "object"
+      },
+      "FeedbackMetricsResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted_decisions": {
+            "minimum": 0.0,
+            "title": "Accepted Decisions",
+            "type": "integer"
+          },
+          "accepted_share": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted Share"
+          },
+          "average_time_to_first_decision_seconds": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Time To First Decision Seconds"
+          },
+          "evaluated_findings": {
+            "minimum": 0.0,
+            "title": "Evaluated Findings",
+            "type": "integer"
+          },
+          "false_positive_by_defect": {
+            "items": {
+              "$ref": "#/components/schemas/DefectFalsePositiveMetric"
+            },
+            "title": "False Positive By Defect",
+            "type": "array"
+          },
+          "quality_scope": {
+            "title": "Quality Scope",
+            "type": "string"
+          },
+          "total_decisions": {
+            "minimum": 0.0,
+            "title": "Total Decisions",
+            "type": "integer"
+          },
+          "total_findings": {
+            "minimum": 0.0,
+            "title": "Total Findings",
+            "type": "integer"
+          },
+          "unevaluated_findings": {
+            "minimum": 0.0,
+            "title": "Unevaluated Findings",
+            "type": "integer"
+          },
+          "unevaluated_share": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unevaluated Share"
+          }
+        },
+        "required": [
+          "total_findings",
+          "evaluated_findings",
+          "unevaluated_findings",
+          "total_decisions",
+          "accepted_decisions",
+          "false_positive_by_defect",
+          "quality_scope"
+        ],
+        "title": "FeedbackMetricsResponse",
         "type": "object"
       },
       "FeedbackResponse": {
@@ -1239,6 +1368,161 @@
           }
         },
         "summary": "Export Feedback",
+        "tags": [
+          "feedback"
+        ]
+      }
+    },
+    "/api/feedback/metrics": {
+      "get": {
+        "description": "Return operational feedback metrics for the current tenant.",
+        "operationId": "get_feedback_metrics_api_feedback_metrics_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "finding_created_from",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Finding Created From"
+            }
+          },
+          {
+            "in": "query",
+            "name": "finding_created_to",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "date-time",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Finding Created To"
+            }
+          },
+          {
+            "in": "query",
+            "name": "review_pack_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Review Pack Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FeedbackMetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource state conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Get Feedback Metrics",
         "tags": [
           "feedback"
         ]

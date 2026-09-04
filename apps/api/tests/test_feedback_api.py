@@ -354,6 +354,147 @@ async def test_feedback_export_is_version_linked_filterable_and_data_minimized(
 
 
 @pytest.mark.anyio
+async def test_feedback_metrics_cover_funnel_defects_timing_and_scope_filters(
+    feedback_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, finding_id, foreign_finding_id = feedback_resources
+    created_at = datetime(2026, 9, 4, 6, 0, tzinfo=UTC)
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        finding = session.get(FindingModel, finding_id)
+        foreign_finding = session.get(FindingModel, foreign_finding_id)
+        assert finding is not None
+        assert foreign_finding is not None
+        review = session.get(ReviewJobModel, finding.review_job_id)
+        assert review is not None
+        pack_id = review.review_pack_reference_id
+        false_positive_finding = FindingModel(
+            company_id=finding.company_id,
+            review_job_id=finding.review_job_id,
+            core_finding_id="core-own-2",
+            ordinal=1,
+            defect_id="AMBIGUOUS_LOGIC",
+            severity="medium",
+            confidence=0.8,
+            location={"page": 2, "section_path": ["Logic"], "block_id": "b-2"},
+            quote="Another quote",
+            problem="Another problem",
+            clarification="Another clarification",
+            detected_by=["reviewer"],
+            created_at=created_at,
+        )
+        unevaluated_finding = FindingModel(
+            company_id=finding.company_id,
+            review_job_id=finding.review_job_id,
+            core_finding_id="core-own-3",
+            ordinal=2,
+            defect_id="MISSING_LOGS",
+            severity="low",
+            confidence=0.7,
+            location={"page": 3, "section_path": ["Logs"], "block_id": "b-3"},
+            quote="Logs quote",
+            problem="Logs problem",
+            clarification="Logs clarification",
+            detected_by=["reviewer"],
+            created_at=created_at,
+        )
+        session.add_all([false_positive_finding, unevaluated_finding])
+        session.flush()
+        session.add_all(
+            [
+                FindingFeedbackModel(
+                    company_id=finding.company_id,
+                    finding_id=finding.id,
+                    actor_key="metrics-actor",
+                    decision="accepted",
+                    comment=None,
+                    created_at=created_at.replace(minute=10),
+                    updated_at=created_at.replace(minute=10),
+                ),
+                FindingFeedbackModel(
+                    company_id=false_positive_finding.company_id,
+                    finding_id=false_positive_finding.id,
+                    actor_key="metrics-actor",
+                    decision="false_positive",
+                    comment=None,
+                    created_at=created_at.replace(minute=20),
+                    updated_at=created_at.replace(minute=20),
+                ),
+                FindingFeedbackModel(
+                    company_id=foreign_finding.company_id,
+                    finding_id=foreign_finding.id,
+                    actor_key="foreign-metrics-actor",
+                    decision="accepted",
+                    comment=None,
+                    created_at=created_at.replace(minute=5),
+                    updated_at=created_at.replace(minute=5),
+                ),
+            ]
+        )
+    engine.dispose()
+
+    app = create_app(settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/feedback/metrics")
+        matching_pack = await client.get(
+            "/api/feedback/metrics",
+            params={"review_pack_id": str(pack_id)},
+        )
+        empty_pack = await client.get(
+            "/api/feedback/metrics",
+            params={"review_pack_id": str(uuid4())},
+        )
+        future = await client.get(
+            "/api/feedback/metrics",
+            params={"finding_created_from": "2100-01-01T00:00:00Z"},
+        )
+        invalid_range = await client.get(
+            "/api/feedback/metrics",
+            params={
+                "finding_created_from": "2026-09-05T00:00:00Z",
+                "finding_created_to": "2026-09-04T00:00:00Z",
+            },
+        )
+
+    assert response.status_code == 200
+    metrics = response.json()
+    assert metrics["total_findings"] == 3
+    assert metrics["evaluated_findings"] == 2
+    assert metrics["unevaluated_findings"] == 1
+    assert metrics["unevaluated_share"] == 0.3333
+    assert metrics["total_decisions"] == 2
+    assert metrics["accepted_decisions"] == 1
+    assert metrics["accepted_share"] == 0.5
+    assert metrics["average_time_to_first_decision_seconds"] == 900.0
+    assert metrics["false_positive_by_defect"] == [
+        {
+            "defect_id": "AMBIGUOUS_LOGIC",
+            "evaluated_decisions": 2,
+            "false_positive_decisions": 1,
+            "false_positive_rate": 0.5,
+        },
+        {
+            "defect_id": "MISSING_LOGS",
+            "evaluated_decisions": 0,
+            "false_positive_decisions": 0,
+            "false_positive_rate": None,
+        },
+    ]
+    assert "Recall@20" in metrics["quality_scope"]
+    assert matching_pack.json() == metrics
+    empty_metrics = empty_pack.json()
+    assert empty_metrics["total_findings"] == 0
+    assert empty_metrics["accepted_share"] is None
+    assert empty_metrics["unevaluated_share"] is None
+    assert empty_metrics["average_time_to_first_decision_seconds"] is None
+    assert empty_metrics["false_positive_by_defect"] == []
+    assert future.json()["total_findings"] == 0
+    assert invalid_range.status_code == 422
+    assert invalid_range.json()["error"]["code"] == "FEEDBACK_METRICS_FILTER_INVALID"
+
+
+@pytest.mark.anyio
 async def test_feedback_contract_is_published_in_openapi(
     feedback_resources: tuple[Settings, UUID, UUID],
 ) -> None:
@@ -381,3 +522,7 @@ async def test_feedback_contract_is_published_in_openapi(
     }
     export_operation = schema["paths"]["/api/feedback/export"]["get"]
     assert "application/x-ndjson" in export_operation["responses"]["200"]["content"]
+    metrics_operation = schema["paths"]["/api/feedback/metrics"]["get"]
+    assert metrics_operation["responses"]["200"]["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/FeedbackMetricsResponse"
+    }

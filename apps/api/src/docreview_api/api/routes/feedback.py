@@ -14,6 +14,7 @@ from docreview_api.api.schemas.errors import ApiError
 from docreview_api.api.schemas.feedback import (
     FeedbackExportRecord,
     FeedbackListResponse,
+    FeedbackMetricsResponse,
     FeedbackResponse,
     FeedbackUpsertRequest,
 )
@@ -23,6 +24,10 @@ from docreview_api.services.feedback_export import (
     FeedbackExportService,
     FeedbackExportSnapshot,
     InvalidFeedbackExportFilter,
+)
+from docreview_api.services.feedback_metrics import (
+    FeedbackMetricsService,
+    InvalidFeedbackMetricsFilter,
 )
 from docreview_api.services.finding_feedback import (
     FindingFeedbackService,
@@ -85,6 +90,33 @@ def export_feedback(
         media_type="application/x-ndjson",
         headers={"Content-Disposition": 'attachment; filename="feedback-export.jsonl"'},
     )
+
+
+@router.get("/feedback/metrics", response_model=FeedbackMetricsResponse)
+def get_feedback_metrics(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+    finding_created_from: Annotated[datetime | None, Query()] = None,
+    finding_created_to: Annotated[datetime | None, Query()] = None,
+    review_pack_id: Annotated[UUID | None, Query()] = None,
+) -> FeedbackMetricsResponse:
+    """Return operational feedback metrics for the current tenant."""
+
+    try:
+        with session_factory() as session:
+            snapshot = FeedbackMetricsService(session).calculate(
+                company_id=settings.default_company_id,
+                finding_created_from=finding_created_from,
+                finding_created_to=finding_created_to,
+                review_pack_id=review_pack_id,
+            )
+    except InvalidFeedbackMetricsFilter as error:
+        raise ApiError(
+            422,
+            "FEEDBACK_METRICS_FILTER_INVALID",
+            "Feedback metrics filters are invalid.",
+        ) from error
+    return FeedbackMetricsResponse.model_validate(snapshot, from_attributes=True)
 
 
 @router.put("/findings/{finding_id}/feedback", response_model=FeedbackResponse)

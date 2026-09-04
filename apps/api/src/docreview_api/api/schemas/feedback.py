@@ -56,3 +56,23 @@ class FeedbackExportRecord(ApiModel):
     comment: str | None
     feedback_created_at: UtcDateTime
     feedback_updated_at: UtcDateTime
+
+
+class DefectFalsePositiveMetric(ApiModel):
+    defect_id: str
+    evaluated_decisions: int = Field(ge=0)
+    false_positive_decisions: int = Field(ge=0)
+    false_positive_rate: float | None = Field(default=None, ge=0, le=1)
+
+
+class FeedbackMetricsResponse(ApiModel):
+    total_findings: int = Field(ge=0)
+    evaluated_findings: int = Field(ge=0)
+    unevaluated_findings: int = Field(ge=0)
+    unevaluated_share: float | None = Field(default=None, ge=0, le=1)
+    total_decisions: int = Field(ge=0)
+    accepted_decisions: int = Field(ge=0)
+    accepted_share: float | None = Field(default=None, ge=0, le=1)
+    false_positive_by_defect: list[DefectFalsePositiveMetric]
+    average_time_to_first_decision_seconds: float | None = Field(default=None, ge=0)
+    quality_scope: str

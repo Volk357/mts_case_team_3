@@ -478,6 +478,28 @@ def test_schema_type_mismatch_explanation_not_matched_by_prefix():
     assert "SCHEMA_TYPE_MISMATCH" in ids
 
 
+def test_heldout_document_all_defects_found():
+    """Held-out: те же типы дефектов, но формулировки НЕ те, что порождают
+    мутаторы (внесены вручную 4 сентября при замороженном коде). Прогон на
+    замороженном коде дал 9/10; единственный промах — граница словаря
+    empty_markers, закрыт строкой конфига. Тест держит достигнутое."""
+    import json as _json
+    doc = open("data/heldout/heldout_1.txt", encoding="utf-8").read()
+    truth = _json.load(open("data/heldout/heldout_1_truth.json", encoding="utf-8"))
+    got = {f["defect_id"] for f in cf.run(doc, CFG)["findings"]}
+    missed = [t["defect_id"] for t in truth["defects"] if t["defect_id"] not in got]
+    assert not missed, "не найдено на held-out: %s" % missed
+    extra = got - {t["defect_id"] for t in truth["defects"]}
+    assert not extra, "ложные срабатывания на held-out: %s" % extra
+
+
+def test_heldout_clean_document_zero_findings():
+    """Чистая версия held-out-документа не должна давать ни одного замечания."""
+    doc = open("data/heldout/heldout_1_clean.txt", encoding="utf-8").read()
+    fs = cf.run(doc, CFG)["findings"]
+    assert fs == [], [f["defect_id"] for f in fs]
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -553,5 +575,7 @@ if __name__ == "__main__":
     test_schema_type_mismatch_ok_when_conversion_explained()
     test_schema_type_mismatch_explanation_is_field_scoped()
     test_schema_type_mismatch_explanation_not_matched_by_prefix()
+    test_heldout_document_all_defects_found()
+    test_heldout_clean_document_zero_findings()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

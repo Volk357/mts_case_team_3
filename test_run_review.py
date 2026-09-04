@@ -117,6 +117,38 @@ def test_default_ceiling_is_20():
     assert BUDGET_CEILING == 20
 
 
+def test_trim_keeps_short_and_complete_text_untouched():
+    for text in ("Короткое замечание.", "Указать формат: 'timestamp (UTC)'",
+                 "Вопрос?", "Смотри раздел (см. выше)"):
+        assert run_review.trim_to_sentence(text, 300) == text
+
+
+def test_trim_cuts_at_sentence_when_capped():
+    # реальный случай: текст упёрся в лимит и оборван на полуслове
+    body = "Поле не описано в структуре данных. " + "слово " * 45
+    out = run_review.trim_to_sentence(body.strip(), 300)
+    assert out.endswith(("…", ".")), out[-30:]
+    assert "слово слово" not in out or out.endswith("…")
+
+
+def test_trim_marks_cut_with_ellipsis_when_no_sentence_end():
+    body = "Это приводит к неясности где именно находится описание " + "текста " * 40
+    out = run_review.trim_to_sentence(body.strip(), 300)
+    assert out.endswith("…")
+    assert not out.endswith(" …")
+
+
+def test_verify_trims_truncated_explanation():
+    src = "Часовой пояс: UTC\nЕжемесячно (1 раз в месяц)\n"
+    long_tail = "Регламент не указан полностью и не описан " + "деталь " * 40
+    findings = [{"quote": "Ежемесячно (1 раз в месяц)", "defect_id": "NO_SCHEDULE",
+                 "explanation": long_tail.strip(), "suggestion": "Указать окно.",
+                 "severity": "medium"}]
+    kept, _ = run_review.verify(findings, src, None)
+    assert kept[0]["explanation"].endswith(("…", "."))
+    assert len(kept[0]["explanation"]) <= 300
+
+
 def test_every_severity_has_rank_and_weight():
     """Значение из SEVERITIES обязано быть в обеих таблицах ранжирования:
     иначе оно молча получит вес medium (блокер ревью 4 сентября — critical
@@ -213,6 +245,10 @@ if __name__ == "__main__":
     test_run_full_applies_budget_and_reports_capped()
     test_run_full_drops_deterministic_type_findings()
     test_default_ceiling_is_20()
+    test_trim_keeps_short_and_complete_text_untouched()
+    test_trim_cuts_at_sentence_when_capped()
+    test_trim_marks_cut_with_ellipsis_when_no_sentence_end()
+    test_verify_trims_truncated_explanation()
     test_every_severity_has_rank_and_weight()
     test_critical_ordered_above_high_in_output()
     test_critical_not_cut_by_budget()

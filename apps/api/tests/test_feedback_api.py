@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -66,7 +67,14 @@ def feedback_resources(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
                 company_id=owner.id,
                 document_id=document.id,
                 review_pack_reference_id=pack.id,
-                raw_result={"immutable": suffix},
+                raw_result={"immutable": suffix, "api_token": "do-not-export"},
+                schema_version="1.0.0",
+                engine_version="mock-2.1",
+                result_review_pack_id=f"pack-{suffix}",
+                result_review_pack_version="1.0",
+                model_name="qwen-test",
+                prompt_versions={"reviewer": "reviewer-3"},
+                diagnostic_message="private diagnostic",
                 queued_at=now,
                 created_at=now,
                 updated_at=now,
@@ -132,7 +140,10 @@ async def test_feedback_upsert_changes_decision_without_mutating_finding(
         assert finding is not None
         assert finding.quote == "Original quote"
         assert finding.problem == "Original problem"
-        assert finding.review_job.raw_result == {"immutable": "own"}
+        assert finding.review_job.raw_result == {
+            "immutable": "own",
+            "api_token": "do-not-export",
+        }
     engine.dispose()
 
 
@@ -255,6 +266,94 @@ async def test_feedback_rejects_finding_with_cross_tenant_review_parent(
 
 
 @pytest.mark.anyio
+async def test_feedback_export_is_version_linked_filterable_and_data_minimized(
+    feedback_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, finding_id, foreign_finding_id = feedback_resources
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        finding = session.get(FindingModel, finding_id)
+        foreign_finding = session.get(FindingModel, foreign_finding_id)
+        assert finding is not None
+        assert foreign_finding is not None
+        review = session.get(ReviewJobModel, finding.review_job_id)
+        assert review is not None
+        pack_id = review.review_pack_reference_id
+        session.add(
+            FindingFeedbackModel(
+                company_id=foreign_finding.company_id,
+                finding_id=foreign_finding.id,
+                actor_key="foreign-private-actor",
+                decision="accepted",
+                comment="Must stay outside the tenant export",
+            )
+        )
+    engine.dispose()
+
+    app = create_app(settings)
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        saved = await client.put(
+            f"/api/findings/{finding_id}/feedback",
+            json={"decision": "false_positive", "comment": "Checked manually"},
+            headers={"X-Actor-Key": "sensitive-browser-session"},
+        )
+        exported = await client.get("/api/feedback/export")
+        matching_pack = await client.get(
+            "/api/feedback/export",
+            params={"review_pack_id": str(pack_id)},
+        )
+        another_pack = await client.get(
+            "/api/feedback/export",
+            params={"review_pack_id": str(uuid4())},
+        )
+        future = await client.get(
+            "/api/feedback/export",
+            params={"updated_from": "2100-01-01T00:00:00Z"},
+        )
+        invalid_range = await client.get(
+            "/api/feedback/export",
+            params={
+                "updated_from": "2026-09-05T00:00:00Z",
+                "updated_to": "2026-09-04T00:00:00Z",
+            },
+        )
+
+    assert saved.status_code == 200
+    assert exported.status_code == 200
+    assert exported.headers["content-type"].startswith("application/x-ndjson")
+    assert exported.headers["content-disposition"] == 'attachment; filename="feedback-export.jsonl"'
+    records = [json.loads(line) for line in exported.text.splitlines()]
+    assert len(records) == 1
+    record = records[0]
+    assert record["run_id"] == "review-own"
+    assert record["finding_id"] == str(finding_id)
+    assert record["core_finding_id"] == "core-own"
+    assert record["review_pack_reference_id"] == str(pack_id)
+    assert record["review_pack_key"] == "pack-own"
+    assert record["review_pack_version"] == "1.0"
+    assert record["result_review_pack_id"] == "pack-own"
+    assert record["result_review_pack_version"] == "1.0"
+    assert record["schema_version"] == "1.0.0"
+    assert record["engine_version"] == "mock-2.1"
+    assert record["model_name"] == "qwen-test"
+    assert record["prompt_versions"] == {"reviewer": "reviewer-3"}
+    assert record["decision"] == "false_positive"
+    assert record["comment"] == "Checked manually"
+    assert "actor_key" not in record
+    assert "submitted_by_user_id" not in record
+    assert "raw_result" not in record
+    assert "diagnostic_message" not in record
+    assert "sensitive-browser-session" not in exported.text
+    assert "do-not-export" not in exported.text
+    assert len(matching_pack.text.splitlines()) == 1
+    assert another_pack.text == ""
+    assert future.text == ""
+    assert invalid_range.status_code == 422
+    assert invalid_range.json()["error"]["code"] == "FEEDBACK_EXPORT_FILTER_INVALID"
+
+
+@pytest.mark.anyio
 async def test_feedback_contract_is_published_in_openapi(
     feedback_resources: tuple[Settings, UUID, UUID],
 ) -> None:
@@ -280,3 +379,5 @@ async def test_feedback_contract_is_published_in_openapi(
     assert list_operation["responses"]["200"]["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/FeedbackListResponse"
     }
+    export_operation = schema["paths"]["/api/feedback/export"]["get"]
+    assert "application/x-ndjson" in export_operation["responses"]["200"]["content"]

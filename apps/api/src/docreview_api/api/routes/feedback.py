@@ -1,19 +1,29 @@
-"""Finding feedback endpoint."""
+"""Finding feedback and quality export endpoints."""
 
+from collections.abc import Iterator
+from datetime import datetime
 from typing import Annotated
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends, Header, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.api.schemas.common import OpaqueId
 from docreview_api.api.schemas.errors import ApiError
 from docreview_api.api.schemas.feedback import (
+    FeedbackExportRecord,
     FeedbackListResponse,
     FeedbackResponse,
     FeedbackUpsertRequest,
 )
 from docreview_api.config import Settings, get_settings
 from docreview_api.db.dependencies import get_session_factory
+from docreview_api.services.feedback_export import (
+    FeedbackExportService,
+    FeedbackExportSnapshot,
+    InvalidFeedbackExportFilter,
+)
 from docreview_api.services.finding_feedback import (
     FindingFeedbackService,
     FindingUnavailableError,
@@ -22,6 +32,59 @@ from docreview_api.services.finding_feedback import (
 )
 
 router = APIRouter(tags=["feedback"])
+
+
+def _export_record(snapshot: FeedbackExportSnapshot) -> FeedbackExportRecord:
+    return FeedbackExportRecord.model_validate(snapshot, from_attributes=True)
+
+
+@router.get(
+    "/feedback/export",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"application/x-ndjson": {}},
+            "description": "One version-linked feedback record per JSON line.",
+        }
+    },
+)
+def export_feedback(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+    updated_from: Annotated[datetime | None, Query()] = None,
+    updated_to: Annotated[datetime | None, Query()] = None,
+    review_pack_id: Annotated[UUID | None, Query()] = None,
+) -> StreamingResponse:
+    """Download tenant feedback for offline quality analysis as JSONL."""
+
+    def content() -> Iterator[str]:
+        with session_factory() as session:
+            snapshots = FeedbackExportService(session).iter_snapshots(
+                company_id=settings.default_company_id,
+                updated_from=updated_from,
+                updated_to=updated_to,
+                review_pack_id=review_pack_id,
+            )
+            for snapshot in snapshots:
+                yield _export_record(snapshot).model_dump_json() + "\n"
+
+    try:
+        FeedbackExportService.validate_filters(
+            updated_from=updated_from,
+            updated_to=updated_to,
+        )
+    except InvalidFeedbackExportFilter as error:
+        raise ApiError(
+            422,
+            "FEEDBACK_EXPORT_FILTER_INVALID",
+            "Feedback export filters are invalid.",
+        ) from error
+
+    return StreamingResponse(
+        content(),
+        media_type="application/x-ndjson",
+        headers={"Content-Disposition": 'attachment; filename="feedback-export.jsonl"'},
+    )
 
 
 @router.put("/findings/{finding_id}/feedback", response_model=FeedbackResponse)

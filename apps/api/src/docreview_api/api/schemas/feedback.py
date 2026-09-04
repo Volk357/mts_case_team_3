@@ -1,6 +1,6 @@
-"""Transport schemas for analyst feedback on findings."""
+"""Transport schemas for analyst feedback and quality export."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import Field, StringConstraints
 
@@ -28,3 +28,31 @@ class FeedbackListResponse(ApiModel):
     review_id: OpaqueId
     items: list[FeedbackResponse]
     total: int = Field(ge=0)
+
+
+class FeedbackExportRecord(ApiModel):
+    run_id: str
+    review_id: OpaqueId
+    finding_id: OpaqueId
+    core_finding_id: str
+    ordinal: int = Field(ge=0)
+    defect_id: str
+    severity: str
+    confidence: float = Field(ge=0, le=1)
+    location: dict[str, Any]
+    quote: str
+    problem: str
+    clarification: str
+    review_pack_reference_id: OpaqueId
+    review_pack_key: str
+    review_pack_version: str
+    result_review_pack_id: str | None
+    result_review_pack_version: str | None
+    schema_version: str | None
+    engine_version: str | None
+    model_name: str | None
+    prompt_versions: dict[str, str] | None
+    decision: FeedbackDecision
+    comment: str | None
+    feedback_created_at: UtcDateTime
+    feedback_updated_at: UtcDateTime

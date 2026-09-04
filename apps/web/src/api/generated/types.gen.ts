@@ -628,6 +628,70 @@ export type GetDocumentContentApiDocumentsDocumentIdContentGetResponses = {
 
 export type GetDocumentContentApiDocumentsDocumentIdContentGetResponse = GetDocumentContentApiDocumentsDocumentIdContentGetResponses[keyof GetDocumentContentApiDocumentsDocumentIdContentGetResponses];
 
+export type ExportFeedbackApiFeedbackExportGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Updated From
+         */
+        updated_from?: string | null;
+        /**
+         * Updated To
+         */
+        updated_to?: string | null;
+        /**
+         * Review Pack Id
+         */
+        review_pack_id?: string | null;
+    };
+    url: '/api/feedback/export';
+};
+
+export type ExportFeedbackApiFeedbackExportGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type ExportFeedbackApiFeedbackExportGetError = ExportFeedbackApiFeedbackExportGetErrors[keyof ExportFeedbackApiFeedbackExportGetErrors];
+
+export type ExportFeedbackApiFeedbackExportGetResponses = {
+    /**
+     * One version-linked feedback record per JSON line.
+     */
+    200: unknown;
+};
+
 export type PutFindingFeedbackApiFindingsFindingIdFeedbackPutData = {
     body: FeedbackUpsertRequest;
     headers: {

@@ -115,6 +115,9 @@ class ReviewPackReferenceModel(TimestampMixin, Base):
     pack_key: Mapped[str] = mapped_column(String(255))
     version: Mapped[str] = mapped_column(String(100))
     display_name: Mapped[str] = mapped_column(String(255))
+    document_type: Mapped[str] = mapped_column(
+        String(100), default="technical_specification", server_default="technical_specification"
+    )
     locator: Mapped[str] = mapped_column(String(1000))
     checksum: Mapped[str | None] = mapped_column(String(64))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

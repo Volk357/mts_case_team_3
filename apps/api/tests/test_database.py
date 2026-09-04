@@ -162,6 +162,9 @@ def test_migration_upgrades_empty_database_and_downgrades_one_step(tmp_path: Pat
     assert "process_pid" in {
         column["name"] for column in database_inspector.get_columns("review_jobs")
     }
+    assert "document_type" in {
+        column["name"] for column in database_inspector.get_columns("review_pack_references")
+    }
     assert "uq_review_jobs_company_idempotency" in {
         constraint["name"]
         for constraint in database_inspector.get_unique_constraints("review_jobs")

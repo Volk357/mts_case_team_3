@@ -21,6 +21,34 @@ import time
 ENGINE_VERSION = "0.2.0"
 SCHEMA_VERSION = "1.0"
 
+# Каталог самого ядра. Приложение запускает нас с рабочим каталогом своего
+# workspace (process_runner: cwd=request.workspace.root), а конфиги ядра лежат
+# рядом с этим файлом. Без этого template.yaml/defects.yaml не находятся.
+CORE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _core_path(name):
+    """Путь к конфигу ядра.
+
+    Голое имя («template.yaml») всегда разрешается РЯДОМ С ЯДРОМ, а не
+    относительно рабочего каталога: иначе файл с таким же именем, случайно
+    лежащий в workspace приложения, молча подменил бы наши правила.
+    Явный путь (абсолютный или с разделителем) используется как передан.
+    """
+    return name if os.path.isabs(name) or os.sep in name \
+        else os.path.join(CORE_DIR, name)
+
+
+# Коды и exit codes — из contracts/exit-codes.md, а не свои. Прежние
+# CORE_UNSUPPORTED_FORMAT / CORE_INPUT_UNREADABLE / CORE_PROCESS_FAILED
+# в каталоге приложения отсутствуют: приложение считало их неизвестными
+# и превращало в CORE_PROCESS_FAILED без возможности повтора.
+EXIT_INVALID_ARGUMENTS = 2
+EXIT_DOCUMENT = 3          # DOCUMENT_READ_ERROR, DOCUMENT_PARSE_ERROR, UNSUPPORTED_DOCUMENT
+EXIT_REVIEW_PACK = 4       # REVIEW_PACK_NOT_FOUND, REVIEW_PACK_INVALID
+EXIT_MODEL = 5             # MODEL_UNAVAILABLE, MODEL_TIMEOUT
+EXIT_INTERNAL = 7          # INTERNAL_ERROR
+
 # Наш severity → enum контракта (critical/high/medium/low). clarification → low.
 _SEV_MAP = {"high": "high", "medium": "medium", "low": "low",
             "clarification": "low", "critical": "critical"}
@@ -125,12 +153,21 @@ def _rank_union(formal_findings, llm_findings, ceiling=BUDGET):
 
 
 def build_review_result(text, filename, document_type, formal_findings,
-                        llm_findings, run_id, pack_id, model_name,
+                        llm_findings, run_id, pack, model_name,
                         prompt_versions, total_ms, warnings=None,
-                        total_candidates=None, verified_candidates=None):
-    """Чистая сборка ReviewResult (completed). Тестируется без модели."""
+                        total_candidates=None, verified_candidates=None, cfg=None):
+    """Чистая сборка ReviewResult (completed). Тестируется без модели.
+
+    cfg — уже загруженный шаблон (из Review Pack, если он его содержит). Если
+    не передан, берём шаблон рядом с ядром: путь обязан быть абсолютным, потому
+    что приложение запускает нас со своим рабочим каталогом.
+    """
     import check_formal
-    cfg = check_formal.load_config("template.yaml")
+    # pack — либо (id, version), либо просто id (обратная совместимость тестов)
+    pack_id, pack_version = pack if isinstance(pack, (tuple, list)) \
+        else (pack, DEFAULT_PACK_VERSION)
+    if cfg is None:
+        cfg = check_formal.load_config(_core_path("template.yaml"))
     is_sh = check_formal.is_section_header
     lines = text.splitlines()
 
@@ -152,7 +189,7 @@ def build_review_result(text, filename, document_type, formal_findings,
             "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
         },
         "engine": {"version": ENGINE_VERSION},
-        "review_pack": {"id": pack_id, "version": "0.2"},
+        "review_pack": {"id": pack_id, "version": pack_version},
         "model": {"name": model_name, "prompt_versions": prompt_versions},
         "findings": findings,
         "summary": {
@@ -223,45 +260,283 @@ def _read_document(path):
     return text, ext, warn
 
 
+DEFAULT_PACK_ID = "mts-net"
+DEFAULT_PACK_VERSION = "0.2"
+PACK_MANIFEST_NAMES = ("pack.yaml", "pack.yml", "manifest.yaml", "manifest.yml")
+_VERSION_SEGMENT = re.compile(r"^v?\d+(?:\.\d+)*$")
+
+
+def resolve_pack(pack):
+    """Разбирает `--pack`: путь к каталогу пакета ИЛИ к его manifest-файлу
+    (так это описано в INTEGRATION_CONTRACT.md), либо голый идентификатор.
+
+    Возвращает (id, version, template, defects, glossary, warnings).
+
+    Почему id и version важны: приложение сверяет `review_pack.id`
+    и `review_pack.version` в результате с тем, что записано в задании,
+    и при расхождении бракует результат целиком — даже при exit 0.
+    Поэтому источник истины — манифест ВНУТРИ пакета (за содержимое пакета
+    по контракту отвечает наша сторона), а не догадки по имени каталога.
+
+    Если манифеста нет, применяется соглашение о раскладке
+    `<review-packs>/<pack_key>/<version>`: приложение резолвит локатор вида
+    «requirements/1.0» относительно своего корня пакетов. Тогда версия — это
+    последний сегмент пути, а идентификатор — предыдущий. Если и это не
+    распознаётся, возвращаются значения по умолчанию И предупреждение
+    в результат: молча подставлять чужую версию нельзя, приложение
+    забракует результат, а причина будет неочевидна.
+    """
+    if not pack:
+        return DEFAULT_PACK_ID, DEFAULT_PACK_VERSION, None, None, None, []
+    looks_like_path = os.sep in pack or pack.endswith((".yaml", ".yml", ".json", "/"))
+    if not looks_like_path:
+        return pack, DEFAULT_PACK_VERSION, None, None, None, []
+    if not os.path.exists(pack):
+        raise ReviewPackMissing(pack)
+
+    if os.path.isfile(pack):
+        manifest_path, base = pack, os.path.dirname(os.path.abspath(pack))
+    else:
+        base = os.path.abspath(pack.rstrip(os.sep))
+        manifest_path = next((os.path.join(base, n) for n in PACK_MANIFEST_NAMES
+                              if os.path.isfile(os.path.join(base, n))), None)
+
+    warnings, pack_id, version = [], None, None
+    if manifest_path:
+        import yaml
+        try:
+            man = yaml.safe_load(open(manifest_path, encoding="utf-8")) or {}
+        except Exception as e:                      # noqa: BLE001
+            raise ReviewPackInvalid("манифест %s не читается: %s" % (manifest_path, e))
+        if not isinstance(man, dict):
+            raise ReviewPackInvalid("манифест %s: ожидался словарь" % manifest_path)
+        pack_id = man.get("id") or man.get("pack_key")
+        version = man.get("version")
+        version = str(version) if version is not None else None
+        # Манифест объявлен источником истины — значит он обязан быть полным.
+        # Иначе получилась бы худшая из ситуаций: манифест есть, а идентичность
+        # тихо достроена из пути, и приложение бракует результат без причины.
+        missing = [k for k, v in (("id/pack_key", pack_id), ("version", version)) if not v]
+        if missing:
+            raise ReviewPackInvalid(
+                "манифест %s не объявляет: %s" % (manifest_path, ", ".join(missing)))
+
+    if not (pack_id and version):
+        segments = [x for x in base.split(os.sep) if x]
+        if len(segments) >= 2 and _VERSION_SEGMENT.match(segments[-1]):
+            pack_id = pack_id or segments[-2]
+            version = version or segments[-1]
+        else:
+            pack_id = pack_id or (os.path.basename(base) or DEFAULT_PACK_ID)
+            version = version or DEFAULT_PACK_VERSION
+            warnings.append({
+                "code": "REVIEW_PACK_VERSION_ASSUMED",
+                "message": ("В пакете нет манифеста (%s), и путь не в раскладке "
+                            "<pack_key>/<version>. id и версия выведены как «%s»/«%s» — "
+                            "если приложение ожидает другие, результат будет забракован "
+                            "как несоответствующий заданию."
+                            % ("/".join(PACK_MANIFEST_NAMES), pack_id, version))})
+
+    def in_pack(name):
+        path = os.path.join(base, name)
+        return path if os.path.isfile(path) else None
+
+    return (pack_id, version, in_pack("template.yaml"), in_pack("defects.yaml"),
+            in_pack("glossary.yaml"), warnings)
+
+
+def load_model_config(path):
+    """`--model-config` — единственный канал, по которому приложение может
+    передать ядру эндпоинт и имя модели: `ProcessRunner` вычищает окружение
+    дочернего процесса, поэтому OLLAMA_URL из окружения приложения до нас
+    не доходит. Формат — YAML или JSON.
+
+    Понимаем ключи: base_url | url | endpoint, model | name, num_ctx, timeout.
+    Возвращает словарь; пустой, если путь не задан.
+    """
+    if not path:
+        return {}
+    if not os.path.isfile(path):
+        raise ModelConfigInvalid("файл конфигурации модели не найден: %s" % path)
+    import yaml
+    try:
+        conf = yaml.safe_load(open(path, encoding="utf-8")) or {}
+    except Exception as e:                          # noqa: BLE001
+        raise ModelConfigInvalid("%s не читается: %s" % (path, e))
+    if not isinstance(conf, dict):
+        raise ModelConfigInvalid("%s: ожидался словарь" % path)
+    url = conf.get("base_url") or conf.get("url") or conf.get("endpoint")
+    out = {"url": url, "model": conf.get("model") or conf.get("name")}
+    # Числовые параметры приводим ЗДЕСЬ: если сделать это позже, ошибка
+    # значения уедет в общий обработчик и вернётся как INTERNAL_ERROR (exit 7)
+    # вместо MODEL_CONFIG_INVALID (exit 5).
+    for key in ("num_ctx", "timeout"):
+        raw = conf.get(key)
+        if raw is None:
+            out[key] = None
+            continue
+        # bool — подкласс int, а int(1.5) молча даёт 1: и то и другое
+        # означает, что в конфиге написано не то, что имели в виду.
+        if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+            raise ModelConfigInvalid(
+                "%s: параметр %s должен быть целым числом, получено %r"
+                % (path, key, raw))
+        try:
+            out[key] = int(str(raw).strip())
+        except (TypeError, ValueError):
+            raise ModelConfigInvalid(
+                "%s: параметр %s должен быть целым числом, получено %r"
+                % (path, key, raw))
+        if out[key] <= 0:
+            raise ModelConfigInvalid(
+                "%s: параметр %s должен быть положительным, получено %r"
+                % (path, key, raw))
+    return out
+
+
+class ReviewPackMissing(Exception):
+    """Каталог или манифест Review Pack, переданный приложением, не существует."""
+
+
+class ReviewPackInvalid(Exception):
+    """Пакет найден, но его содержимое нельзя разобрать."""
+
+
+class ModelConfigInvalid(Exception):
+    """Конфигурация модели не найдена или не разбирается."""
+
+
+class ModelUnavailable(Exception):
+    """Модель недоступна: сеть, таймаут или отказ эндпоинта."""
+
+
 def cmd_analyze(args):
     t0 = time.time()
     run_id = args.run_id
     try:
         text, doc_type, warnings = _read_document(args.file)
     except UnsupportedBinary as e:
-        _write(args.output, failed_result(run_id, "CORE_UNSUPPORTED_FORMAT",
+        _write(args.output, failed_result(run_id, "UNSUPPORTED_DOCUMENT",
                                           "read", str(e), False))
-        return 3
+        return EXIT_DOCUMENT
     except OSError as e:
-        _write(args.output, failed_result(run_id, "CORE_INPUT_UNREADABLE",
+        _write(args.output, failed_result(run_id, "DOCUMENT_READ_ERROR",
                                           "read", str(e), False))
-        return 3
+        return EXIT_DOCUMENT
 
     try:
+        (pack_id, pack_version, pack_template, pack_defects, pack_glossary,
+         pack_warnings) = resolve_pack(args.pack)
+        warnings = list(warnings) + pack_warnings
+    except ReviewPackMissing as e:
+        _write(args.output, failed_result(
+            run_id, "REVIEW_PACK_NOT_FOUND", "analyze",
+            "Review Pack не найден: %s" % e, False))
+        return EXIT_REVIEW_PACK
+    except ReviewPackInvalid as e:
+        _write(args.output, failed_result(
+            run_id, "REVIEW_PACK_INVALID", "analyze", str(e), False))
+        return EXIT_REVIEW_PACK
+
+    try:
+        model_conf = load_model_config(args.model_config)
+    except ModelConfigInvalid as e:
+        _write(args.output, failed_result(
+            run_id, "MODEL_CONFIG_INVALID", "analyze", str(e), False))
+        return EXIT_MODEL
+
+    try:
+        import requests
         import run_review
         import check_formal
-        taxonomy_text, valid_ids, defects = run_review.load_taxonomy(args.defects)
-        glossary_text = run_review.load_glossary(args.glossary)
+        # Параметры модели из --model-config переопределяют окружение: до ядра,
+        # запущенного приложением, переменные окружения не доходят.
+        if model_conf.get("url"):
+            run_review.OLLAMA_URL = model_conf["url"]
+        if model_conf.get("model"):
+            run_review.MODEL = model_conf["model"]
+        if model_conf.get("num_ctx"):
+            run_review.NUM_CTX = model_conf["num_ctx"]
+        if model_conf.get("timeout"):
+            run_review.TIMEOUT = model_conf["timeout"]
+        try:
+            taxonomy_text, valid_ids, defects = run_review.load_taxonomy(
+                pack_defects or _core_path(args.defects))
+            if pack_glossary:
+                # Глоссарий ЯДРА при сломанном yaml сознательно откатывается
+                # на константу (его правит аналитик). Глоссарий ПАКЕТА — часть
+                # версионируемого артефакта: сломанный файл обязан быть ошибкой,
+                # поэтому разбираем его сами и только потом отдаём загрузчику.
+                import yaml as _yaml
+                _yaml.safe_load(open(pack_glossary, encoding="utf-8"))
+            glossary_text = run_review.load_glossary(
+                pack_glossary or _core_path(args.glossary))
+            cfg = check_formal.load_config(pack_template or _core_path("template.yaml"))
+        except Exception as e:                      # noqa: BLE001
+            raise ReviewPackInvalid("не удалось разобрать правила пакета: %s" % e)
         known = run_review.extract_known_objects(text)
-        cfg = check_formal.load_config("template.yaml")
         formal = check_formal.run(text, cfg)["findings"]
-        llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
-                                  frag_mode="dict2", glossary_text=glossary_text,
-                                  label="full2")
+        try:
+            llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
+                                      frag_mode="dict2", glossary_text=glossary_text,
+                                      label="full2")
+        except requests.exceptions.RequestException as e:
+            raise ModelUnavailable(str(e))
         result = build_review_result(
             text, os.path.basename(args.file), doc_type, formal, llm["findings"],
-            run_id, args.pack, os.environ.get("OLLAMA_MODEL", "qwen3:30b-a3b"),
+            run_id, (pack_id, pack_version), run_review.MODEL,
             {"fragment": "dict2", "global": "global"},
             (time.time() - t0) * 1000, warnings,
             total_candidates=llm["found_raw"] + len(formal),
-            verified_candidates=llm["verified"] + len(formal))
+            verified_candidates=llm["verified"] + len(formal), cfg=cfg)
+    except ModelUnavailable as e:
+        # retriable=True: сеть или эндпоинт модели, повтор осмыслен
+        _write(args.output, failed_result(run_id, "MODEL_UNAVAILABLE", "analyze",
+                                          "Модель недоступна: %s" % e, True))
+        return EXIT_MODEL
+    except ReviewPackInvalid as e:
+        _write(args.output, failed_result(run_id, "REVIEW_PACK_INVALID", "analyze",
+                                          str(e), False))
+        return EXIT_REVIEW_PACK
     except Exception as e:                          # noqa: BLE001 — любой сбой → failed
-        _write(args.output, failed_result(run_id, "CORE_PROCESS_FAILED",
-                                          "analyze", str(e), True))
-        return 1
+        _write(args.output, failed_result(run_id, "INTERNAL_ERROR", "analyze",
+                                          str(e), False))
+        return EXIT_INTERNAL
 
+    _write_artifacts(args, llm, formal, result)
     _write(args.output, result)
     return 0
+
+
+def _write_artifacts(args, llm, formal, result):
+    """Диагностические артефакты прогона в `--artifacts-dir`.
+
+    По контракту отклонённые кандидаты попадают ТОЛЬКО в debug-артефакты
+    и никогда в ReviewResult: схема результата их не содержит. Поэтому
+    `--include-rejected` управляет содержимым этого каталога, а не выдачи.
+    Сбой записи артефактов не должен ронять успешный анализ.
+    """
+    directory = getattr(args, "artifacts_dir", None)
+    if not directory:
+        return
+    try:
+        os.makedirs(directory, exist_ok=True)
+        payload = {
+            "run_id": result["run_id"],
+            "counters": {k: llm.get(k) for k in
+                         ("found_raw", "verified", "rejected_count", "before_dedupe",
+                          "merged_away", "capped_away", "severity_fixed")},
+            "reject_reasons": llm.get("reject_reasons", {}),
+            "formal_findings": len(formal),
+        }
+        if getattr(args, "include_rejected", False):
+            payload["rejected"] = llm.get("rejected", [])
+            payload["capped"] = llm.get("capped", [])
+        with open(os.path.join(directory, "analysis-debug.json"), "w",
+                  encoding="utf-8") as fh:
+            json.dump(payload, fh, ensure_ascii=False, indent=2)
+    except OSError:
+        pass                                        # артефакты не критичны для результата
 
 
 def _write(path, obj):
@@ -281,10 +556,22 @@ def main(argv=None):
     a.add_argument("--output", default=None)
     a.add_argument("--defects", default="defects.yaml")
     a.add_argument("--glossary", default="glossary.yaml")
+    # Флаги, которые process_runner приложения передаёт ВСЕГДА или по условию.
+    # Без них argparse падал с exit 2 (INVALID_ARGUMENTS) на каждом запуске,
+    # то есть сквозной сценарий не доходил до анализа вообще.
+    a.add_argument("--artifacts-dir", default=None,
+                   help="каталог для побочных артефактов прогона; ядро пишет "
+                        "туда сырой ответ модели, если каталог существует")
+    a.add_argument("--model-config", default=None,
+                   help="принимается для совместимости с контрактом; параметры "
+                        "модели ядро берёт из окружения (OLLAMA_URL/OLLAMA_MODEL)")
+    a.add_argument("--include-rejected", action="store_true",
+                   help="принимается для совместимости с контрактом; отклонённые "
+                        "кандидаты в ReviewResult не входят (схема их не содержит)")
     args = ap.parse_args(argv)
     if args.cmd == "analyze":
         return cmd_analyze(args)
-    return 2
+    return EXIT_INVALID_ARGUMENTS
 
 
 if __name__ == "__main__":

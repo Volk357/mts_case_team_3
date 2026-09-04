@@ -15,7 +15,9 @@ except ImportError:                       # на свежем клоне без 
     jsonschema = None
 
 from docreview import (build_review_result, failed_result,
-                       _read_document, UnsupportedBinary, BUDGET)
+                       _read_document, UnsupportedBinary, BUDGET,
+                       resolve_pack, ReviewPackMissing, _core_path, main,
+                       load_model_config, ModelConfigInvalid, _write_artifacts)
 
 
 def _validate(obj):
@@ -262,6 +264,212 @@ def test_protection_still_decides_who_survives():
     assert quotes[-1] == "детерминированный low"      # выжил, но в хвосте выдачи
 
 
+def _contract_codes():
+    """Коды и exit codes из contracts/exit-codes.md — единственный источник правды."""
+    import re
+    text = open("contracts/exit-codes.md", encoding="utf-8").read()
+    codes = {}
+    for line in text.splitlines():
+        m = re.match(r"\|\s*`?(\d+)`?\s*\|([^|]*)\|", line)
+        if not m:
+            continue
+        exit_code = int(m.group(1))
+        for c in re.findall(r"`([A-Z_]+)`", m.group(2)):
+            codes.setdefault(c, set()).add(exit_code)
+    return codes
+
+
+def test_core_error_codes_exist_in_contract():
+    """Каждый код, который ядро может отдать, обязан быть в контракте и с тем же
+    exit code. Раньше ядро отдавало CORE_UNSUPPORTED_FORMAT / CORE_INPUT_UNREADABLE /
+    CORE_PROCESS_FAILED — их в каталоге приложения нет, и оно превращало их
+    в общий сбой без возможности повтора."""
+    import docreview as dr
+    contract = _contract_codes()
+    assert contract, "не разобрал contracts/exit-codes.md"
+    ours = {
+        "UNSUPPORTED_DOCUMENT": dr.EXIT_DOCUMENT,
+        "DOCUMENT_READ_ERROR": dr.EXIT_DOCUMENT,
+        "REVIEW_PACK_NOT_FOUND": dr.EXIT_REVIEW_PACK,
+        "REVIEW_PACK_INVALID": dr.EXIT_REVIEW_PACK,
+        "MODEL_UNAVAILABLE": dr.EXIT_MODEL,
+        "INTERNAL_ERROR": dr.EXIT_INTERNAL,
+    }
+    for code, exit_code in ours.items():
+        assert code in contract, "кода нет в контракте: %s" % code
+        assert exit_code in contract[code], (
+            "%s: ядро отдаёт exit %d, контракт ждёт %s" % (code, exit_code, contract[code]))
+
+
+def test_cli_accepts_flags_the_application_sends():
+    """process_runner всегда добавляет --artifacts-dir, а по условию ещё
+    --model-config и --include-rejected. Без них argparse падал с exit 2."""
+    path = _tmp("cli.docx", b"PK\x03\x04\x14\x00 binary")   # быстрый выход по формату
+    out = _tmp("cli_out.json", b"")
+    rc = main(["analyze", "--file", path, "--run-id", "r", "--output", out,
+               "--artifacts-dir", "/tmp/artifacts", "--model-config", "/tmp/model.json",
+               "--include-rejected"])
+    assert rc == 3, rc            # дошли до чтения документа, а не упали на аргументах
+    assert json.load(open(out, encoding="utf-8"))["error"]["code"] == "UNSUPPORTED_DOCUMENT"
+
+
+def test_resolve_pack_reads_manifest_for_id_and_version():
+    """Приложение бракует результат, если id/version не совпали с заданием,
+    поэтому источник истины — манифест внутри пакета."""
+    pack_id, version, tpl, dfx, glo, warns = resolve_pack("review-packs/mts-net/0.2")
+    assert (pack_id, version) == ("mts-net", "0.2"), (pack_id, version)
+    assert tpl and dfx and glo and not warns, "правила пакета должны браться целиком"
+
+
+def test_resolve_pack_accepts_manifest_file_directly():
+    pack_id, version, tpl, dfx, glo, warns = resolve_pack("review-packs/mts-net/0.2/pack.yaml")
+    assert (pack_id, version) == ("mts-net", "0.2")
+    assert tpl and dfx and not warns
+
+
+def test_resolve_pack_falls_back_to_key_version_layout():
+    """Раскладка <pack_key>/<version> — как приложение резолвит локатор."""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                     "_tmp_docreview", "requirements", "1.0")
+    os.makedirs(d, exist_ok=True)
+    pack_id, version, _, _, _, warns = resolve_pack(d)
+    assert (pack_id, version) == ("requirements", "1.0"), (pack_id, version)
+    assert not warns
+
+
+def test_resolve_pack_warns_when_version_unknown():
+    """Молча подставленная версия = забракованный результат с неочевидной причиной."""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_tmp_docreview", "plain")
+    os.makedirs(d, exist_ok=True)
+    pack_id, version, _, _, _, warns = resolve_pack(d)
+    assert pack_id == "plain" and version
+    assert warns and warns[0]["code"] == "REVIEW_PACK_VERSION_ASSUMED"
+
+
+def test_resolve_pack_identifier_without_path():
+    pack_id, version, tpl, dfx, glo, warns = resolve_pack("mts-net")
+    assert pack_id == "mts-net" and version and tpl is None and dfx is None
+
+
+def test_resolve_pack_missing_path_raises():
+    try:
+        resolve_pack("/definitely/not/here/pack")
+        raise AssertionError("ожидали ReviewPackMissing")
+    except ReviewPackMissing:
+        pass
+
+
+def test_core_configs_resolve_outside_working_directory():
+    """Приложение запускает ядро со своим cwd, конфиги лежат рядом с ядром."""
+    got = _core_path("template.yaml")
+    assert os.path.isabs(got) and os.path.isfile(got), got
+
+
+def test_model_config_is_the_channel_for_endpoint():
+    """ProcessRunner вычищает окружение дочернего процесса, поэтому OLLAMA_URL
+    из окружения приложения до ядра не доходит: единственный канал — этот файл."""
+    path = _tmp("model.yaml", b"base_url: http://10.1.2.3:11434/api/chat\nmodel: qwen3:30b-a3b\nnum_ctx: 4096\n")
+    conf = load_model_config(path)
+    assert conf["url"] == "http://10.1.2.3:11434/api/chat"
+    assert conf["model"] == "qwen3:30b-a3b" and conf["num_ctx"] == 4096
+
+
+def test_model_config_missing_file_is_reported():
+    try:
+        load_model_config("/definitely/not/here/model.yaml")
+        raise AssertionError("ожидали ModelConfigInvalid")
+    except ModelConfigInvalid:
+        pass
+
+
+def test_rejected_candidates_go_to_artifacts_not_result():
+    """Контракт: отклонённые кандидаты только в debug-артефактах."""
+    class A:
+        artifacts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "_tmp_docreview", "art")
+        include_rejected = True
+    llm = {"found_raw": 3, "verified": 1, "rejected_count": 2,
+           "reject_reasons": {"quote_not_found": 2},
+           "rejected": [{"quote": "нет такой строки"}], "capped": []}
+    result = {"run_id": "r-1"}
+    _write_artifacts(A, llm, [], result)
+    got = json.load(open(os.path.join(A.artifacts_dir, "analysis-debug.json"),
+                         encoding="utf-8"))
+    assert got["counters"]["rejected_count"] == 2
+    assert got["rejected"] and got["run_id"] == "r-1"
+
+
+def test_artifacts_skipped_without_flag():
+    class A:
+        artifacts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                     "_tmp_docreview", "art2")
+        include_rejected = False
+    _write_artifacts(A, {"rejected": [{"quote": "x"}]}, [], {"run_id": "r-2"})
+    got = json.load(open(os.path.join(A.artifacts_dir, "analysis-debug.json"),
+                         encoding="utf-8"))
+    assert "rejected" not in got
+
+
+def test_pack_manifest_must_declare_id_and_version():
+    """Манифест объявлен источником истины — значит неполный манифест это ошибка,
+    а не повод тихо достроить идентичность из пути."""
+    from docreview import ReviewPackInvalid
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_tmp_docreview", "bad")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "pack.yaml"), "w", encoding="utf-8") as fh:
+        fh.write("id: only-id\n")            # version отсутствует
+    try:
+        resolve_pack(d)
+        raise AssertionError("ожидали ReviewPackInvalid")
+    except ReviewPackInvalid as e:
+        assert "version" in str(e), e
+
+
+def test_model_config_rejects_non_numeric_values():
+    """num_ctx: not-an-int должен давать MODEL_CONFIG_INVALID (exit 5),
+    а не общий INTERNAL_ERROR (exit 7)."""
+    path = _tmp("bad_model.yaml", b"base_url: http://x/api\nnum_ctx: not-an-int\n")
+    try:
+        load_model_config(path)
+        raise AssertionError("ожидали ModelConfigInvalid")
+    except ModelConfigInvalid as e:
+        assert "num_ctx" in str(e), e
+    # дробное, булево, отрицательное, список — всё это «написано не то, что имели в виду»
+    for body, why in ((b"base_url: http://x/api\ntimeout: -5\n", "отрицательное"),
+                      (b"base_url: http://x/api\nnum_ctx: 1.5\n", "дробное"),
+                      (b"base_url: http://x/api\ntimeout: true\n", "булево"),
+                      (b"base_url: http://x/api\nnum_ctx: [1]\n", "список")):
+        path2 = _tmp("bad_model_%s.yaml" % abs(hash(body)), body)
+        try:
+            load_model_config(path2)
+            raise AssertionError("ожидали ModelConfigInvalid: %s" % why)
+        except ModelConfigInvalid:
+            pass
+    # корректные значения по-прежнему принимаются, в том числе строкой
+    ok = load_model_config(_tmp("ok_model.yaml",
+                                b"base_url: http://x/api\nnum_ctx: '8192'\n"))
+    assert ok["num_ctx"] == 8192
+
+
+def test_broken_pack_glossary_is_pack_error_not_internal():
+    """Глоссарий ядра при сломанном yaml откатывается на константу (его правит
+    аналитик), глоссарий ПАКЕТА — часть версионируемого артефакта: ошибка."""
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_tmp_docreview", "gl")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "pack.yaml"), "w", encoding="utf-8") as fh:
+        fh.write("id: gl\nversion: '1.0'\n")
+    for name, body in (("template.yaml", "sections: []\n"),
+                       ("defects.yaml", "defects: []\n"),
+                       ("glossary.yaml", "terms: [a: : b\n")):     # битый yaml
+        with open(os.path.join(d, name), "w", encoding="utf-8") as fh:
+            fh.write(body)
+    out = _tmp("gl_out.json", b"")
+    doc = _tmp("gl_doc.txt", "Общие сведения\nЧасовой пояс: UTC\n".encode("utf-8"))
+    rc = main(["analyze", "--file", doc, "--run-id", "gl", "--pack", d, "--output", out])
+    assert rc == 4, rc
+    assert json.load(open(out, encoding="utf-8"))["error"]["code"] == "REVIEW_PACK_INVALID"
+
+
 if __name__ == "__main__":
     test_completed_result_valid_against_contract()
     test_failed_result_valid_against_contract()
@@ -276,6 +484,22 @@ if __name__ == "__main__":
     test_txt_still_read_without_warnings()
     test_extracted_text_under_docx_name_still_works_with_warning()
     test_unsupported_format_failed_result_valid_against_contract()
+    test_core_error_codes_exist_in_contract()
+    test_cli_accepts_flags_the_application_sends()
+    test_resolve_pack_reads_manifest_for_id_and_version()
+    test_resolve_pack_accepts_manifest_file_directly()
+    test_resolve_pack_falls_back_to_key_version_layout()
+    test_resolve_pack_warns_when_version_unknown()
+    test_resolve_pack_identifier_without_path()
+    test_model_config_is_the_channel_for_endpoint()
+    test_model_config_missing_file_is_reported()
+    test_rejected_candidates_go_to_artifacts_not_result()
+    test_artifacts_skipped_without_flag()
+    test_pack_manifest_must_declare_id_and_version()
+    test_model_config_rejects_non_numeric_values()
+    test_broken_pack_glossary_is_pack_error_not_internal()
+    test_resolve_pack_missing_path_raises()
+    test_core_configs_resolve_outside_working_directory()
     test_high_not_dropped_by_many_formal_findings()
     test_deterministic_not_displaced_by_model_medium()
     test_high_first_in_output_order()

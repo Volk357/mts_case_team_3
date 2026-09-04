@@ -346,6 +346,22 @@
             "title": "Defect Id",
             "type": "string"
           },
+          "detection_layer": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rule",
+                  "model",
+                  "mixed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection Layer"
+          },
           "finding_id": {
             "description": "Opaque resource identifier. Clients must not infer meaning from it.",
             "format": "uuid",

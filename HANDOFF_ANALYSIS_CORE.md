@@ -92,10 +92,17 @@ python3 docreview.py analyze \
 | `finding.confidence` | прокси 0–1 (severity × согласие проходов) |
 | `finding.problem` | наше `explanation` |
 | `finding.clarification` | наше `suggestion` (рекомендация, текст НЕ переписываем) |
-| `finding.detected_by` | `["deterministic"]` или `["model"]` |
+| `finding.detected_by` | `["deterministic"]` или `["model"]` — см. врезку ниже |
 | `finding.location.section_path` | **настоящий** — ближайший заголовок раздела шаблона |
 | `finding.location.page` / `table` | `null` — POST-submission (нужен структурный парсер PDF/DOCX) |
 | `summary`, `timings`, `document.sha256`, `engine`, `review_pack`, `model` | заполняются ядром |
+
+> **`detected_by` наружу не отдаётся сырым.** В нём лежат внутренние имена
+> проверок, и контракт ядра допускает любое имя анализатора, а не только
+> `deterministic`/`model`. Публичный API сворачивает список в закрытый перечень
+> `detection_layer`: `"rule"` / `"model"` / `"mixed"` / `null`. Незнакомое имя
+> даёт `null`, и интерфейс тогда не пишет ничего — лучше не сказать, чем сказать
+> неверно. Сам `detected_by` остаётся в базе как есть.
 
 `findings` ограничены 20 (потолок схемы). Отбор при переполнении: **не режутся
 `high` и детерминированные** (формальный слой точен по построению), остаток —

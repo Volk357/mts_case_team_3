@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import select
@@ -36,6 +36,31 @@ class ReviewSnapshot:
     error_retriable: bool | None
 
 
+DetectionLayer = Literal["rule", "model", "mixed"]
+
+# `detected_by` из ядра — это внутренние имена проверок ("deterministic",
+# "model", а по контракту ядра и любое имя конкретного анализатора). Наружу
+# они не выходят: тест test_status_hides_diagnostics_... следит за этим.
+# Аналитику важен только слой, поэтому список сворачивается в закрытый перечень,
+# а незнакомые имена дают None — лучше не показать ничего, чем показать неверное.
+_RULE_MARKERS = frozenset({"deterministic"})
+_MODEL_MARKERS = frozenset({"model"})
+
+
+def _detection_layer(detected_by: list[str]) -> DetectionLayer | None:
+    names = {str(name).strip().lower() for name in detected_by}
+    if not names or not names <= (_RULE_MARKERS | _MODEL_MARKERS):
+        # Хотя бы одно незнакомое имя — значит происхождение известно неполно.
+        # Сказать «найдено моделью», когда вклад внесла ещё и неизвестная
+        # проверка, значит подсунуть аналитику неверную оценку надёжности.
+        return None
+    rule = bool(names & _RULE_MARKERS)
+    model = bool(names & _MODEL_MARKERS)
+    if rule and model:
+        return "mixed"
+    return "rule" if rule else "model"
+
+
 @dataclass(frozen=True, slots=True)
 class FindingSnapshot:
     id: UUID
@@ -47,6 +72,7 @@ class FindingSnapshot:
     quote: str
     problem: str
     clarification: str
+    detection_layer: DetectionLayer | None
 
 
 class ReviewQueryService:
@@ -96,6 +122,7 @@ class ReviewQueryService:
                     quote=item.quote,
                     problem=item.problem,
                     clarification=item.clarification,
+                    detection_layer=_detection_layer(item.detected_by),
                 )
                 for item in findings
             )

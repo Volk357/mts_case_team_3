@@ -166,6 +166,7 @@ def get_review_findings(
             quote=item.quote,
             problem=item.problem,
             clarification=item.clarification,
+            detection_layer=item.detection_layer,
         )
         for item in findings
     ]

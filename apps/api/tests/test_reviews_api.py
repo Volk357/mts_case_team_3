@@ -19,6 +19,7 @@ from docreview_api.db.models import (
 from docreview_api.db.session import create_database_engine, create_session_factory
 from docreview_api.main import create_app
 from docreview_api.models.review_job_state import ReviewJobStatus
+from docreview_api.services.reviews import _detection_layer
 
 
 @pytest.fixture
@@ -239,7 +240,32 @@ async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
     serialized_findings = findings_response.text
     assert "private-analyzer" not in serialized_findings
     assert "core-0" not in serialized_findings
+    # Незнакомое имя проверки не должно превращаться в утверждение о слое:
+    # лучше не сказать ничего, чем сказать неверно.
+    assert [item["detection_layer"] for item in findings["items"]] == [None, None]
     assert unknown.status_code == 404
     assert unknown.json()["error"]["code"] == "REVIEW_NOT_FOUND"
     assert unknown_findings.status_code == 404
     assert unknown_findings.json()["error"]["code"] == "REVIEW_NOT_FOUND"
+
+
+@pytest.mark.parametrize(
+    ("detected_by", "expected"),
+    [
+        (["deterministic"], "rule"),
+        (["model"], "model"),
+        (["deterministic", "model"], "mixed"),
+        (["Model"], "model"),
+        (["private-analyzer"], None),
+        # Незнакомое имя рядом со знакомым тоже даёт None: происхождение
+        # известно неполно, а неполная правда здесь читается как неверная.
+        (["private-analyzer", "model"], None),
+        ([], None),
+    ],
+)
+def test_detection_layer_folds_core_check_names_into_a_closed_set(
+    detected_by: list[str], expected: str | None
+) -> None:
+    """Слой выводится из внутренних имён проверок, но сами имена наружу не идут."""
+
+    assert _detection_layer(detected_by) == expected

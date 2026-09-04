@@ -39,6 +39,12 @@ export interface ReviewFinding {
   quote: string;
   problem: string;
   clarification: string;
+  /**
+   * Каким слоем найдено. `null` — слой неизвестен (ядро назвало проверку
+   * именем, которого API не знает); интерфейс тогда ничего не пишет.
+   * Сырых имён внутренних проверок здесь нет и быть не должно.
+   */
+  detection_layer: "rule" | "model" | "mixed" | null;
 }
 
 export interface ReviewFindings {

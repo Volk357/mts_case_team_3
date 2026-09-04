@@ -56,6 +56,10 @@ class FindingResponse(ApiModel):
     quote: str
     problem: str
     clarification: str
+    # Каким слоем найдено замечание. Не сырой `detected_by` из ядра: там лежат
+    # внутренние имена проверок, и наружу они не выходят. Здесь закрытый
+    # перечень, `null` — слой неизвестен, интерфейс тогда ничего не пишет.
+    detection_layer: Literal["rule", "model", "mixed"] | None = None
 
 
 class FindingsResponse(ApiModel):

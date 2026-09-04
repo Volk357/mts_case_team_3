@@ -5,6 +5,18 @@ import { putFindingFeedback, type FeedbackDecision } from "@/api/feedback";
 import { defectTitle } from "@/lib/defect-titles";
 import type { ReviewFinding } from "@/api/reviews";
 
+/**
+ * Чем найдено замечание. Это наш сильный аргумент, и до сих пор его на экране
+ * не было видно: детерминированный слой на эталоне даёт 96% против 82% у модели
+ * и не выдумывает цитат. Формулировка короткая — строка и так несёт важность
+ * и раздел; `null` (слой неизвестен) не пишем вовсе.
+ */
+const DETECTION_LABEL = {
+  rule: "по правилу",
+  model: "моделью",
+  mixed: "правилом и моделью",
+} as const;
+
 const SEVERITY = {
   critical: { label: "Критично", dot: "bg-red", text: "text-red", tint: "bg-red-soft" },
   high: { label: "Высокая", dot: "bg-red", text: "text-red", tint: "bg-red-soft" },
@@ -47,6 +59,11 @@ export function FindingCard({ finding, actorKey }: FindingCardProps) {
             {severity.label}
           </span>
           {section ? <span className="text-sm text-text-muted">{section}</span> : null}
+          {finding.detection_layer ? (
+            <span className="text-sm text-text-muted sm:ml-auto">
+              найдено {DETECTION_LABEL[finding.detection_layer]}
+            </span>
+          ) : null}
         </div>
         <h3 className="mt-1.5 text-[0.9375rem] leading-6 font-semibold">
           {defectTitle(finding.defect_id)}

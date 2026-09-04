@@ -300,6 +300,184 @@ def test_serialization_ignores_other_section_column():
     assert cf.check_serialization(text, CFG) == []
 
 
+def test_timezone_flags_local_time_value():
+    text = "Часовой пояс: Местное время региона\n"
+    ids = [f["defect_id"] for f in cf.check_timezone(text, CFG)]
+    assert "TIMEZONE_UNDEFINED" in ids
+
+
+def test_timezone_ok_when_utc():
+    assert cf.check_timezone("Часовой пояс: UTC\n", CFG) == []
+
+
+def test_timezone_ok_in_table_row():
+    assert cf.check_timezone("Часовой пояс | UTC\n", CFG) == []
+
+
+def test_timezone_ok_on_offset_and_iana():
+    for value in ("UTC+3", "+03:00", "Europe/Moscow", "МСК"):
+        assert cf.check_timezone("Часовой пояс: " + value + "\n", CFG) == [], value
+
+
+def test_timezone_no_fp_on_source_field_description():
+    # метка не в начале строки — это описание поля источника, а не поле «Часовой пояс»
+    text = ("Коррекция часового пояса для временных меток:\n"
+            "выполняется на стороне источника\n"
+            "FIELD_TIME_ZONE_SHIFT | string | Сдвиг часового пояса\n")
+    assert cf.check_timezone(text, CFG) == []
+
+
+def test_timezone_value_on_next_line():
+    assert cf.check_timezone("Часовой пояс:\nUTC\n", CFG) == []
+    ids = [f["defect_id"] for f in
+           cf.check_timezone("Часовой пояс:\nМестное время региона\n", CFG)]
+    assert "TIMEZONE_UNDEFINED" in ids
+
+
+def test_timezone_quote_is_verbatim():
+    text = "Часовой пояс: Местное время региона\n"
+    for f in cf.check_timezone(text, CFG):
+        assert f["quote"] in text
+
+
+def test_dangling_section_flags_missing_section():
+    text = ("Алгоритм обработки потока\n"
+            "Перечень мер приведён в разделе «Показатели витрины».\n")
+    ids = [f["defect_id"] for f in cf.check_dangling_section(text, CFG)]
+    assert "DANGLING_SECTION_REFERENCE" in ids
+
+
+def test_dangling_section_ok_when_section_present():
+    text = ("Структура данных\n"
+            "Перечень мер приведён в разделе «Структура данных».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_ok_when_referenced_by_alias():
+    # раздел присутствует под одним синонимом, ссылка зовёт его другим
+    text = ("Общие сведения\n"
+            "Состав описан в разделе «Общая информация».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_ignores_reference_without_name():
+    # «см. выше» без имени раздела — не формальное правило, остаётся модели
+    text = "Определяется по FIELD_OL_SERVICE_TYPE (см. выше).\nСм. раздел ниже.\n"
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_counts_table_cell_headings():
+    # раздел объявлен первой ячейкой строки таблицы, а не отдельной строкой
+    text = ("Часовой пояс | UTC\n"
+            "Ссылка приведена в разделе «Часовой пояс».\n")
+    assert cf.check_dangling_section(text, CFG) == []
+
+
+def test_dangling_section_quote_is_verbatim():
+    text = ("Алгоритм обработки потока\n"
+            "Перечень мер приведён в разделе «Показатели витрины».\n")
+    for f in cf.check_dangling_section(text, CFG):
+        assert f["quote"] in text
+
+
+def test_dangling_section_ignores_word_with_same_root():
+    # блокеры кругов 1–2: однокоренные слова — не ссылка на раздел
+    for text in ("Используйте разделитель «точка с запятой».\n",
+                 "Описание дано в подразделе «Внешний алгоритм».\n",
+                 "Разделка «туши» выполняется вручную.\n"):
+        assert cf.check_dangling_section(text, CFG) == [], text
+
+
+def test_dangling_section_all_case_forms_flagged():
+    for text in ("Перечень приведён в разделе «Показатели витрины».\n",
+                 "Данные описаны в разделах «Показатели витрины».\n",
+                 "Содержание раздела «Показатели витрины» отсутствует.\n",
+                 "Ссылка на раздел «Показатели витрины» ведёт в никуда.\n"):
+        ids = [f["defect_id"] for f in cf.check_dangling_section(text, CFG)]
+        assert "DANGLING_SECTION_REFERENCE" in ids, text
+
+
+def test_dangling_section_ignores_external_link_line():
+    # блокер круга 1: рядом URL — цель внешняя (EXTERNAL_LINKS_IN_CONFLUENCE)
+    assert cf.check_dangling_section(
+        "См. раздел «Внешний алгоритм» (https://confluence/x).\n", CFG) == []
+
+
+def test_dangling_section_plural_form_still_flagged():
+    ids = [f["defect_id"] for f in cf.check_dangling_section(
+        "Данные описаны в разделах «Показатели витрины».\n", CFG)]
+    assert "DANGLING_SECTION_REFERENCE" in ids
+
+
+_STRUCT = ("Структура данных\n"
+           "Приемники. Таблица: SCHEMA_CDM.TABLE_AGG\n"
+           "Атрибут | Тип данных | Описание атрибута | Обязательность | Источник\n"
+           "FIELD_BYTES_UP | bigint | Объём переданных данных | NOT NULL | sum(x)\n"
+           "Источники. Таблица: TABLE_RAW\n"
+           "Атрибут | Тип данных | Комментарий\n")
+
+
+def test_schema_type_mismatch_flags_different_type():
+    text = _STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
+def test_schema_type_mismatch_ok_when_types_match():
+    text = _STRUCT + "FIELD_BYTES_UP | BIGINT | Переданные байты за сессию\n"
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_ignores_single_table():
+    text = ("Таблица: TABLE_RAW\n"
+            "Поле | Тип данных | Описание\n"
+            "FIELD_A | string | описание\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_table_ends_at_line_without_separator():
+    # строки «Примера данных» не должны дочитываться как продолжение структуры
+    text = (_STRUCT + "FIELD_BYTES_UP | bigint | Переданные байты\n"
+            "\nПример данных\n"
+            "FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT\n"
+            "100 | 200 | 3\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_quote_is_verbatim():
+    text = _STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+    for f in cf.check_schema_type_mismatch(text, CFG):
+        assert f["quote"] in text
+
+
+def test_schema_type_mismatch_ignores_non_identifier_rows():
+    text = (_STRUCT + "Итого по таблице | 15 полей | —\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_ok_when_conversion_explained():
+    # блокер круга 1: правило не вправе объявлять расхождение необъяснённым, не проверив
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_BYTES_UP приводится к bigint.\n")
+    assert cf.check_schema_type_mismatch(text, CFG) == []
+
+
+def test_schema_type_mismatch_explanation_is_field_scoped():
+    # объяснение про ДРУГОЕ поле расхождение не гасит
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_OTHER приводится к bigint.\n")
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
+def test_schema_type_mismatch_explanation_not_matched_by_prefix():
+    # блокер круга 2: «FIELD_BYTES_UP_RAW приводится к bigint» — про другое поле
+    text = (_STRUCT + "FIELD_BYTES_UP | string | Переданные байты за сессию\n"
+            "\nПри загрузке FIELD_BYTES_UP_RAW приводится к bigint.\n")
+    ids = [f["defect_id"] for f in cf.check_schema_type_mismatch(text, CFG)]
+    assert "SCHEMA_TYPE_MISMATCH" in ids
+
+
 def test_negative_control_clean_docs_zero_fp():
     cleans = sorted(glob.glob("data/synth/synth_*_clean.txt"))
     assert cleans, "нет чистых документов"
@@ -349,5 +527,31 @@ if __name__ == "__main__":
     test_serialization_ignores_when_no_sources_section()
     test_serialization_ignores_other_section_column()
     test_data_catalog_link_in_other_section_does_not_count()
+    test_timezone_flags_local_time_value()
+    test_timezone_ok_when_utc()
+    test_timezone_ok_in_table_row()
+    test_timezone_ok_on_offset_and_iana()
+    test_timezone_no_fp_on_source_field_description()
+    test_timezone_value_on_next_line()
+    test_timezone_quote_is_verbatim()
+    test_dangling_section_flags_missing_section()
+    test_dangling_section_ok_when_section_present()
+    test_dangling_section_ok_when_referenced_by_alias()
+    test_dangling_section_ignores_reference_without_name()
+    test_dangling_section_counts_table_cell_headings()
+    test_dangling_section_quote_is_verbatim()
+    test_dangling_section_ignores_word_with_same_root()
+    test_dangling_section_all_case_forms_flagged()
+    test_dangling_section_ignores_external_link_line()
+    test_dangling_section_plural_form_still_flagged()
+    test_schema_type_mismatch_flags_different_type()
+    test_schema_type_mismatch_ok_when_types_match()
+    test_schema_type_mismatch_ignores_single_table()
+    test_schema_table_ends_at_line_without_separator()
+    test_schema_type_mismatch_quote_is_verbatim()
+    test_schema_type_mismatch_ignores_non_identifier_rows()
+    test_schema_type_mismatch_ok_when_conversion_explained()
+    test_schema_type_mismatch_explanation_is_field_scoped()
+    test_schema_type_mismatch_explanation_not_matched_by_prefix()
     test_negative_control_clean_docs_zero_fp()
     print("все тесты пройдены")

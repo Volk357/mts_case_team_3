@@ -82,9 +82,9 @@ def _shared_field(d):
 
 def r_dangling_reference(d):
     return dict(
-        defect_id="DANGLING_REFERENCE", defect_class=PRESENCE,
+        defect_id="DANGLING_SECTION_REFERENCE", defect_class=PRESENCE,
         op="set_text", target="algo.s3.calc", anchor="algo.s3.calc",
-        mutation="reference_to_missing_section", detectable_by=LLM,
+        mutation="reference_to_missing_section", detectable_by=DET,
         text="Меры рассчитываются в границах группы, перечень мер приведён "
              "в разделе «Показатели витрины».",
         note="Ссылка на раздел «Показатели витрины», которого в документе "
@@ -154,10 +154,10 @@ def r_schema_inconsistency(d):
     name, src_type, recv_type = sh
     new_type = "string" if src_type != "string" else "bigint"
     return dict(
-        defect_id="SCHEMA_INCONSISTENCY", defect_class=PRESENCE,
+        defect_id="SCHEMA_TYPE_MISMATCH", defect_class=PRESENCE,
         op="set_cell", target="struct.src." + name, col=1, value=new_type,
         anchor="struct.src." + name,
-        mutation="changed_type_of_shared_field", detectable_by=LLM,
+        mutation="changed_type_of_shared_field", detectable_by=DET,
         note="Поле " + name + " описано в источнике как " + new_type +
              ", а в витрине как " + recv_type + ". Расхождение не объяснено.")
 
@@ -218,7 +218,7 @@ def r_timezone_undefined(d):
     return dict(
         defect_id="TIMEZONE_UNDEFINED", defect_class=PRESENCE,
         op="set_text", target="nfr.timezone", anchor="nfr.timezone",
-        mutation="timezone_replaced_by_local", detectable_by=LLM,
+        mutation="timezone_replaced_by_local", detectable_by=DET,
         text="Местное время региона",
         note="Часовой пояс требований изменён на местное время, при этом "
              "правило фильтрации в шаге 1 определяет границы периода по UTC. "
@@ -376,14 +376,14 @@ def r_template_section_missing_ddl(d):
 
 
 RECIPES = {
-    "DANGLING_REFERENCE": r_dangling_reference,
+    "DANGLING_SECTION_REFERENCE": r_dangling_reference,
     "INTERNAL_CONTRADICTION": r_internal_contradiction,
     "INCOMPLETE_SCHEMA": r_incomplete_schema,
     "UNDEFINED_EDGE_CASE": r_undefined_edge_case,
     "AMBIGUOUS_LOGIC": r_ambiguous_logic,
     "UNSPECIFIED_FORMAT": r_unspecified_format,
     "DUPLICATE_SEMANTICS": r_duplicate_semantics,
-    "SCHEMA_INCONSISTENCY": r_schema_inconsistency,
+    "SCHEMA_TYPE_MISMATCH": r_schema_inconsistency,
     "MISSING_SOURCE_LOCATION": r_missing_source_location,
     "PLACEHOLDER_LEFT": r_placeholder_left,
     "PLACEHOLDER_LEFT_JIRA": r_placeholder_left_jira,

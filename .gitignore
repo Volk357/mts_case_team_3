@@ -64,6 +64,7 @@ artifacts/
 documents/
 
 # === Служебное / OS ===
+_tmp_docreview/
 __pycache__/
 *.py[cod]
 *.bak

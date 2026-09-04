@@ -1,4 +1,4 @@
-import { requestJson } from "@/api/client";
+import { requestJson, requestJsonWithMetadata } from "@/api/client";
 import type {
   FindingResponse,
   FindingsResponse,
@@ -34,6 +34,12 @@ export function createReview(
 
 export function getReview(reviewId: string, signal?: AbortSignal) {
   return requestJson<ReviewState>(`/api/reviews/${encodeURIComponent(reviewId)}`, { signal });
+}
+
+export function getReviewWithMetadata(reviewId: string, signal?: AbortSignal) {
+  return requestJsonWithMetadata<ReviewState>(`/api/reviews/${encodeURIComponent(reviewId)}`, {
+    signal,
+  });
 }
 
 export function getReviewFindings(reviewId: string, signal?: AbortSignal) {

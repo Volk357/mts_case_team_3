@@ -1,7 +1,6 @@
 import {
   CheckCircle2,
   CircleAlert,
-  CircleX,
   Clock3,
   FileClock,
   LoaderCircle,
@@ -9,6 +8,7 @@ import {
 } from "lucide-react";
 
 import type { ReviewState } from "@/api/reviews";
+import { ReviewFailureState } from "@/components/review-failure-state";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +33,15 @@ function isLongRunning(review: ReviewState, now: number): boolean {
   return Number.isFinite(startedAt) && now - startedAt >= LONG_REVIEW_THRESHOLD_MS;
 }
 
-export function ReviewProgress({ review, now }: { review: ReviewState; now: number }) {
+export function ReviewProgress({
+  review,
+  now,
+  correlationId,
+}: {
+  review: ReviewState;
+  now: number;
+  correlationId?: string;
+}) {
   const currentStep = activeStep(review);
   const failed = ["failed", "timed_out", "cancelled"].includes(review.status);
 
@@ -116,15 +124,7 @@ export function ReviewProgress({ review, now }: { review: ReviewState; now: numb
       )}
 
       {failed && (
-        <Card aria-live="polite" className="flex gap-4 border-danger/20 p-6 sm:p-8" role="alert">
-          <CircleX aria-hidden="true" className="mt-0.5 size-7 shrink-0 text-danger" />
-          <div>
-            <h2 className="text-lg font-semibold">Проверка не завершена</h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              {review.error?.message ?? "Не удалось завершить анализ документа."}
-            </p>
-          </div>
-        </Card>
+        <ReviewFailureState correlationId={correlationId} review={review} />
       )}
     </div>
   );

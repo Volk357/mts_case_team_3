@@ -15,6 +15,11 @@ export class ApiError extends Error {
 
 export type ApiErrorEnvelope = ErrorEnvelope;
 
+export interface ApiResponse<T> {
+  data: T;
+  correlationId?: string;
+}
+
 export function parseApiError(body: unknown): { code?: string; message?: string } {
   if (!body || typeof body !== "object" || !("error" in body)) return {};
   const error = (body as { error?: unknown }).error;
@@ -29,7 +34,10 @@ export function parseApiError(body: unknown): { code?: string; message?: string 
   };
 }
 
-export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+export async function requestJsonWithMetadata<T>(
+  path: string,
+  init?: RequestInit,
+): Promise<ApiResponse<T>> {
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
     headers: {
@@ -49,5 +57,12 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
     );
   }
 
-  return (await response.json()) as T;
+  return {
+    data: (await response.json()) as T,
+    correlationId: response.headers.get("X-Correlation-ID") ?? undefined,
+  };
+}
+
+export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await requestJsonWithMetadata<T>(path, init)).data;
 }

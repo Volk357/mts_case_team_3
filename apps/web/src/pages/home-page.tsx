@@ -15,6 +15,7 @@ import { useNavigate } from "react-router-dom";
 import { ApiError } from "@/api/client";
 import type { DocumentUploadResponse } from "@/api/documents";
 import { createReview } from "@/api/reviews";
+import { ErrorReference } from "@/components/error-reference";
 import { FileDropzone } from "@/components/file-dropzone";
 import { ReviewPackSelector } from "@/components/review-pack-selector";
 import { Button } from "@/components/ui/button";
@@ -42,7 +43,7 @@ type SubmissionState =
   | { kind: "idle" }
   | { kind: "creating" }
   | { kind: "success"; reviewId: string }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; correlationId?: string };
 
 function reviewErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
@@ -80,7 +81,11 @@ export function HomePage() {
       setSubmission({ kind: "success", reviewId: review.review_id });
       void navigate(`/reviews/${encodeURIComponent(review.review_id)}`);
     } catch (error) {
-      setSubmission({ kind: "error", message: reviewErrorMessage(error) });
+      setSubmission({
+        kind: "error",
+        message: reviewErrorMessage(error),
+        correlationId: error instanceof ApiError ? error.correlationId : undefined,
+      });
     }
   };
 
@@ -139,6 +144,7 @@ export function HomePage() {
               <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
               <span>{submission.message}</span>
             </div>
+            <ErrorReference correlationId={submission.correlationId} />
             {uploadedDocument && (
               <Button
                 onClick={() => void startReview(uploadedDocument)}

@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "@/api/client";
 import { uploadDocument, type DocumentUploadResponse } from "@/api/documents";
+import { ErrorReference } from "@/components/error-reference";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { appConfig } from "@/config";
@@ -50,6 +51,9 @@ function validateFile(file: File): string | null {
 
 function uploadErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
+    if (error.code === "DOCUMENT_REJECTED") {
+      return "Файл не прошёл проверку безопасности. Выберите другой документ.";
+    }
     if (error.status === 413) return "Файл слишком большой для загрузки.";
     if (error.status === 415) return "Сервер принимает только PDF и DOCX.";
     if (error.status === 422) return "Файл повреждён или его формат не подтверждён.";
@@ -71,6 +75,7 @@ export function FileDropzone({
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | undefined>();
   const [receipt, setReceipt] = useState<DocumentUploadResponse | null>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -81,6 +86,7 @@ export function FileDropzone({
     const validationError = validateFile(nextFile);
     setReceipt(null);
     setProgress(0);
+    setCorrelationId(undefined);
     if (validationError) {
       setFile(null);
       onSelectionChange?.(null);
@@ -92,6 +98,7 @@ export function FileDropzone({
     onSelectionChange?.(nextFile);
     setPhase("ready");
     setMessage(null);
+    setCorrelationId(undefined);
   };
 
   const openPicker = () => {
@@ -117,6 +124,7 @@ export function FileDropzone({
       if (error instanceof DOMException && error.name === "AbortError") return;
       setPhase("error");
       setMessage(uploadErrorMessage(error));
+      setCorrelationId(error instanceof ApiError ? error.correlationId : undefined);
     } finally {
       abortRef.current = null;
       onUploadStateChange?.(false);
@@ -129,6 +137,7 @@ export function FileDropzone({
     setPhase("idle");
     setProgress(0);
     setMessage(null);
+    setCorrelationId(undefined);
     setReceipt(null);
     setDragging(false);
     if (inputRef.current) inputRef.current.value = "";
@@ -229,6 +238,9 @@ export function FileDropzone({
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{message}</span>
           </div>
+        )}
+        {message && correlationId && (
+          <ErrorReference correlationId={correlationId} />
         )}
 
         {phase === "success" && receipt && (

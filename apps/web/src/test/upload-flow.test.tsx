@@ -129,3 +129,20 @@ it("retries review creation without uploading the document twice", async () => {
   expect(uploadDocumentMock).toHaveBeenCalledTimes(1);
   expect(createReviewMock).toHaveBeenCalledTimes(2);
 });
+
+it("explains when the selected Review Pack became unavailable", async () => {
+  createReviewMock.mockRejectedValue(
+    new ApiError("private locator", 404, "REVIEW_PACK_NOT_FOUND", "corr-pack-42"),
+  );
+  const { user } = await prepareForm();
+
+  await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
+
+  expect(
+    await screen.findByText(
+      "Выбранный профиль проверки больше недоступен. Выберите другой профиль.",
+    ),
+  ).toBeVisible();
+  expect(screen.getByText("corr-pack-42")).toBeVisible();
+  expect(screen.queryByText("private locator")).not.toBeInTheDocument();
+});

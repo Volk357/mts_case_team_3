@@ -5,13 +5,13 @@ import type { ReviewState } from "@/api/reviews";
 import { AppProviders } from "@/app-providers";
 import { ReviewPage } from "@/pages/review-page";
 
-const { getReviewMock } = vi.hoisted(() => ({
-  getReviewMock: vi.fn(),
+const { getReviewWithMetadataMock } = vi.hoisted(() => ({
+  getReviewWithMetadataMock: vi.fn(),
 }));
 
 vi.mock("@/api/reviews", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/api/reviews")>();
-  return { ...original, getReview: getReviewMock };
+  return { ...original, getReviewWithMetadata: getReviewWithMetadataMock };
 });
 
 const baseReview: ReviewState = {
@@ -39,62 +39,71 @@ function renderReviewRoute() {
   );
 }
 
-beforeEach(() => getReviewMock.mockReset());
+const response = (data: ReviewState, correlationId = "request-review-42") => ({
+  data,
+  correlationId,
+});
+
+beforeEach(() => getReviewWithMetadataMock.mockReset());
 
 it("restores a completed review from the route and stops polling", async () => {
-  getReviewMock.mockResolvedValue({
-    ...baseReview,
-    status: "completed",
-    stage: "result_ready",
-    finished_at: "2026-09-04T07:01:00Z",
-    poll_after_ms: null,
-  });
+  getReviewWithMetadataMock.mockResolvedValue(
+    response({
+      ...baseReview,
+      status: "completed",
+      stage: "result_ready",
+      finished_at: "2026-09-04T07:01:00Z",
+      poll_after_ms: null,
+    }),
+  );
 
   renderReviewRoute();
 
   expect(await screen.findByText("Проверка завершена")).toBeVisible();
   expect(screen.getByText(/ID проверки:/)).toHaveTextContent("review-42");
   await new Promise((resolve) => setTimeout(resolve, 40));
-  expect(getReviewMock).toHaveBeenCalledTimes(1);
-  expect(getReviewMock).toHaveBeenCalledWith("review-42", expect.any(AbortSignal));
+  expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(1);
+  expect(getReviewWithMetadataMock).toHaveBeenCalledWith("review-42", expect.any(AbortSignal));
 });
 
 it("polls queued and running states until the review becomes terminal", async () => {
-  getReviewMock
-    .mockResolvedValueOnce(baseReview)
-    .mockResolvedValueOnce({
+  getReviewWithMetadataMock
+    .mockResolvedValueOnce(response(baseReview))
+    .mockResolvedValueOnce(response({
       ...baseReview,
       status: "running",
       stage: "analysis",
       started_at: "2026-09-04T07:00:01Z",
-    })
-    .mockResolvedValueOnce({
+    }))
+    .mockResolvedValueOnce(response({
       ...baseReview,
       status: "completed",
       stage: "result_ready",
       started_at: "2026-09-04T07:00:01Z",
       finished_at: "2026-09-04T07:00:20Z",
       poll_after_ms: null,
-    });
+    }));
 
   renderReviewRoute();
 
   expect(await screen.findByText("Проверка ожидает запуска")).toBeVisible();
   expect(await screen.findByText("Проверка завершена", {}, { timeout: 2_000 })).toBeVisible();
-  await waitFor(() => expect(getReviewMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3));
   await new Promise((resolve) => setTimeout(resolve, 40));
-  expect(getReviewMock).toHaveBeenCalledTimes(3);
+  expect(getReviewWithMetadataMock).toHaveBeenCalledTimes(3);
 });
 
 it("explains a long-running analysis without exposing technical stages", async () => {
-  getReviewMock.mockResolvedValue({
-    ...baseReview,
-    status: "running",
-    stage: "analysis",
-    queued_at: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    started_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
-    poll_after_ms: 30_000,
-  });
+  getReviewWithMetadataMock.mockResolvedValue(
+    response({
+      ...baseReview,
+      status: "running",
+      stage: "analysis",
+      queued_at: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
+      started_at: new Date(Date.now() - 3 * 60 * 1000).toISOString(),
+      poll_after_ms: 30_000,
+    }),
+  );
 
   renderReviewRoute();
 

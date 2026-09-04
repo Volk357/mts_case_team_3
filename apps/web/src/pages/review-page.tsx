@@ -2,7 +2,9 @@ import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle, RefreshCw } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 
-import { getReview } from "@/api/reviews";
+import { ApiError } from "@/api/client";
+import { getReviewWithMetadata } from "@/api/reviews";
+import { ErrorReference } from "@/components/error-reference";
 import { PageHeader } from "@/components/page-header";
 import { ReviewProgress } from "@/components/review-progress";
 import { Button } from "@/components/ui/button";
@@ -14,12 +16,14 @@ export function ReviewPage() {
   const { reviewId = "" } = useParams();
   const review = useQuery({
     queryKey: ["reviews", reviewId],
-    queryFn: ({ signal }) => getReview(reviewId, signal),
+    queryFn: ({ signal }) => getReviewWithMetadata(reviewId, signal),
     enabled: Boolean(reviewId),
+    retry: false,
+    throwOnError: false,
     refetchInterval: (query) => {
-      const snapshot = query.state.data;
-      if (!snapshot || TERMINAL_STATUSES.has(snapshot.status)) return false;
-      return snapshot.poll_after_ms ?? 2_000;
+      const response = query.state.data;
+      if (!response || TERMINAL_STATUSES.has(response.data.status)) return false;
+      return response.data.poll_after_ms ?? 2_000;
     },
   });
 
@@ -44,7 +48,16 @@ export function ReviewPage() {
             <CircleAlert aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-danger" />
             <div>
               <h2 className="font-semibold">Не удалось получить состояние проверки</h2>
-              <p className="mt-2 text-sm text-muted-foreground">{review.error.message}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {review.error instanceof ApiError && review.error.status === 404
+                  ? "Проверка с таким идентификатором не найдена."
+                  : "Проверьте соединение и повторите запрос."}
+              </p>
+              <ErrorReference
+                correlationId={
+                  review.error instanceof ApiError ? review.error.correlationId : undefined
+                }
+              />
             </div>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -59,7 +72,13 @@ export function ReviewPage() {
         </Card>
       )}
 
-      {review.isSuccess && <ReviewProgress now={review.dataUpdatedAt} review={review.data} />}
+      {review.isSuccess && (
+        <ReviewProgress
+          correlationId={review.data.correlationId}
+          now={review.dataUpdatedAt}
+          review={review.data.data}
+        />
+      )}
 
       <p className="text-xs text-muted-foreground">
         ID проверки: <code>{reviewId}</code>

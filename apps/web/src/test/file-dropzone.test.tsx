@@ -122,3 +122,20 @@ it("turns server failures into a clear user-facing message", async () => {
   expect(await screen.findByText("Файл слишком большой для загрузки.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Загрузить документ" })).toBeEnabled();
 });
+
+it("explains a security rejection and preserves its correlation ID", async () => {
+  const user = userEvent.setup();
+  uploadDocumentMock.mockRejectedValue(
+    new ApiError("scanner detail", 422, "DOCUMENT_REJECTED", "corr-upload-42"),
+  );
+  render(<FileDropzone />);
+  await user.upload(fileInput(), pdf());
+
+  await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
+
+  expect(
+    await screen.findByText("Файл не прошёл проверку безопасности. Выберите другой документ."),
+  ).toBeVisible();
+  expect(screen.getByText("corr-upload-42")).toBeVisible();
+  expect(screen.queryByText("scanner detail")).not.toBeInTheDocument();
+});

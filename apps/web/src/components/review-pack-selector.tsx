@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, LoaderCircle, RefreshCw, Settings2 } from "lucide-react";
 
+import { ApiError } from "@/api/client";
 import { getReviewPacks } from "@/api/review-packs";
+import { ErrorReference } from "@/components/error-reference";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
@@ -40,6 +42,9 @@ export function ReviewPackSelector({
             <p className="mt-1 text-sm text-muted-foreground">
               Не удалось получить правила проверки. Повторите запрос.
             </p>
+            <ErrorReference
+              correlationId={catalog.error instanceof ApiError ? catalog.error.correlationId : undefined}
+            />
           </div>
         </div>
         <Button onClick={() => void catalog.refetch()} size="sm" type="button" variant="secondary">

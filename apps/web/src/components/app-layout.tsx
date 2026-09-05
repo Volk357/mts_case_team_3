@@ -1,4 +1,4 @@
-import { Activity, FileCheck2, History, LogOut } from "lucide-react";
+import { Activity, FileCheck2, History, LogOut, Workflow } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 
 import { clearCredentials, setToken } from "@/auth/session";
@@ -24,6 +24,13 @@ export function AppLayout() {
             DocReview
           </Link>
           <nav className="flex items-center gap-1 sm:gap-2">
+            <Link
+              className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) px-2.5 text-sm font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:px-3"
+              to="/architecture"
+            >
+              <Workflow aria-hidden="true" className="size-4" />
+              <span className="sr-only sm:not-sr-only">Архитектура</span>
+            </Link>
             <Link
               className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) px-2.5 text-sm font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:px-3"
               to="/reviews"

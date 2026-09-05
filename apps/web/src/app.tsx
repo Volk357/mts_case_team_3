@@ -3,6 +3,7 @@ import { Route, Routes } from "react-router-dom";
 
 import { currentToken } from "@/auth/session";
 import { AppLayout } from "@/components/app-layout";
+import { ArchitecturePage } from "@/pages/architecture-page";
 import { HealthPage } from "@/pages/health-page";
 import { HomePage } from "@/pages/home-page";
 import { NotFoundPage } from "@/pages/not-found-page";
@@ -23,6 +24,7 @@ export function App() {
     <Routes>
       <Route element={<AppLayout />}>
         <Route index element={<HomePage />} />
+        <Route path="architecture" element={<ArchitecturePage />} />
         <Route path="reviews" element={<ReviewsPage />} />
         <Route path="reviews/:reviewId" element={<ReviewPage />} />
         <Route path="debug/health" element={<HealthPage />} />

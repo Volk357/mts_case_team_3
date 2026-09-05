@@ -55,4 +55,20 @@ describe("App routing", () => {
 
     expect(screen.getByRole("heading", { name: "Страница не найдена" })).toBeInTheDocument();
   });
+
+  it("renders the platform architecture page", () => {
+    render(
+      <AppProviders>
+        <MemoryRouter initialEntries={["/architecture"]}>
+          <App />
+        </MemoryRouter>
+      </AppProviders>,
+    );
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Одно приложение для разных стандартов документации",
+      }),
+    ).toBeInTheDocument();
+  });
 });

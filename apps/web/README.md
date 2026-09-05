@@ -25,6 +25,28 @@ Vite автоматически выбирает `.env.development`, `.env.test`
 
 Переменные `VITE_*` попадают в браузерный bundle, поэтому секреты в них хранить нельзя.
 
+## Production Docker image
+
+Образ собирается от корня репозитория, потому что production build проверяет
+общую JSON Schema и сохранённый OpenAPI-контракт:
+
+```powershell
+docker build --file apps/web/Dockerfile --tag docreview-web:local .
+```
+
+Статика раздаётся непривилегированным Nginx на порту `8080`. Браузер всегда
+обращается к same-origin пути `/api`, поэтому frontend не нужно пересобирать при
+смене backend. Nginx подставляет upstream из переменной контейнера:
+
+```text
+DOCREVIEW_API_UPSTREAM=http://api:8000
+```
+
+SPA-маршруты, включая `/reviews/<id>`, возвращают `index.html` и переживают
+прямое открытие или перезагрузку страницы. `/healthz` используется Docker
+healthcheck и не зависит от доступности backend; состояние API и worker
+показывается отдельной страницей `/debug/health`.
+
 ## Проверки
 
 ```powershell

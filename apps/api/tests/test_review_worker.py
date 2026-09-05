@@ -28,9 +28,27 @@ from docreview_api.services.review_job_executor import AnalysisJobExecutor
 from docreview_api.services.review_job_queue import DatabaseReviewJobQueue
 from docreview_api.services.review_result_receiver import ReviewResultReceiver
 from docreview_api.services.run_workspace import RunWorkspaceManager
-from docreview_api.workers.review_worker import ReviewJobWorker, resolve_analysis_executable
+from docreview_api.workers.review_worker import (
+    ReviewJobWorker,
+    analysis_process_environment,
+    resolve_analysis_executable,
+)
 
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "contracts" / "review-result.schema.json"
+
+
+def test_mock_process_environment_is_explicit_and_real_core_stays_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("DOCREVIEW_MOCK_PROFILE", "demo")
+    monkeypatch.setenv("DOCREVIEW_MOCK_SCENARIO", "standard-12")
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+
+    assert analysis_process_environment("docreview") == {}
+    assert analysis_process_environment("docreview-mock") == {
+        "DOCREVIEW_MOCK_PROFILE": "demo",
+        "DOCREVIEW_MOCK_SCENARIO": "standard-12",
+    }
 
 
 def test_resolve_analysis_executable_finds_console_script_next_to_python(tmp_path: Path) -> None:

@@ -4,14 +4,26 @@ x-database-environment: &database-environment
   DOCREVIEW_DATABASE_URL: >-
     postgresql+psycopg://${DOCREVIEW_POSTGRES_USER:-docreview}:${DOCREVIEW_POSTGRES_PASSWORD:?Set DOCREVIEW_POSTGRES_PASSWORD in .env}@postgres:5432/${DOCREVIEW_POSTGRES_DB:-docreview}
 
-# API and worker will reuse this dependency set when orchestration is added in
-# NIK-11-06. It prevents either process from observing a partially migrated DB.
+x-application-environment: &application-environment
+  <<: *database-environment
+  DOCREVIEW_ENVIRONMENT: demo
+  DOCREVIEW_LOG_LEVEL: ${DOCREVIEW_LOG_LEVEL:-INFO}
+  DOCREVIEW_ANALYSIS_TIMEOUT_SECONDS: ${DOCREVIEW_ANALYSIS_TIMEOUT_SECONDS:-3600}
+  DOCREVIEW_PROCESS_TERMINATION_GRACE_SECONDS: 5
+  DOCREVIEW_WORKER_POLL_INTERVAL_SECONDS: 1
+  DOCREVIEW_WORKER_HEARTBEAT_TOLERANCE: 5
+  DOCREVIEW_WORKER_STALE_AFTER_SECONDS: ${DOCREVIEW_WORKER_STALE_AFTER_SECONDS:-3660}
+
+# API and both worker profiles reuse this dependency set so none of them can
+# observe a partially migrated or unseeded database or unsafe storage mounts.
 x-backend-depends-on: &backend-depends-on
   postgres:
     condition: service_healthy
   migrate:
     condition: service_completed_successfully
   storage-check:
+    condition: service_completed_successfully
+  seed-demo:
     condition: service_completed_successfully
 
 # API and worker share these mounts. Independent volumes keep uploaded source
@@ -64,6 +76,11 @@ services:
       retries: 10
       start_period: 10s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
 
   migrate:
     image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
@@ -100,13 +117,100 @@ services:
     secrets: *model-secrets
     restart: "no"
 
+  api:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["api"]
+    profiles: ["mock", "real"]
+    environment:
+      <<: *application-environment
+      DOCREVIEW_CONTAINER_ROLE: api
+    volumes: *backend-volumes
+    depends_on: *backend-depends-on
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  worker:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["worker"]
+    profiles: ["real"]
+    environment:
+      <<: *application-environment
+      DOCREVIEW_CONTAINER_ROLE: worker
+      DOCREVIEW_ANALYSIS_EXECUTABLE: docreview
+      DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH: /run/secrets/model-config.yaml
+    volumes: *backend-volumes
+    secrets: *model-secrets
+    depends_on:
+      <<: *backend-depends-on
+      model-preflight:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3G
+
+  worker-mock:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["worker"]
+    profiles: ["mock"]
+    environment:
+      <<: *application-environment
+      DOCREVIEW_CONTAINER_ROLE: worker
+      DOCREVIEW_ANALYSIS_EXECUTABLE: docreview-mock
+      DOCREVIEW_MOCK_PROFILE: demo
+      DOCREVIEW_MOCK_SCENARIO: ${DOCREVIEW_MOCK_SCENARIO:-standard-12}
+      DOCREVIEW_MOCK_DELAY_MS: ${DOCREVIEW_MOCK_DELAY_MS:-1200}
+    volumes: *backend-volumes
+    depends_on: *backend-depends-on
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1G
+
+  frontend:
+    image: docreview-frontend:${DOCREVIEW_FRONTEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    profiles: ["mock", "real"]
+    environment:
+      DOCREVIEW_API_UPSTREAM: http://api:8000
+    ports:
+      - "127.0.0.1:${DOCREVIEW_HTTP_PORT:-8080}:8080"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
   seed-demo:
     image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
     command: ["seed-demo"]
-    profiles: ["demo"]
+    profiles: ["demo", "mock", "real"]
     environment:
       <<: *database-environment
       DOCREVIEW_ENVIRONMENT: demo

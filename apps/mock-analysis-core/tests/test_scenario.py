@@ -118,6 +118,45 @@ def test_selected_success_scenario_binds_invocation_data(
     assert "standard-12" in captured.err
 
 
+def test_selected_success_uses_review_pack_manifest_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    document = tmp_path / "document.pdf"
+    document.write_bytes(b"document")
+    review_pack = tmp_path / "arbitrary-directory"
+    review_pack.mkdir()
+    (review_pack / "pack.yaml").write_text(
+        '# comment\nid: company-pack\nversion: "2.4"\n', encoding="utf-8"
+    )
+    output = tmp_path / "result.json"
+    monkeypatch.setenv("DOCREVIEW_MOCK_PROFILE", "test")
+    monkeypatch.setenv("DOCREVIEW_MOCK_SCENARIO", "standard-12")
+    monkeypatch.setenv("DOCREVIEW_MOCK_DELAY_MS", "0")
+
+    exit_code = cli.main(
+        [
+            "analyze",
+            "--file",
+            str(document),
+            "--pack",
+            str(review_pack),
+            "--run-id",
+            "manifest-run",
+            "--output",
+            str(output),
+        ]
+    )
+    capsys.readouterr()
+
+    assert exit_code == 0
+    assert json.loads(output.read_text(encoding="utf-8"))["review_pack"] == {
+        "id": "company-pack",
+        "version": "2.4",
+    }
+
+
 def test_selected_failure_controls_stdout_stderr_and_exit_code(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

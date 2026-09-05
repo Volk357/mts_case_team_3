@@ -23,6 +23,8 @@ class BackendContainerTests(unittest.TestCase):
             dockerfile,
         )
         self.assertIn("docreview version", dockerfile)
+        self.assertIn("/build/mock", dockerfile)
+        self.assertIn("docreview-mock version", dockerfile)
 
     def test_runtime_is_non_root_and_exposes_both_roles(self) -> None:
         dockerfile = DOCKERFILE.read_text(encoding="utf-8")

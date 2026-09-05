@@ -31,7 +31,7 @@ class PostgresComposeTests(unittest.TestCase):
         seed = SEED.read_text(encoding="utf-8")
 
         self.assertIn("condition: service_completed_successfully", compose)
-        self.assertIn('profiles: ["demo"]', compose)
+        self.assertIn('profiles: ["demo", "mock", "real"]', compose)
         self.assertIn("DOCREVIEW_ALLOW_DEMO_SEED", seed)
         self.assertIn('settings.environment != "demo"', seed)
 

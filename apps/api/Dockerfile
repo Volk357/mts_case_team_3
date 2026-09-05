@@ -25,13 +25,18 @@ RUN pip install \
 COPY apps/api/pyproject.toml apps/api/README.md /build/apps/api/
 COPY apps/api/src /build/apps/api/src
 
+COPY apps/mock-analysis-core/pyproject.toml apps/mock-analysis-core/README.md /build/mock/
+COPY apps/mock-analysis-core/src /build/mock/src
+
 COPY pyproject.toml README.md /build/core/
 COPY docreview.py run_review.py check_formal.py docx_text.py pdf_text.py /build/core/
 COPY defects.yaml defects_prompt.yaml glossary.yaml template.yaml /build/core/
 
-RUN pip install --no-deps --no-build-isolation /build/apps/api /build/core \
+RUN pip install --no-deps --no-build-isolation /build/mock \
+    && pip install --no-deps --no-build-isolation /build/apps/api /build/core \
     && python -c "import pathlib, shutil, docreview; source=pathlib.Path('/build/core'); target=pathlib.Path(docreview.__file__).parent; [shutil.copy2(source/name, target/name) for name in ('defects.yaml','defects_prompt.yaml','glossary.yaml','template.yaml')]" \
-    && docreview version
+    && docreview version \
+    && docreview-mock version
 
 
 FROM python:${PYTHON_VERSION}-slim-bookworm AS runtime

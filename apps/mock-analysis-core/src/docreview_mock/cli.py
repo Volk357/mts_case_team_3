@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -19,6 +20,7 @@ from docreview_mock.scenario import (
 )
 
 SCHEMA_VERSION = "1.0"
+MANIFEST_FIELD = re.compile(r"^(id|version)\s*:\s*(.*?)\s*(?:#.*)?$")
 
 
 def _configure_utf8_streams() -> None:
@@ -61,6 +63,26 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _review_pack_identity(path: Path) -> dict[str, str]:
+    """Read the same minimal identity that Product Application validates."""
+
+    manifest = path / "pack.yaml" if path.is_dir() else path
+    fields: dict[str, str] = {}
+    if manifest.is_file():
+        try:
+            for line in manifest.read_text(encoding="utf-8").splitlines():
+                if match := MANIFEST_FIELD.fullmatch(line.strip()):
+                    value = match.group(2).strip().strip("'\"")
+                    if value:
+                        fields[match.group(1)] = value
+        except OSError:
+            pass
+    return {
+        "id": fields.get("id", path.stem or path.name),
+        "version": fields.get("version", "mock-1.0"),
+    }
+
+
 def _completed_result(args: argparse.Namespace, elapsed_ms: int) -> dict[str, Any]:
     document_path: Path = args.file
     pack_path: Path = args.pack
@@ -74,7 +96,7 @@ def _completed_result(args: argparse.Namespace, elapsed_ms: int) -> dict[str, An
             "sha256": _sha256(document_path),
         },
         "engine": {"version": __version__},
-        "review_pack": {"id": pack_path.stem or pack_path.name, "version": "mock-1.0"},
+        "review_pack": _review_pack_identity(pack_path),
         "model": {"name": "mock", "prompt_versions": {}},
         "findings": [],
         "summary": {
@@ -119,7 +141,7 @@ def _prepare_scenario_content(content: str, args: argparse.Namespace, elapsed_ms
             "document_type": document_path.suffix.lstrip(".").lower() or "unknown",
             "sha256": _sha256(document_path),
         }
-        payload["review_pack"]["id"] = pack_path.stem or pack_path.name
+        payload["review_pack"] = _review_pack_identity(pack_path)
         payload["timings"]["total_ms"] = elapsed_ms
     return _serialize_json(payload)
 

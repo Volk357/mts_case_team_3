@@ -23,6 +23,11 @@ from docreview_api.services.review_result_receiver import ReviewResultReceiver
 from docreview_api.services.run_workspace import RunWorkspaceManager
 
 LOGGER = logging.getLogger(__name__)
+MOCK_PROCESS_ENVIRONMENT_KEYS = (
+    "DOCREVIEW_MOCK_PROFILE",
+    "DOCREVIEW_MOCK_SCENARIO",
+    "DOCREVIEW_MOCK_DELAY_MS",
+)
 
 
 def resolve_analysis_executable(
@@ -40,6 +45,19 @@ def resolve_analysis_executable(
     if os.name == "nt" and not candidate.suffix:
         candidate = candidate.with_suffix(".exe")
     return str(candidate.resolve()) if candidate.is_file() else configured
+
+
+def analysis_process_environment(configured_executable: str) -> dict[str, str]:
+    """Pass only the explicit, non-secret mock controls to the isolated child."""
+
+    executable_name = Path(configured_executable).name.casefold().removesuffix(".exe")
+    if executable_name != "docreview-mock":
+        return {}
+    return {
+        key: value
+        for key in MOCK_PROCESS_ENVIRONMENT_KEYS
+        if (value := os.environ.get(key)) is not None
+    }
 
 
 class ReviewJobExecutor(Protocol):
@@ -148,6 +166,7 @@ def build_worker(settings: Settings) -> ReviewJobWorker:
     queue = DatabaseReviewJobQueue(sessions)
     runner = ProcessRunner(
         (resolve_analysis_executable(settings.analysis_executable),),
+        environment=analysis_process_environment(settings.analysis_executable),
         stdout_limit_bytes=settings.process_stdout_limit_bytes,
         stderr_limit_bytes=settings.process_stderr_limit_bytes,
     )

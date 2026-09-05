@@ -35,6 +35,17 @@ x-backend-volumes: &backend-volumes
     target: /app/review-packs
     read_only: true
 
+# Real-mode services receive the ignored model configuration as a Compose
+# secret. The same immutable image can therefore target a host-local Ollama or
+# a remote endpoint reachable through VPN without baking addresses into it.
+x-model-environment: &model-environment
+  DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH: /run/secrets/model-config.yaml
+  DOCREVIEW_MODEL_PREFLIGHT_TIMEOUT_SECONDS: ${DOCREVIEW_MODEL_PREFLIGHT_TIMEOUT_SECONDS:-900}
+
+x-model-secrets: &model-secrets
+  - source: model_config
+    target: model-config.yaml
+
 services:
   postgres:
     image: postgres:17.6-alpine
@@ -77,6 +88,18 @@ services:
     volumes: *backend-volumes
     restart: "no"
 
+  model-preflight:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["model-preflight"]
+    profiles: ["real"]
+    environment:
+      <<: *model-environment
+    secrets: *model-secrets
+    restart: "no"
+
   seed-demo:
     image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
     build:
@@ -104,3 +127,7 @@ volumes:
     name: ${DOCREVIEW_ARTIFACTS_VOLUME:-docreview-artifacts}
   runtime_state:
     name: ${DOCREVIEW_STATE_VOLUME:-docreview-state}
+
+secrets:
+  model_config:
+    file: ${DOCREVIEW_MODEL_CONFIG_FILE:-./model-config.yaml}

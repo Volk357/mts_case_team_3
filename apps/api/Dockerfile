@@ -65,6 +65,7 @@ COPY apps/api/scripts/container_entrypoint.py /app/bin/container_entrypoint.py
 COPY apps/api/scripts/container_healthcheck.py /app/bin/container_healthcheck.py
 COPY apps/api/scripts/seed_demo.py /app/bin/seed_demo.py
 COPY apps/api/scripts/verify_container_storage.py /app/bin/verify_container_storage.py
+COPY apps/api/scripts/model_preflight.py /app/bin/model_preflight.py
 COPY contracts/review-result.schema.json /app/contracts/review-result.schema.json
 COPY review-packs /app/review-packs
 

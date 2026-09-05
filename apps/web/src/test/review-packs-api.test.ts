@@ -5,6 +5,7 @@ it("loads the public Review Pack catalog without server locators", async () => {
     items: [
       {
         review_pack_id: "pack-1",
+        company_name: "Example Company",
         display_name: "Technical requirements",
         document_type: "technical_specification",
         version: "1.0",

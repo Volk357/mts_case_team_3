@@ -803,6 +803,12 @@
         "additionalProperties": false,
         "description": "Public metadata for one server-approved Review Pack version.",
         "properties": {
+          "company_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Company Name",
+            "type": "string"
+          },
           "description": {
             "maxLength": 2000,
             "minLength": 1,
@@ -836,6 +842,7 @@
         },
         "required": [
           "review_pack_id",
+          "company_name",
           "display_name",
           "document_type",
           "version",

@@ -34,6 +34,8 @@ class PostgresComposeTests(unittest.TestCase):
         self.assertIn('profiles: ["demo", "mock", "real"]', compose)
         self.assertIn("DOCREVIEW_ALLOW_DEMO_SEED", seed)
         self.assertIn('settings.environment != "demo"', seed)
+        self.assertIn("discover_review_pack_manifests", seed)
+        self.assertIn("DOCREVIEW_DEMO_PACK_LOCATOR", compose)
 
 
 if __name__ == "__main__":

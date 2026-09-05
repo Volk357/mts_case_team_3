@@ -216,6 +216,11 @@ services:
       DOCREVIEW_ENVIRONMENT: demo
       DOCREVIEW_ALLOW_DEMO_SEED: "true"
       DOCREVIEW_DEMO_PACK_LOCATOR: ${DOCREVIEW_DEMO_PACK_LOCATOR:-mts-net/0.2}
+    volumes:
+      - type: bind
+        source: ./review-packs
+        target: /app/review-packs
+        read_only: true
     depends_on:
       migrate:
         condition: service_completed_successfully

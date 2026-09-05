@@ -30,6 +30,7 @@ def list_review_packs(
     items = [
         ReviewPackResponse(
             review_pack_id=item.id,
+            company_name=item.company_name,
             display_name=item.display_name,
             document_type=item.document_type,
             version=item.version,

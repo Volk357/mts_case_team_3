@@ -105,7 +105,8 @@ Frontend должен ответить `ok`. API возвращает JSON со 
 docker compose run --rm migrate
 ```
 
-Повторно создать только отсутствующие demo-записи:
+Повторно просканировать `review-packs/<pack-id>/<version>` и зарегистрировать
+валидные demo-пакеты, которых ещё нет в каталоге:
 
 ```powershell
 docker compose --profile demo run --rm seed-demo

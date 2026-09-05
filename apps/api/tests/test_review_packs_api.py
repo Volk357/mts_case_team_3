@@ -9,6 +9,7 @@ from docreview_api.db.base import Base
 from docreview_api.db.models import CompanyModel, ReviewPackReferenceModel
 from docreview_api.db.session import create_database_engine, create_session_factory
 from docreview_api.main import create_app
+from docreview_api.services.review_packs import discover_review_pack_manifests
 
 
 @pytest.fixture
@@ -69,7 +70,7 @@ description: The manifest id does not match the allowlist record.
         company = CompanyModel(
             id=settings.default_company_id,
             slug=settings.default_company_slug,
-            display_name=settings.default_company_name,
+            display_name="Example Company",
         )
         foreign_company = CompanyModel(slug="foreign", display_name="Foreign")
         session.add_all([company, foreign_company])
@@ -158,6 +159,7 @@ async def test_catalog_returns_only_active_valid_tenant_packs_without_locator(
         "items": [
             {
                 "review_pack_id": str(visible_id),
+                "company_name": "Example Company",
                 "display_name": "Architecture requirements",
                 "document_type": "architecture_decision",
                 "version": "1.0",
@@ -188,8 +190,42 @@ async def test_catalog_is_declared_in_openapi(
     public_fields = schema["components"]["schemas"]["ReviewPackResponse"]["properties"]
     assert set(public_fields) == {
         "review_pack_id",
+        "company_name",
         "display_name",
         "document_type",
         "version",
         "description",
     }
+    assert operation.get("parameters", []) == []
+
+
+def test_discovery_scans_only_valid_id_and_version_directories(tmp_path: Path) -> None:
+    root = tmp_path / "review-packs"
+    valid = root / "architecture" / "2.0"
+    valid.mkdir(parents=True)
+    (valid / "pack.yaml").write_text(
+        """id: architecture
+version: '2.0'
+name: Architecture
+document_type: decision_record
+description: Architecture decision rules.
+""",
+        encoding="utf-8",
+    )
+    invalid = root / "security" / "1.0"
+    invalid.mkdir(parents=True)
+    (invalid / "pack.yaml").write_text(
+        """id: another-id
+version: '1.0'
+name: Security
+document_type: specification
+description: Mismatched directory id.
+""",
+        encoding="utf-8",
+    )
+
+    discovered = discover_review_pack_manifests(root)
+
+    assert [(item.locator, item.manifest.pack_key) for item in discovered] == [
+        ("architecture/2.0", "architecture")
+    ]

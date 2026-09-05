@@ -4,16 +4,17 @@ from __future__ import annotations
 
 import os
 import sys
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from sqlalchemy import select
 
 from docreview_api.config import get_settings
 from docreview_api.db import create_database_engine, create_session_factory
 from docreview_api.db.models import CompanyModel, ReviewPackReferenceModel
-from docreview_api.services.review_packs import load_review_pack_manifest
+from docreview_api.services.review_packs import discover_review_pack_manifests
 
 DEMO_PACK_ID = UUID("00000000-0000-0000-0000-000000000002")
+DEMO_PACK_NAMESPACE = UUID("fdde89c0-d197-462b-925a-260839202682")
 
 
 def main() -> int:
@@ -27,15 +28,21 @@ def main() -> int:
         )
         return 2
 
-    pack_locator = os.environ.get("DOCREVIEW_DEMO_PACK_LOCATOR", "").strip()
-    manifest = load_review_pack_manifest(settings.review_packs_dir, pack_locator)
-    if manifest is None:
+    discovered = discover_review_pack_manifests(settings.review_packs_dir)
+    if not discovered:
         print(
-            "Demo Review Pack manifest is missing or invalid; "
-            "set DOCREVIEW_DEMO_PACK_LOCATOR to a server-approved relative directory.",
+            "No valid Review Pack manifests were found in the configured catalog.",
             file=sys.stderr,
         )
         return 3
+    preferred_locator = os.environ.get("DOCREVIEW_DEMO_PACK_LOCATOR", "").strip()
+    if preferred_locator and all(item.locator != preferred_locator for item in discovered):
+        print(
+            "DOCREVIEW_DEMO_PACK_LOCATOR does not identify a valid discovered Review Pack.",
+            file=sys.stderr,
+        )
+        return 3
+    primary_locator = preferred_locator or discovered[0].locator
 
     sessions = create_session_factory(create_database_engine(settings.database_url))
     with sessions.begin() as session:
@@ -49,30 +56,46 @@ def main() -> int:
             session.add(company)
             session.flush()
 
-        pack = session.scalar(
-            select(ReviewPackReferenceModel).where(
-                ReviewPackReferenceModel.company_id == company.id,
-                ReviewPackReferenceModel.pack_key == manifest.pack_key,
-                ReviewPackReferenceModel.version == manifest.version,
-            )
-        )
-        if pack is None:
-            session.add(
-                ReviewPackReferenceModel(
-                    id=DEMO_PACK_ID,
+        existing = {
+            (record.pack_key, record.version): record
+            for record in session.scalars(
+                select(ReviewPackReferenceModel).where(
+                    ReviewPackReferenceModel.company_id == company.id,
+                )
+            ).all()
+        }
+        primary_id_available = session.get(ReviewPackReferenceModel, DEMO_PACK_ID) is None
+        for item in discovered:
+            manifest = item.manifest
+            key = (manifest.pack_key, manifest.version)
+            pack = existing.get(key)
+            if pack is None:
+                generated_id = uuid5(
+                    DEMO_PACK_NAMESPACE,
+                    f"{company.id}:{manifest.pack_key}:{manifest.version}",
+                )
+                pack = ReviewPackReferenceModel(
+                    id=(
+                        DEMO_PACK_ID
+                        if item.locator == primary_locator and primary_id_available
+                        else generated_id
+                    ),
                     company_id=company.id,
                     pack_key=manifest.pack_key,
                     version=manifest.version,
                     display_name=manifest.display_name,
                     document_type=manifest.document_type,
-                    locator=pack_locator,
+                    locator=item.locator,
                     checksum=None,
                 )
-            )
-        else:
-            pack.display_name = manifest.display_name
-            pack.document_type = manifest.document_type
-            pack.locator = pack_locator
+                session.add(pack)
+                existing[key] = pack
+                if pack.id == DEMO_PACK_ID:
+                    primary_id_available = False
+            else:
+                pack.display_name = manifest.display_name
+                pack.document_type = manifest.document_type
+                pack.locator = item.locator
     return 0
 
 

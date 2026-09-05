@@ -9,12 +9,13 @@ import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
-from docreview_api.db.models import ReviewPackReferenceModel
+from docreview_api.db.models import CompanyModel, ReviewPackReferenceModel
 
 
 @dataclass(frozen=True, slots=True)
 class ReviewPackSnapshot:
     id: UUID
+    company_name: str
     display_name: str
     document_type: str
     version: str
@@ -30,6 +31,14 @@ class ReviewPackManifest:
     display_name: str
     document_type: str
     description: str
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveredReviewPack:
+    """One valid manifest found under the server-controlled catalog root."""
+
+    locator: str
+    manifest: ReviewPackManifest
 
 
 _MANIFEST_FILENAMES = ("pack.yaml", "pack.yml", "pack.json")
@@ -117,6 +126,46 @@ def load_review_pack_manifest(
     )
 
 
+def discover_review_pack_manifests(
+    review_packs_root: Path,
+) -> tuple[DiscoveredReviewPack, ...]:
+    """Scan the fixed ``<pack-id>/<version>/pack.*`` catalog shape safely."""
+
+    try:
+        root = review_packs_root.resolve()
+        pack_directories = sorted(root.iterdir(), key=lambda path: path.name.casefold())
+    except OSError:
+        return ()
+
+    discovered: list[DiscoveredReviewPack] = []
+    for pack_directory in pack_directories:
+        try:
+            if pack_directory.name.startswith(".") or not pack_directory.is_dir():
+                continue
+            version_directories = sorted(
+                pack_directory.iterdir(),
+                key=lambda path: path.name.casefold(),
+            )
+        except OSError:
+            continue
+        for version_directory in version_directories:
+            try:
+                if version_directory.name.startswith(".") or not version_directory.is_dir():
+                    continue
+                locator = version_directory.relative_to(root).as_posix()
+            except (OSError, ValueError):
+                continue
+            manifest = load_review_pack_manifest(root, locator)
+            if (
+                manifest is None
+                or manifest.pack_key != pack_directory.name
+                or manifest.version != version_directory.name
+            ):
+                continue
+            discovered.append(DiscoveredReviewPack(locator=locator, manifest=manifest))
+    return tuple(discovered)
+
+
 class ReviewPackCatalogService:
     """Expose only active pack references resolvable inside the configured root."""
 
@@ -131,6 +180,9 @@ class ReviewPackCatalogService:
 
     def list_available(self, *, company_id: UUID) -> tuple[ReviewPackSnapshot, ...]:
         with self._session_factory() as session:
+            company = session.get(CompanyModel, company_id)
+            if company is None or not company.is_active or not company.display_name.strip():
+                return ()
             records = session.scalars(
                 select(ReviewPackReferenceModel)
                 .where(
@@ -146,7 +198,8 @@ class ReviewPackCatalogService:
             snapshots = tuple(
                 snapshot
                 for record in records
-                if (snapshot := self._public_snapshot(record)) is not None
+                if (snapshot := self._public_snapshot(record, company.display_name.strip()))
+                is not None
             )
             return tuple(
                 sorted(
@@ -159,7 +212,11 @@ class ReviewPackCatalogService:
                 )
             )
 
-    def _public_snapshot(self, record: ReviewPackReferenceModel) -> ReviewPackSnapshot | None:
+    def _public_snapshot(
+        self,
+        record: ReviewPackReferenceModel,
+        company_name: str,
+    ) -> ReviewPackSnapshot | None:
         manifest = load_review_pack_manifest(self._review_packs_root, record.locator)
         if (
             manifest is None
@@ -169,6 +226,7 @@ class ReviewPackCatalogService:
             return None
         return ReviewPackSnapshot(
             id=record.id,
+            company_name=company_name,
             display_name=manifest.display_name,
             document_type=manifest.document_type,
             version=manifest.version,

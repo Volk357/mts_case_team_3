@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { uploadDocument, type DocumentUploadResponse } from "@/api/documents";
-import { getReviewPacks } from "@/api/review-packs";
+import { getReviewPacks, type ReviewPack } from "@/api/review-packs";
 import { createReview } from "@/api/reviews";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +38,7 @@ const ACCEPTED_TYPES: Record<string, readonly string[]> = {
 };
 
 type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
+type CatalogPhase = "loading" | "ready" | "empty" | "error";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -77,10 +78,35 @@ export function FileDropzone() {
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<DocumentUploadResponse | null>(null);
+  const [packs, setPacks] = useState<ReviewPack[]>([]);
+  const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
+  const [catalogPhase, setCatalogPhase] = useState<CatalogPhase>("loading");
+  const [catalogReload, setCatalogReload] = useState(0);
   const navigate = useNavigate();
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getReviewPacks(controller.signal)
+      .then((catalog) => {
+        setPacks(catalog.items);
+        setSelectedPackId((current) =>
+          catalog.items.some((pack) => pack.review_pack_id === current)
+            ? current
+            : (catalog.items[0]?.review_pack_id ?? null),
+        );
+        setCatalogPhase(catalog.items.length > 0 ? "ready" : "empty");
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setPacks([]);
+        setSelectedPackId(null);
+        setCatalogPhase("error");
+      });
+    return () => controller.abort();
+  }, [catalogReload]);
 
   const chooseFile = (nextFile: File | undefined) => {
     if (!nextFile) return;
@@ -124,24 +150,14 @@ export function FileDropzone() {
     }
   };
 
-  // Загрузка и проверка — один шаг для человека: документ загружают, чтобы
-  // его проверили, а не чтобы он лежал. Пакет правил берём первый доступный:
-  // выбор профиля появится, когда пакетов станет больше одного.
   const startReview = async () => {
-    if (!receipt || phase === "starting") return;
+    if (!receipt || !selectedPackId || phase === "starting") return;
     setPhase("starting");
     setMessage(null);
     try {
-      const packs = await getReviewPacks();
-      const pack = packs.items[0];
-      if (!pack) {
-        setPhase("error");
-        setMessage("В контуре не настроен ни один профиль проверки. Обратитесь к администратору.");
-        return;
-      }
       const review = await createReview(
         receipt.document_id,
-        pack.review_pack_id,
+        selectedPackId,
         crypto.randomUUID(),
       );
       void navigate(`/reviews/${review.review_id}`);
@@ -166,6 +182,91 @@ export function FileDropzone() {
         </p>
       </div>
       <div className="p-5 sm:p-8">
+        <section aria-labelledby="review-pack-heading" className="mb-7">
+          <div className="mb-3">
+            <h3 className="font-semibold" id="review-pack-heading">
+              Профиль проверки
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-text-secondary">
+              Профиль определяет правила и тип документа, по которым будет выполнена проверка.
+            </p>
+          </div>
+
+          {catalogPhase === "loading" ? (
+            <p aria-live="polite" className="text-sm text-text-muted">
+              Загружаем доступные профили…
+            </p>
+          ) : null}
+
+          {catalogPhase === "empty" ? (
+            <p className="rounded-(--radius-sm) bg-amber-soft px-4 py-3 text-sm leading-6 text-amber">
+              В контуре не настроен ни один доступный профиль проверки.
+            </p>
+          ) : null}
+
+          {catalogPhase === "error" ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-(--radius-sm) bg-red-soft px-4 py-3 text-sm text-red">
+              <span>Не удалось загрузить профили проверки.</span>
+              <button
+                className="font-medium underline underline-offset-4"
+                onClick={() => {
+                  setCatalogPhase("loading");
+                  setCatalogReload((value) => value + 1);
+                }}
+                type="button"
+              >
+                Повторить
+              </button>
+            </div>
+          ) : null}
+
+          {catalogPhase === "ready" ? (
+            <fieldset className="grid gap-3 sm:grid-cols-2" disabled={phase === "starting"}>
+              <legend className="sr-only">Выберите профиль проверки</legend>
+              {packs.map((pack) => {
+                const selected = selectedPackId === pack.review_pack_id;
+                return (
+                  <label
+                    className={cn(
+                      "cursor-pointer rounded-(--radius-sm) border p-4 transition-colors",
+                      selected
+                        ? "border-primary bg-primary/5"
+                        : "border-border bg-card hover:border-border-hover",
+                    )}
+                    key={pack.review_pack_id}
+                  >
+                    <input
+                      checked={selected}
+                      className="sr-only"
+                      name="review-pack"
+                      onChange={() => setSelectedPackId(pack.review_pack_id)}
+                      type="radio"
+                      value={pack.review_pack_id}
+                    />
+                    <span className="flex items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        <span className="block text-xs font-medium tracking-wide text-text-muted uppercase">
+                          {pack.company_name}
+                        </span>
+                        <span className="mt-1 block font-semibold">{pack.display_name}</span>
+                      </span>
+                      {selected ? (
+                        <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
+                      ) : null}
+                    </span>
+                    <span className="mt-2 block text-xs text-text-muted">
+                      {pack.document_type} · версия {pack.version}
+                    </span>
+                    <span className="mt-2 block text-sm leading-6 text-text-secondary">
+                      {pack.description}
+                    </span>
+                  </label>
+                );
+              })}
+            </fieldset>
+          ) : null}
+        </section>
+
         <input
           accept={ACCEPTED_FILES}
           aria-hidden="true"
@@ -277,7 +378,7 @@ export function FileDropzone() {
             {phase === "success" || phase === "starting" ? (
               <Button
                 className="w-full sm:w-auto"
-                disabled={phase === "starting"}
+                disabled={phase === "starting" || !selectedPackId}
                 onClick={() => void startReview()}
                 type="button"
               >

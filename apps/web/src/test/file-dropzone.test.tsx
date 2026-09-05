@@ -7,12 +7,20 @@ import type { DocumentUploadResponse } from "@/api/documents";
 import { FileDropzone } from "@/components/file-dropzone";
 import { appConfig } from "@/config";
 
-const { uploadDocumentMock } = vi.hoisted(() => ({
+const { createReviewMock, getReviewPacksMock, uploadDocumentMock } = vi.hoisted(() => ({
+  createReviewMock: vi.fn(),
+  getReviewPacksMock: vi.fn(),
   uploadDocumentMock: vi.fn(),
 }));
 
 vi.mock("@/api/documents", () => ({
   uploadDocument: uploadDocumentMock,
+}));
+vi.mock("@/api/review-packs", () => ({
+  getReviewPacks: getReviewPacksMock,
+}));
+vi.mock("@/api/reviews", () => ({
+  createReview: createReviewMock,
 }));
 
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -34,6 +42,47 @@ function fileInput(): HTMLInputElement {
 
 beforeEach(() => {
   uploadDocumentMock.mockReset();
+  createReviewMock.mockReset();
+  getReviewPacksMock.mockReset();
+  getReviewPacksMock.mockResolvedValue({
+    items: [
+      {
+        review_pack_id: "pack-architecture",
+        company_name: "Example Company",
+        display_name: "Architecture decisions",
+        document_type: "Architecture decision record",
+        version: "1.0",
+        description: "Checks assumptions and decision consequences.",
+      },
+      {
+        review_pack_id: "pack-security",
+        company_name: "Another Company",
+        display_name: "Security requirements",
+        document_type: "Security specification",
+        version: "2.1",
+        description: "Checks access, audit and data protection requirements.",
+      },
+    ],
+    total: 2,
+  });
+});
+
+it("shows catalog metadata and lets the user choose a Review Pack", async () => {
+  const user = userEvent.setup();
+  render(<FileDropzone />);
+
+  const options = await screen.findAllByRole("radio");
+  expect(options).toHaveLength(2);
+  expect(options[0]).toBeChecked();
+  expect(screen.getByText("Example Company")).toBeInTheDocument();
+  expect(screen.getByText("Architecture decision record · версия 1.0")).toBeInTheDocument();
+  expect(
+    screen.getByText("Checks assumptions and decision consequences."),
+  ).toBeInTheDocument();
+
+  await user.click(options[1]);
+  expect(options[1]).toBeChecked();
+  expect(options[0]).not.toBeChecked();
 });
 
 it("shows accepted formats and selected file size", async () => {
@@ -109,6 +158,42 @@ it("renders upload progress and a successful result", async () => {
   });
   expect(await screen.findByText("Документ загружен. Проверка занимает около минуты.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Заменить файл" })).toBeEnabled();
+});
+
+it("starts the review with the selected opaque pack id", async () => {
+  const user = userEvent.setup();
+  uploadDocumentMock.mockResolvedValue({
+    document_id: "document-1",
+    filename: "Требования.docx",
+    size_bytes: 14,
+    media_type: DOCX_TYPE,
+  });
+  createReviewMock.mockResolvedValue({
+    review_id: "review-1",
+    document_id: "document-1",
+    review_pack_id: "pack-security",
+    status: "queued",
+    stage: "waiting",
+    queued_at: "2026-09-05T12:00:00Z",
+    started_at: null,
+    finished_at: null,
+    poll_after_ms: 2000,
+    error: null,
+    warnings: [],
+  });
+  render(<FileDropzone />);
+
+  const options = await screen.findAllByRole("radio");
+  await user.click(options[1]);
+  await user.upload(fileInput(), docx());
+  await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
+  await user.click(await screen.findByRole("button", { name: "Проверить документ" }));
+
+  expect(createReviewMock).toHaveBeenCalledWith(
+    "document-1",
+    "pack-security",
+    expect.any(String),
+  );
 });
 
 it("turns server failures into a clear user-facing message", async () => {

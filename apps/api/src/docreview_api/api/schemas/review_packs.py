@@ -9,6 +9,7 @@ class ReviewPackResponse(ApiModel):
     """Public metadata for one server-approved Review Pack version."""
 
     review_pack_id: OpaqueId
+    company_name: str = Field(min_length=1, max_length=255)
     display_name: str = Field(min_length=1, max_length=255)
     document_type: str = Field(min_length=1, max_length=100)
     version: str = Field(min_length=1, max_length=100)

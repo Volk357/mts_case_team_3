@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     artifacts_dir: Path = REPOSITORY_DIRECTORY / "data" / "artifacts"
     review_packs_dir: Path = REPOSITORY_DIRECTORY / "review-packs"
     analysis_executable: str = Field(default="docreview", min_length=1, max_length=1000)
+    analysis_model_config_path: Path | None = None
     process_stdout_limit_bytes: int = Field(default=5 * 1024 * 1024, ge=1024, le=100 * 1024 * 1024)
     process_stderr_limit_bytes: int = Field(default=256 * 1024, ge=1024, le=10 * 1024 * 1024)
     analysis_timeout_seconds: float = Field(default=300.0, gt=0, le=24 * 60 * 60)
@@ -106,6 +107,16 @@ class Settings(BaseSettings):
     def resolve_storage_path(cls, value: object) -> Path:
         """Resolve relative storage paths from the repository root, not process cwd."""
 
+        path = Path(str(value)).expanduser()
+        return path if path.is_absolute() else (REPOSITORY_DIRECTORY / path).resolve()
+
+    @field_validator("analysis_model_config_path", mode="before")
+    @classmethod
+    def resolve_optional_model_config_path(cls, value: object) -> Path | None:
+        """Resolve an explicitly configured model file without reading its secrets."""
+
+        if value is None:
+            return None
         path = Path(str(value)).expanduser()
         return path if path.is_absolute() else (REPOSITORY_DIRECTORY / path).resolve()
 

@@ -118,6 +118,7 @@ python3.12 -m venv .venv
 mkdir -p /opt/docreview/data
 cat > /opt/docreview/app.env <<'ENV'
 DOCREVIEW_ANALYSIS_EXECUTABLE=/usr/local/bin/docreview
+DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH=/opt/docreview/core/model-config.yaml
 DOCREVIEW_DATABASE_URL=sqlite:////opt/docreview/data/docreview.db
 DOCREVIEW_DOCUMENTS_DIR=/opt/docreview/data/documents
 DOCREVIEW_RUNS_DIR=/opt/docreview/data/runs
@@ -264,9 +265,9 @@ curl -s localhost:8010/api/reviews/$RID/findings
 - **Аутентификации нет.** Открывать наружу без хотя бы basic-auth нельзя.
 - **PDF не поддерживается.** Ядро читает `.docx` и текст; для PDF библиотеки
   в контуре нет, файл будет отбит понятной ошибкой.
-- **`--model-config` приложение не передаёт** (в `AnalysisProcessRequest` поле
-  не заполняется), поэтому ядро берёт конфиг рядом с собой. Когда это поправят
-  в приложении, флаг начнёт работать и переопределит файл.
+- **`--model-config` передаётся worker явно** из
+  `DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH`. Файл должен существовать на хосте
+  worker и не должен попадать в Git или журналы.
 - **Автоудаление документов выключено** в текущей версии приложения: загруженные
   файлы и результаты хранятся бессрочно. Для демо приемлемо, для пилота нет.
 - Первый запрос после простоя дольше: модель прогревается (`keep_alive`).

@@ -19,6 +19,7 @@ def test_settings_defaults() -> None:
     assert settings.runs_dir == REPOSITORY_DIRECTORY / "data" / "runs"
     assert settings.review_packs_dir == REPOSITORY_DIRECTORY / "review-packs"
     assert settings.analysis_executable == "docreview"
+    assert settings.analysis_model_config_path is None
     assert settings.process_stdout_limit_bytes == 5 * 1024 * 1024
     assert settings.process_stderr_limit_bytes == 256 * 1024
     assert settings.analysis_timeout_seconds == 300.0
@@ -57,6 +58,9 @@ def test_demo_profile_is_loaded() -> None:
     assert settings.app_name == "DocReview API (demo)"
     assert settings.runs_dir == REPOSITORY_DIRECTORY / "data" / "demo" / "runs"
     assert settings.database_url.endswith("/data/demo/docreview.db")
+    assert settings.analysis_model_config_path == REPOSITORY_DIRECTORY / "model-config.yaml"
+    assert settings.analysis_timeout_seconds == 600
+    assert settings.worker_stale_after_seconds == 900
     assert settings.cors_origins == (
         "http://127.0.0.1:4173",
         "http://localhost:4173",
@@ -75,6 +79,12 @@ def test_local_env_selects_profile_and_overrides_it(tmp_path: Path) -> None:
     assert settings.environment == "demo"
     assert settings.app_name == "DocReview API (demo)"
     assert settings.log_level == "ERROR"
+
+
+def test_relative_model_config_path_is_resolved_from_repository() -> None:
+    settings = Settings(analysis_model_config_path="private/model.yaml", _env_file=None)
+
+    assert settings.analysis_model_config_path == REPOSITORY_DIRECTORY / "private" / "model.yaml"
 
 
 def test_invalid_cors_origin_is_rejected() -> None:

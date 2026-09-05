@@ -106,6 +106,7 @@ def build_worker(settings: Settings) -> ReviewJobWorker:
         result_receiver=receiver,
         timeout_seconds=settings.analysis_timeout_seconds,
         termination_grace_seconds=settings.process_termination_grace_seconds,
+        model_config_path=settings.analysis_model_config_path,
     )
     return ReviewJobWorker(
         queue,

@@ -52,6 +52,7 @@ class AnalysisJobExecutor:
         result_receiver: ReviewResultReceiver,
         timeout_seconds: float,
         termination_grace_seconds: float,
+        model_config_path: Path | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._queue = queue
@@ -64,6 +65,9 @@ class AnalysisJobExecutor:
         self._result_receiver = result_receiver
         self._timeout_seconds = timeout_seconds
         self._termination_grace_seconds = termination_grace_seconds
+        self._model_config_path = (
+            model_config_path.resolve() if model_config_path is not None else None
+        )
 
     async def execute(self, job_id: UUID) -> None:
         inputs = self._load_inputs(job_id)
@@ -80,6 +84,7 @@ class AnalysisJobExecutor:
                 document_path=document_path,
                 review_pack_path=review_pack_path,
                 workspace=workspace,
+                model_config_path=self._model_config_path,
             )
         )
         if not self._queue.attach_process(job_id, process_pid=process.pid):

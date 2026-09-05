@@ -71,7 +71,8 @@ python3 docreview.py analyze \
   а если и она не распознана — вернёт результат с предупреждением
   `REVIEW_PACK_VERSION_ASSUMED`.
 - **Эндпоинт модели.** `ProcessRunner` вычищает окружение дочернего процесса, поэтому
-  `OLLAMA_URL` до ядра не доходит. Единственный канал — `--model-config` (YAML или JSON):
+  `OLLAMA_URL` до ядра не доходит. Worker теперь явно передаёт `--model-config`
+  из `DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH` (YAML или JSON):
   `base_url` (или `url`/`endpoint`), `model`, опционально `num_ctx`, `timeout`.
   Пример лежит в `review-packs/mts-net/0.2/model-config.example.yaml`.
 - **Формат входа.** Ядро принимает только извлечённый текст. Приложение принимает

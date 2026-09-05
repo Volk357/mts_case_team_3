@@ -427,12 +427,8 @@ def find_model_config(explicit=None):
     2. переменная окружения DOCREVIEW_MODEL_CONFIG;
     3. `model-config.yaml` рядом с ядром.
 
-    Пункты 2 и 3 нужны не для красоты. `ProcessRunner` вычищает окружение
-    дочернего процесса, а `AnalysisJobExecutor` собирает `AnalysisProcessRequest`
-    без `model_config_path` — значит `--model-config` приложение сейчас
-    не передаёт вообще, и ядро осталось бы без эндпоинта модели. Пока это
-    не поправлено на стороне приложения, конфиг рядом с ядром позволяет
-    развернуть рабочий контур, не трогая чужой код.
+    Worker передаёт пункт 1 явно. Пункты 2 и 3 остаются для прямого запуска CLI
+    и обратной совместимости; Product Application не полагается на них.
     """
     if explicit:
         return explicit

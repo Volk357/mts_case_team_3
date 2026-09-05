@@ -206,11 +206,12 @@ export function ReviewPage() {
  * как зависание, поэтому показываем, какой шаг идёт сейчас и сколько прошло.
  * Никакого поддельного процента: шаги приходят из состояния проверки.
  */
-function ProgressNotice({ stage, seconds }: { stage: ReviewState["stage"]; seconds: number }) {
+export function ProgressNotice({ stage, seconds }: { stage: ReviewState["stage"]; seconds: number }) {
   // stage "finished" приходит на короткое время до status "completed":
   // тогда пройдены все шаги, а не ни одного.
   const found = STAGES.findIndex((item) => item.key === stage);
   const current = stage === "finished" ? STAGES.length : found === -1 ? 0 : found;
+  const takingLongerThanUsual = seconds >= 120;
 
   return (
     <div className="mx-auto max-w-md py-12 sm:py-20">
@@ -218,7 +219,9 @@ function ProgressNotice({ stage, seconds }: { stage: ReviewState["stage"]; secon
       {/* Счётчик секунд не озвучиваем: раз в секунду это спам в скринридере.
           Вслух сообщаем только смену шага. */}
       <p className="mt-2 text-[0.9375rem] leading-7 text-text-secondary">
-        Обычно занимает около минуты. Прошло {seconds} с.
+        {takingLongerThanUsual
+          ? `Проверка занимает дольше обычного, но продолжается. Прошло ${seconds} с.`
+          : `Обычно занимает около минуты. Прошло ${seconds} с.`}
       </p>
       <p className="sr-only" role="status">
         {STAGES[current]?.title ?? "Проверка завершена"}

@@ -553,9 +553,7 @@ def test_broken_pack_glossary_is_pack_error_not_internal():
 
 
 def test_model_config_lookup_order():
-    """Приложение сейчас НЕ передаёт --model-config (AnalysisProcessRequest
-    собирается без model_config_path), а окружение подпроцесса вычищается.
-    Без запасных источников развёрнутое ядро осталось бы без эндпоинта."""
+    """Флаг worker имеет приоритет; запасные источники нужны прямому CLI."""
     explicit = _tmp("explicit.yaml", b"base_url: http://explicit/api\n")
     from_env = _tmp("env.yaml", b"base_url: http://env/api\n")
     old = os.environ.get(MODEL_CONFIG_ENV)

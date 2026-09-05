@@ -115,6 +115,17 @@ Schema автоматически не создаётся при импорте 
 `DOCREVIEW_WORKER_STALE_AFTER_SECONDS` обязано превышать сумму общего timeout анализа
 и времени мягкой остановки процесса, чтобы новый worker не завершил ещё работающий job.
 
+Реальное ядро выбирается через `DOCREVIEW_ANALYSIS_EXECUTABLE`, а локальный файл
+его модели — через `DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH`. Worker передаёт этот
+путь отдельным аргументом `--model-config`; содержимое и секреты файла не читаются
+и не журналируются приложением. Development/demo-профили ожидают игнорируемый
+`model-config.yaml` в корне репозитория. Для возврата к резервному адаптеру задайте
+`DOCREVIEW_ANALYSIS_EXECUTABLE=docreview-mock` и уберите путь к model config.
+Для development/demo внешний timeout worker равен 600 секундам: он покрывает
+замеренные 65–80 секунд через WireGuard и прогрев модели. После 600 секунд процесс
+завершается управляемо, а job получает терминальный статус `timed_out`; окно
+восстановления worker установлено в 900 секунд.
+
 `DOCREVIEW_CORS_ORIGINS` задаётся JSON-массивом точных HTTP(S) origins. Wildcard `*`
 не принимается.
 

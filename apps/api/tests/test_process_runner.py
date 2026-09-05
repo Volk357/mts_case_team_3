@@ -109,6 +109,36 @@ async def test_runner_records_stable_start_and_finish_times(tmp_path: Path) -> N
     assert result.finished_at == STARTED_AT + timedelta(seconds=2)
 
 
+@pytest.mark.anyio
+async def test_runner_passes_model_config_and_uses_run_workspace_as_cwd(tmp_path: Path) -> None:
+    request = prepare_request(tmp_path, run_id="review-real-config")
+    model_config = tmp_path / "model-config.yaml"
+    model_config.write_text("model: smoke\n", encoding="utf-8")
+    request = AnalysisProcessRequest(
+        run_id=request.run_id,
+        document_path=request.document_path,
+        review_pack_path=request.review_pack_path,
+        workspace=request.workspace,
+        model_config_path=model_config,
+    )
+    script = tmp_path / "inspect_runner.py"
+    script.write_text(
+        "import json, os, sys\n"
+        "args = sys.argv[1:]\n"
+        "print(json.dumps({'cwd': os.getcwd(), "
+        "'model_config': args[args.index('--model-config') + 1]}))\n",
+        encoding="utf-8",
+    )
+    runner = ProcessRunner((sys.executable, script))
+
+    result = await (await runner.start(request)).wait()
+    payload = json.loads(result.stdout.utf8())
+
+    assert result.exit_code == 0
+    assert Path(payload["cwd"]).resolve() == request.workspace.root
+    assert Path(payload["model_config"]) == model_config.resolve()
+
+
 def test_runner_rejects_invalid_inputs_before_start(tmp_path: Path) -> None:
     request = prepare_request(tmp_path)
 
@@ -151,6 +181,16 @@ def test_runner_requires_document_inside_workspace_and_existing_pack(tmp_path: P
                 document_path=request.document_path,
                 review_pack_path=tmp_path / "missing-pack",
                 workspace=request.workspace,
+            )
+        )
+    with pytest.raises(ProcessRunnerError, match="model configuration"):
+        runner.build_arguments(
+            AnalysisProcessRequest(
+                run_id=request.run_id,
+                document_path=request.document_path,
+                review_pack_path=request.review_pack_path,
+                workspace=request.workspace,
+                model_config_path=tmp_path / "missing-model-config.yaml",
             )
         )
 

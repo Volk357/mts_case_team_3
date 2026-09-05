@@ -42,12 +42,29 @@
   core/            ядро анализа (этот репозиторий: docreview.py, правила, review-packs)
   app/             приложение (apps/api)
   web/             собранный фронтенд (статика)
-  data/            рабочие каталоги приложения (documents, runs, artifacts, sqlite)
+  data/            рабочие каталоги приложения (documents, runs, artifacts)
   model-config.yaml   эндпоинт и имя модели
 ```
 
-База данных — SQLite по умолчанию (`database_url` в настройках приложения).
-Postgres для демонстрации не обязателен; если нужен — меняется одной переменной.
+База данных — **PostgreSQL**, другая СУБД не поддерживается. Приложение пишет
+в базу из двух процессов сразу (API и воркер), и удаление документа при живой
+проверке опирается на блокировку строки и `SELECT ... FOR UPDATE`, которых у
+SQLite нет. Поднять базу до установки приложения:
+
+```bash
+apt-get install -y --no-install-recommends postgresql
+sudo -u postgres psql -c "CREATE ROLE docreview LOGIN PASSWORD 'ПАРОЛЬ';"
+sudo -u postgres psql -c "CREATE DATABASE docreview OWNER docreview ENCODING UTF8;"
+```
+
+Роль приложения намеренно без `CREATEDB` и `SUPERUSER`. Для прогона тестов
+нужна отдельная роль с `CREATEDB` (каждый тест создаёт свою базу) — она не
+используется приложением:
+
+```bash
+sudo -u postgres psql -c "CREATE ROLE docreview_test LOGIN CREATEDB PASSWORD 'ПАРОЛЬ';"
+sudo -u postgres psql -c "CREATE DATABASE docreview_test OWNER docreview_test;"
+```
 
 ---
 
@@ -118,7 +135,7 @@ python3.12 -m venv .venv
 mkdir -p /opt/docreview/data
 cat > /opt/docreview/app.env <<'ENV'
 DOCREVIEW_ANALYSIS_EXECUTABLE=/usr/local/bin/docreview
-DOCREVIEW_DATABASE_URL=sqlite:////opt/docreview/data/docreview.db
+DOCREVIEW_DATABASE_URL=postgresql+psycopg://docreview:ПАРОЛЬ@127.0.0.1/docreview
 DOCREVIEW_DOCUMENTS_DIR=/opt/docreview/data/documents
 DOCREVIEW_RUNS_DIR=/opt/docreview/data/runs
 DOCREVIEW_REVIEW_PACKS_DIR=/opt/docreview/data/review-packs

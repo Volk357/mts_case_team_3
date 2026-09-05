@@ -14,7 +14,7 @@ def test_settings_defaults() -> None:
     assert settings.environment == "development"
     assert settings.api_prefix == "/api"
     assert settings.log_level == "INFO"
-    assert settings.database_url.endswith("/data/docreview.db")
+    assert settings.database_url.startswith("postgresql+psycopg://")
     assert settings.documents_dir == REPOSITORY_DIRECTORY / "data" / "documents"
     assert settings.runs_dir == REPOSITORY_DIRECTORY / "data" / "runs"
     assert settings.review_packs_dir == REPOSITORY_DIRECTORY / "review-packs"
@@ -56,7 +56,8 @@ def test_demo_profile_is_loaded() -> None:
     assert settings.environment == "demo"
     assert settings.app_name == "DocReview API (demo)"
     assert settings.runs_dir == REPOSITORY_DIRECTORY / "data" / "demo" / "runs"
-    assert settings.database_url.endswith("/data/demo/docreview.db")
+    assert settings.database_url.startswith("postgresql+psycopg://")
+    assert settings.database_url.endswith("/docreview_demo")
     assert settings.cors_origins == (
         "http://127.0.0.1:4173",
         "http://localhost:4173",
@@ -126,3 +127,17 @@ def test_worker_stale_window_must_exceed_process_timeout() -> None:
     except ValidationError:
         return
     raise AssertionError("Worker stale window must exceed the complete process timeout")
+
+
+def test_sqlite_database_url_is_rejected() -> None:
+    """SQLite убран из продукта намеренно: у него нет блокировки строки и
+    `SELECT ... FOR UPDATE`, на которых держится удаление документа при
+    работающем воркере. Принять такой URL значило бы тихо получить другую
+    модель параллелизма, чем та, на которой всё проверено."""
+
+    for url in ("sqlite:///data/docreview.db", "sqlite:///:memory:"):
+        try:
+            Settings(database_url=url, _env_file=None)
+        except ValidationError:
+            continue
+        raise AssertionError(f"Settings must reject SQLite URL: {url}")

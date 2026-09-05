@@ -22,8 +22,8 @@ from docreview_api.services.review_job_queue import DatabaseReviewJobQueue
 NOW = datetime(2026, 9, 3, 18, 0, tzinfo=UTC)
 
 
-def make_sessions(tmp_path: Path) -> sessionmaker[Session]:
-    engine = create_database_engine(f"sqlite:///{(tmp_path / 'queue.db').as_posix()}")
+def make_sessions(database_url: str) -> sessionmaker[Session]:
+    engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     return create_session_factory(engine)
 
@@ -77,8 +77,8 @@ def seed_jobs(
     return jobs
 
 
-def test_claim_is_fifo_and_persisted(tmp_path: Path) -> None:
-    sessions = make_sessions(tmp_path)
+def test_claim_is_fifo_and_persisted(tmp_path: Path, database_url: str) -> None:
+    sessions = make_sessions(database_url)
     jobs = seed_jobs(sessions, [ReviewJobStatus.QUEUED, ReviewJobStatus.QUEUED])
     queue = DatabaseReviewJobQueue(sessions, clock=lambda: NOW + timedelta(minutes=1))
 
@@ -92,8 +92,8 @@ def test_claim_is_fifo_and_persisted(tmp_path: Path) -> None:
         assert session.get(ReviewJobModel, first.id).status is ReviewJobStatus.RUNNING  # type: ignore[union-attr]
 
 
-def test_two_workers_never_claim_the_same_job(tmp_path: Path) -> None:
-    sessions = make_sessions(tmp_path)
+def test_two_workers_never_claim_the_same_job(tmp_path: Path, database_url: str) -> None:
+    sessions = make_sessions(database_url)
     job = seed_jobs(sessions, [ReviewJobStatus.QUEUED])[0]
     barrier = Barrier(2)
 
@@ -110,8 +110,8 @@ def test_two_workers_never_claim_the_same_job(tmp_path: Path) -> None:
     assert claimed_ids == [job.id]
 
 
-def test_restart_recovery_fails_only_stale_running_jobs(tmp_path: Path) -> None:
-    sessions = make_sessions(tmp_path)
+def test_restart_recovery_fails_only_stale_running_jobs(tmp_path: Path, database_url: str) -> None:
+    sessions = make_sessions(database_url)
     stale, fresh, queued = seed_jobs(
         sessions,
         [ReviewJobStatus.RUNNING, ReviewJobStatus.RUNNING, ReviewJobStatus.QUEUED],
@@ -137,8 +137,8 @@ def test_restart_recovery_fails_only_stale_running_jobs(tmp_path: Path) -> None:
         assert queued_state is not None and queued_state.status is ReviewJobStatus.QUEUED
 
 
-def test_database_contains_one_running_claim_after_concurrency(tmp_path: Path) -> None:
-    sessions = make_sessions(tmp_path)
+def test_database_contains_one_running_claim_after_concurrency(tmp_path: Path, database_url: str) -> None:
+    sessions = make_sessions(database_url)
     seed_jobs(sessions, [ReviewJobStatus.QUEUED])
     queue = DatabaseReviewJobQueue(sessions, clock=lambda: NOW + timedelta(minutes=1))
     queue.claim_next()

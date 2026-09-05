@@ -23,10 +23,10 @@ from docreview_api.services.reviews import _detection_layer
 
 
 @pytest.fixture
-def review_resources(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
+def review_resources(tmp_path: Path, database_url: str) -> tuple[Settings, UUID, UUID]:
     settings = Settings(
         environment="test",
-        database_url=f"sqlite:///{(tmp_path / 'reviews.db').as_posix()}",
+        database_url=database_url,
         documents_dir=tmp_path / "documents",
         review_poll_interval_seconds=3,
         _env_file=None,

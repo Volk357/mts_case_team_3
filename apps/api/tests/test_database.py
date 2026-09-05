@@ -48,8 +48,8 @@ STARTED_AT = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    database_engine = create_database_engine(f"sqlite:///{(tmp_path / 'test.db').as_posix()}")
+def engine(tmp_path: Path, database_url: str) -> Engine:
+    database_engine = create_database_engine(database_url)
     Base.metadata.create_all(database_engine)
     try:
         yield database_engine
@@ -133,13 +133,12 @@ def snapshot_for(run_id: str = "review-123") -> Any:
     )
 
 
-def test_migration_upgrades_empty_database_and_downgrades_one_step(tmp_path: Path) -> None:
-    database = tmp_path / "migrations.db"
+def test_migration_upgrades_empty_database_and_downgrades_one_step(database_url: str) -> None:
     configuration = Config(str(API_DIRECTORY / "alembic.ini"))
-    configuration.set_main_option("sqlalchemy.url", f"sqlite:///{database.as_posix()}")
+    configuration.set_main_option("sqlalchemy.url", database_url)
 
     command.upgrade(configuration, "head")
-    migrated_engine = create_database_engine(f"sqlite:///{database.as_posix()}")
+    migrated_engine = create_database_engine(database_url)
     database_inspector = inspect(migrated_engine)
     expected_tables = {
         "companies",
@@ -173,7 +172,7 @@ def test_migration_upgrades_empty_database_and_downgrades_one_step(tmp_path: Pat
     command.check(configuration)
 
     command.downgrade(configuration, "base")
-    downgraded_engine = create_database_engine(f"sqlite:///{database.as_posix()}")
+    downgraded_engine = create_database_engine(database_url)
     assert expected_tables.isdisjoint(inspect(downgraded_engine).get_table_names())
     downgraded_engine.dispose()
 

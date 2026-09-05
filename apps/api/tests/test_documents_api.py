@@ -37,8 +37,7 @@ def docx_bytes() -> bytes:
 
 
 @pytest.fixture
-def upload_settings(tmp_path: Path) -> Settings:
-    database_url = f"sqlite:///{(tmp_path / 'upload.db').as_posix()}"
+def upload_settings(tmp_path: Path, database_url: str) -> Settings:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     engine.dispose()
@@ -396,7 +395,7 @@ async def test_deleting_a_document_twice_is_not_an_error_for_the_second_caller(
 
 
 @pytest.mark.anyio
-async def test_document_under_review_is_not_deleted(upload_settings: Settings) -> None:
+async def test_document_under_review_is_not_deleted(upload_settings: Settings, database_url: str) -> None:
     """Пока проверка не завершилась, воркер читает файл — сносить его нельзя."""
 
     app = create_app(upload_settings)
@@ -536,7 +535,7 @@ async def test_delete_marks_the_row_before_removing_the_file(
     assert not list(upload_settings.documents_dir.rglob("*.txt"))
 
 
-def test_delete_and_create_review_do_not_interleave(upload_settings: Settings) -> None:
+def test_delete_and_create_review_do_not_interleave(upload_settings: Settings, database_url: str) -> None:
     """Конкурентный сценарий: удаление и постановка проверки в двух потоках.
 
     Запрещённое состояние — задача в очереди на документ, файла которого уже

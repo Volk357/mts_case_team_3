@@ -28,13 +28,23 @@ from docreview_api.services import (
     RunWorkspaceManager,
 )
 
-QUEUED_AT = datetime(2026, 9, 3, 16, 0, tzinfo=UTC)
-FINISHED_AT = QUEUED_AT + timedelta(seconds=10)
+def moments() -> tuple[datetime, datetime]:
+    """Метки постановки и завершения, отсчитанные от «сейчас».
+
+    Не модульные константы: `updated_at` проставляет сама БД при UPDATE, а
+    переход с меткой из прошлого отвергается инвариантом «время не идёт
+    назад». Константа, вычисленная при импорте, успевает устареть за время
+    полного прогона — тест падал только в общем запуске, а по отдельности
+    проходил.
+    """
+
+    queued = datetime.now(UTC) - timedelta(seconds=1)
+    return queued, queued + timedelta(seconds=30)
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    database_engine = create_database_engine(f"sqlite:///{(tmp_path / 'control.db').as_posix()}")
+def engine(tmp_path: Path, database_url: str) -> Engine:
+    database_engine = create_database_engine(database_url)
     Base.metadata.create_all(database_engine)
     try:
         yield database_engine
@@ -47,7 +57,7 @@ def sessions(engine: Engine) -> sessionmaker[Session]:
     return create_session_factory(engine)
 
 
-def seed_job(sessions: sessionmaker[Session], *, run_id: str) -> UUID:
+def seed_job(sessions: sessionmaker[Session], *, run_id: str, queued_at: datetime) -> UUID:
     with sessions.begin() as session:
         company = CompanyModel(slug=run_id, display_name="Test")
         session.add(company)
@@ -75,9 +85,9 @@ def seed_job(sessions: sessionmaker[Session], *, run_id: str) -> UUID:
             document_id=document.id,
             review_pack_reference_id=review_pack.id,
             status=ReviewJobStatus.QUEUED,
-            queued_at=QUEUED_AT,
-            created_at=QUEUED_AT,
-            updated_at=QUEUED_AT,
+            queued_at=queued_at,
+            created_at=queued_at,
+            updated_at=queued_at,
         )
         ReviewJobRepository(session).add(job)
         return job.id
@@ -108,8 +118,9 @@ def prepare_slow_process(
 async def test_timeout_terminates_process_and_persists_timed_out(
     tmp_path: Path, sessions: sessionmaker[Session]
 ) -> None:
+    QUEUED_AT, FINISHED_AT = moments()
     run_id = "review-timeout"
-    job_id = seed_job(sessions, run_id=run_id)
+    job_id = seed_job(sessions, run_id=run_id, queued_at=QUEUED_AT)
     runner, request = prepare_slow_process(tmp_path, run_id=run_id)
     process = await runner.start(request)
     with sessions.begin() as session:
@@ -138,8 +149,9 @@ async def test_timeout_terminates_process_and_persists_timed_out(
 async def test_cancellation_is_persisted_before_running_process_stops(
     tmp_path: Path, sessions: sessionmaker[Session]
 ) -> None:
+    QUEUED_AT, FINISHED_AT = moments()
     run_id = "review-cancel"
-    job_id = seed_job(sessions, run_id=run_id)
+    job_id = seed_job(sessions, run_id=run_id, queued_at=QUEUED_AT)
     runner, request = prepare_slow_process(tmp_path, run_id=run_id)
     process = await runner.start(request)
     with sessions.begin() as session:
@@ -167,7 +179,8 @@ async def test_cancellation_is_persisted_before_running_process_stops(
 async def test_queued_job_can_be_cancelled_without_a_process(
     sessions: sessionmaker[Session],
 ) -> None:
-    job_id = seed_job(sessions, run_id="review-queued-cancel")
+    QUEUED_AT, FINISHED_AT = moments()
+    job_id = seed_job(sessions, run_id="review-queued-cancel", queued_at=QUEUED_AT)
     control = ReviewJobControlService(sessions, clock=lambda: FINISHED_AT)
 
     assert await control.request_cancellation(job_id) is None
@@ -181,7 +194,8 @@ async def test_queued_job_can_be_cancelled_without_a_process(
 
 
 def test_cancelled_job_rejects_late_completed_result(sessions: sessionmaker[Session]) -> None:
-    job_id = seed_job(sessions, run_id="review-late")
+    QUEUED_AT, FINISHED_AT = moments()
+    job_id = seed_job(sessions, run_id="review-late", queued_at=QUEUED_AT)
     control = ReviewJobControlService(sessions, clock=lambda: FINISHED_AT)
     control.mark_cancelled(job_id)
     example_path = Path(__file__).resolve().parents[3] / "contracts" / "examples" / "success.json"

@@ -21,10 +21,10 @@ from docreview_api.main import create_app
 
 
 @pytest.fixture
-def feedback_resources(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
+def feedback_resources(tmp_path: Path, database_url: str) -> tuple[Settings, UUID, UUID]:
     settings = Settings(
         environment="test",
-        database_url=f"sqlite:///{(tmp_path / 'feedback.db').as_posix()}",
+        database_url=database_url,
         _env_file=None,
     )
     engine = create_database_engine(settings.database_url)

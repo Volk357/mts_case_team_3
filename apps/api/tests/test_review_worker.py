@@ -75,9 +75,9 @@ def seed_queued_job(
 
 
 def build_test_worker(
-    tmp_path: Path, scenario: str
+    tmp_path: Path, scenario: str, database_url: str
 ) -> tuple[ReviewJobWorker, sessionmaker[Session], UUID]:
-    engine = create_database_engine(f"sqlite:///{(tmp_path / 'worker.db').as_posix()}")
+    engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
     documents_root = tmp_path / "documents"
@@ -115,8 +115,8 @@ def build_test_worker(
 
 @pytest.mark.parametrize("scenario", ["empty", "standard-12", "maximum-20"])
 @pytest.mark.anyio
-async def test_worker_completes_all_success_scenarios(tmp_path: Path, scenario: str) -> None:
-    worker, sessions, job_id = build_test_worker(tmp_path, scenario)
+async def test_worker_completes_all_success_scenarios(tmp_path: Path, scenario: str, database_url: str) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, scenario, database_url)
 
     assert await worker.run_once()
 
@@ -146,8 +146,9 @@ async def test_worker_terminalizes_every_failure_scenario(
     scenario: str,
     status: ReviewJobStatus,
     error_code: str,
+    database_url: str,
 ) -> None:
-    worker, sessions, job_id = build_test_worker(tmp_path, scenario)
+    worker, sessions, job_id = build_test_worker(tmp_path, scenario, database_url)
 
     assert await worker.run_once()
 
@@ -167,8 +168,10 @@ class FailingExecutor:
 
 
 @pytest.mark.anyio
-async def test_worker_survives_executor_error_and_keeps_diagnostic_internal(tmp_path: Path) -> None:
-    engine = create_database_engine(f"sqlite:///{(tmp_path / 'failure.db').as_posix()}")
+async def test_worker_survives_executor_error_and_keeps_diagnostic_internal(
+    tmp_path: Path, database_url: str
+) -> None:
+    engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
     job_id = seed_queued_job(sessions, tmp_path / "documents", tmp_path / "packs")
@@ -192,8 +195,8 @@ async def test_worker_survives_executor_error_and_keeps_diagnostic_internal(tmp_
 
 
 @pytest.mark.anyio
-async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_path: Path) -> None:
-    worker, sessions, job_id = build_test_worker(tmp_path, "timeout")
+async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_path: Path, database_url: str) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "timeout", database_url)
     task = asyncio.create_task(worker.run_once())
     for _ in range(100):
         with sessions() as session:
@@ -216,8 +219,8 @@ async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_new_worker_processes_job_left_queued_before_restart(tmp_path: Path) -> None:
-    worker, sessions, job_id = build_test_worker(tmp_path, "empty")
+async def test_new_worker_processes_job_left_queued_before_restart(tmp_path: Path, database_url: str) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "empty", database_url)
     del worker
 
     queue = DatabaseReviewJobQueue(sessions)

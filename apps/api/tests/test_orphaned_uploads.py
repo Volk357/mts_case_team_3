@@ -22,7 +22,7 @@ def touch_at(path: Path, content: bytes, at: datetime) -> None:
     os.utime(path, (timestamp, timestamp))
 
 
-def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path: Path) -> None:
+def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path: Path, database_url: str) -> None:
     now = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
     old = now - timedelta(hours=25)
     recent = now - timedelta(hours=1)
@@ -47,8 +47,6 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
         (unrelated, old),
     ):
         touch_at(path, b"test", moment)
-
-    database_url = f"sqlite:///{(tmp_path / 'cleanup.db').as_posix()}"
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
@@ -88,8 +86,8 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
     engine.dispose()
 
 
-def test_cleanup_requires_utc_and_positive_grace_period(tmp_path: Path) -> None:
-    engine = create_database_engine("sqlite:///:memory:")
+def test_cleanup_requires_utc_and_positive_grace_period(tmp_path: Path, database_url: str) -> None:
+    engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     cleaner = OrphanedUploadCleaner(
         tmp_path / "documents",
@@ -113,8 +111,8 @@ def test_cleanup_cli_outputs_counts_without_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
+    database_url: str,
 ) -> None:
-    database_url = f"sqlite:///{(tmp_path / 'cli.db').as_posix()}"
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     engine.dispose()

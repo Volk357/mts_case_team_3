@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     environment: Environment = "development"
     api_prefix: Literal["/api"] = "/api"
     log_level: LogLevel = "INFO"
-    database_url: str = f"sqlite:///{(REPOSITORY_DIRECTORY / 'data' / 'docreview.db').as_posix()}"
+    database_url: str = "postgresql+psycopg://docreview@localhost/docreview"
     documents_dir: Path = REPOSITORY_DIRECTORY / "data" / "documents"
     runs_dir: Path = REPOSITORY_DIRECTORY / "data" / "runs"
     artifacts_dir: Path = REPOSITORY_DIRECTORY / "data" / "artifacts"
@@ -80,19 +80,19 @@ class Settings(BaseSettings):
     @field_validator("database_url")
     @classmethod
     def validate_database_url(cls, value: str) -> str:
-        """Allow explicit SQLAlchemy URLs and resolve relative SQLite files."""
+        """Только PostgreSQL.
 
-        if value == "sqlite:///:memory:":
-            return value
-        prefix = "sqlite:///"
-        if value.startswith(prefix):
-            database_path = Path(value.removeprefix(prefix)).expanduser()
-            if not database_path.is_absolute():
-                database_path = (REPOSITORY_DIRECTORY / database_path).resolve()
-            return f"{prefix}{database_path.as_posix()}"
+        SQLite сознательно не поддерживается: приложение рассчитано на
+        параллельных писателей (API и воркер пишут одновременно), а у SQLite
+        для этого нет ни блокировки строки, ни `SELECT ... FOR UPDATE` — их
+        приходилось бы подменять сериализацией всех транзакций. Держать в
+        продукте вторую СУБД с другой моделью параллелизма означало бы
+        тестировать одно, а поставлять другое.
+        """
+
         if value.startswith(("postgresql://", "postgresql+psycopg://")):
             return value
-        raise ValueError("Database URL must use SQLite or PostgreSQL")
+        raise ValueError("Database URL must use PostgreSQL")
 
     @field_validator(
         "documents_dir",

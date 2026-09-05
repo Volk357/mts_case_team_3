@@ -5,10 +5,10 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from docreview_api.db.models import FindingModel, ReviewJobModel
+from docreview_api.db.models import DocumentModel, FindingModel, ReviewJobModel
 from docreview_api.models.review_job_state import ReviewJobStatus
 
 
@@ -62,6 +62,24 @@ def _detection_layer(detected_by: list[str]) -> DetectionLayer | None:
 
 
 @dataclass(frozen=True, slots=True)
+class ReviewListItem:
+    """Одна строка истории проверок.
+
+    Отдельный тип, а не ReviewSnapshot: списку нужно имя документа и число
+    замечаний, чтобы человек узнал свою проверку, но не нужны поля ошибки
+    целиком — в списке хватает статуса.
+    """
+
+    id: UUID
+    document_id: UUID
+    document_filename: str
+    status: ReviewJobStatus
+    queued_at: datetime
+    finished_at: datetime | None
+    findings_count: int
+
+
+@dataclass(frozen=True, slots=True)
 class FindingSnapshot:
     id: UUID
     ordinal: int
@@ -92,6 +110,42 @@ class ReviewQueryService:
             if job is None:
                 raise ReviewUnavailableError
             return self._snapshot(job)
+
+    def list_recent(self, *, company_id: UUID, limit: int = 50) -> tuple[ReviewListItem, ...]:
+        """Последние проверки компании, новые сверху.
+
+        Число замечаний считаем подзапросом, а не длиной связи: у неудачных
+        проверок замечаний нет вовсе, и подзапрос честно даёт ноль вместо
+        отсутствующей строки.
+        """
+        findings_count = (
+            select(func.count(FindingModel.id))
+            .where(FindingModel.review_job_id == ReviewJobModel.id)
+            .correlate(ReviewJobModel)
+            .scalar_subquery()
+        )
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(ReviewJobModel, DocumentModel.original_filename, findings_count)
+                .join(DocumentModel, DocumentModel.id == ReviewJobModel.document_id)
+                .where(ReviewJobModel.company_id == company_id)
+                .order_by(ReviewJobModel.queued_at.desc())
+                .limit(limit)
+            ).all()
+            return tuple(
+                ReviewListItem(
+                    id=job.id,
+                    document_id=job.document_id,
+                    document_filename=filename,
+                    status=job.status,
+                    queued_at=self._queued_at(job),
+                    finished_at=_utc(
+                        job.completed_at or job.failed_at or job.timed_out_at or job.cancelled_at
+                    ),
+                    findings_count=count,
+                )
+                for job, filename, count in rows
+            )
 
     def list_findings(self, review_id: UUID, *, company_id: UUID) -> tuple[FindingSnapshot, ...]:
         with self._session_factory() as session:
@@ -126,6 +180,12 @@ class ReviewQueryService:
                 )
                 for item in findings
             )
+
+    @staticmethod
+    def _queued_at(job: ReviewJobModel) -> datetime:
+        queued_at = _utc(job.queued_at)
+        assert queued_at is not None
+        return queued_at
 
     @staticmethod
     def _snapshot(job: ReviewJobModel) -> ReviewSnapshot:

@@ -53,6 +53,26 @@ export interface ReviewFindings {
   total: number;
 }
 
+/** Строка истории проверок: имя файла нужно, чтобы узнать свою проверку. */
+export interface ReviewListItem {
+  review_id: string;
+  document_id: string;
+  document_filename: string;
+  status: ReviewStatus;
+  queued_at: string;
+  finished_at: string | null;
+  findings_count: number;
+}
+
+export interface ReviewList {
+  items: ReviewListItem[];
+  total: number;
+}
+
+export function getReviews(signal?: AbortSignal) {
+  return requestJson<ReviewList>("/api/reviews", { signal });
+}
+
 export function createReview(
   documentId: string,
   reviewPackId: string,

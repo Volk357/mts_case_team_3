@@ -269,3 +269,144 @@ def test_detection_layer_folds_core_check_names_into_a_closed_set(
     """Слой выводится из внутренних имён проверок, но сами имена наружу не идут."""
 
     assert _detection_layer(detected_by) == expected
+
+
+@pytest.mark.anyio
+async def test_list_reviews_returns_history_newest_first(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    """История проверок: без неё человек, загрузивший второй документ,
+    теряет ссылку на первый. В списке должно быть имя файла — по нему
+    проверка и узнаётся, идентификатор для этого бесполезен."""
+
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        second = DocumentModel(
+            company_id=settings.default_company_id,
+            original_filename="Витрина агрегата.docx",
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            size_bytes=20,
+            sha256="b" * 64,
+            storage_key="local/second.docx",
+        )
+        session.add(second)
+        session.flush()
+        second_id = second.id
+
+        older = ReviewJobModel(
+            run_id="review-older",
+            company_id=settings.default_company_id,
+            document_id=document_id,
+            review_pack_reference_id=pack_id,
+            status=ReviewJobStatus.COMPLETED,
+            queued_at=datetime(2026, 9, 4, 10, 0, tzinfo=UTC),
+            completed_at=datetime(2026, 9, 4, 10, 1, tzinfo=UTC),
+        )
+        newer = ReviewJobModel(
+            run_id="review-newer",
+            company_id=settings.default_company_id,
+            document_id=second_id,
+            review_pack_reference_id=pack_id,
+            status=ReviewJobStatus.FAILED,
+            queued_at=datetime(2026, 9, 5, 10, 0, tzinfo=UTC),
+            failed_at=datetime(2026, 9, 5, 10, 0, 2, tzinfo=UTC),
+        )
+        session.add_all([older, newer])
+        session.flush()
+        older_id = older.id
+        session.add(
+            FindingModel(
+                company_id=settings.default_company_id,
+                review_job_id=older_id,
+                core_finding_id="f-1",
+                ordinal=1,
+                defect_id="NO_SCHEDULE",
+                severity="high",
+                confidence=0.9,
+                location={"section_path": ["1"], "block_id": "b1"},
+                quote="цитата",
+                problem="описание",
+                clarification="что уточнить",
+                detected_by=["deterministic"],
+            )
+        )
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        listed = await client.get("/api/reviews")
+
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["total"] == 2
+    assert [item["document_filename"] for item in body["items"]] == [
+        "Витрина агрегата.docx",
+        "requirements.pdf",
+    ]
+
+    newest, oldest = body["items"]
+    # У неудачной проверки замечаний нет вовсе: подзапрос обязан дать ноль,
+    # а не потерять строку целиком.
+    assert newest["status"] == "failed"
+    assert newest["findings_count"] == 0
+    assert oldest["status"] == "completed"
+    assert oldest["findings_count"] == 1
+    assert oldest["queued_at"].endswith("Z")
+    assert set(oldest) == {
+        "review_id",
+        "document_id",
+        "document_filename",
+        "status",
+        "queued_at",
+        "finished_at",
+        "findings_count",
+    }
+
+
+@pytest.mark.anyio
+async def test_list_reviews_hides_other_tenants(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    """Список обязан быть tenant-safe так же, как чтение одной проверки."""
+
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        stranger = CompanyModel(slug="stranger", display_name="Stranger")
+        session.add(stranger)
+        session.flush()
+        foreign_document = DocumentModel(
+            company_id=stranger.id,
+            original_filename="Чужой документ.docx",
+            media_type="application/octet-stream",
+            size_bytes=10,
+            sha256="c" * 64,
+            storage_key="local/foreign.docx",
+        )
+        session.add(foreign_document)
+        session.flush()
+        session.add(
+            ReviewJobModel(
+                run_id="review-foreign",
+                company_id=stranger.id,
+                document_id=foreign_document.id,
+                review_pack_reference_id=pack_id,
+                status=ReviewJobStatus.COMPLETED,
+                queued_at=datetime(2026, 9, 5, 12, 0, tzinfo=UTC),
+                completed_at=datetime(2026, 9, 5, 12, 1, tzinfo=UTC),
+            )
+        )
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        listed = await client.get("/api/reviews")
+
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 0
+    assert "Чужой документ.docx" not in listed.text

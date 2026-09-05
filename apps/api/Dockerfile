@@ -63,6 +63,7 @@ COPY apps/api/alembic.ini /app/apps/api/alembic.ini
 COPY apps/api/alembic /app/apps/api/alembic
 COPY apps/api/scripts/container_entrypoint.py /app/bin/container_entrypoint.py
 COPY apps/api/scripts/container_healthcheck.py /app/bin/container_healthcheck.py
+COPY apps/api/scripts/seed_demo.py /app/bin/seed_demo.py
 COPY contracts/review-result.schema.json /app/contracts/review-result.schema.json
 COPY review-packs /app/review-packs
 

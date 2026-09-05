@@ -26,6 +26,7 @@ COMMANDS = {
         "upgrade",
         "head",
     ),
+    "seed-demo": ("python", "/app/bin/seed_demo.py"),
 }
 
 

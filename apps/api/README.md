@@ -41,6 +41,7 @@ docker build --file apps/api/Dockerfile --tag docreview-backend:local .
 API:        api
 Worker:     worker
 Миграции:   migrate
+Demo seed:  seed-demo
 ```
 
 Для worker задаётся `DOCREVIEW_CONTAINER_ROLE=worker`. Оба процесса работают
@@ -51,6 +52,31 @@ model config и секреты в образ не копируются.
 Healthcheck API вызывает `/api/health` и требует готовности базы и worker.
 Healthcheck worker проверяет свежесть файла `DOCREVIEW_WORKER_HEARTBEAT_PATH`.
 При запуске двух ролей они должны видеть общий каталог `/app/data`.
+
+## PostgreSQL через Compose
+
+Создайте локальный `.env` из корневого `.env.example` и заполните
+`DOCREVIEW_POSTGRES_PASSWORD` длинным случайным URL-safe значением. Пароля по
+умолчанию нет: без него Compose завершится до создания контейнера.
+
+```powershell
+docker compose up --build postgres migrate
+```
+
+PostgreSQL хранит данные в именованном volume `docreview-postgres-data`, проверяет
+готовность через `pg_isready`, а `migrate` запускается только после успешного
+healthcheck базы. Будущие API и worker будут зависеть от успешного завершения
+`migrate`, а не только от открытого порта PostgreSQL.
+
+Миграции не создают демонстрационные записи. Идемпотентный demo seed запускается
+отдельно и защищён профилем и явным флагом:
+
+```powershell
+docker compose --profile demo run --rm seed-demo
+```
+
+Команда откажется работать, если окружение не `demo` или не установлен
+`DOCREVIEW_ALLOW_DEMO_SEED=true`.
 
 
 Корневой `npm run dev` запускает API, worker и web-приложение вместе. Worker

@@ -1,0 +1,66 @@
+name: docreview
+
+x-database-environment: &database-environment
+  DOCREVIEW_DATABASE_URL: >-
+    postgresql+psycopg://${DOCREVIEW_POSTGRES_USER:-docreview}:${DOCREVIEW_POSTGRES_PASSWORD:?Set DOCREVIEW_POSTGRES_PASSWORD in .env}@postgres:5432/${DOCREVIEW_POSTGRES_DB:-docreview}
+
+# API and worker will reuse this dependency set when orchestration is added in
+# NIK-11-06. It prevents either process from observing a partially migrated DB.
+x-backend-depends-on: &backend-depends-on
+  postgres:
+    condition: service_healthy
+  migrate:
+    condition: service_completed_successfully
+
+services:
+  postgres:
+    image: postgres:17.6-alpine
+    environment:
+      POSTGRES_DB: ${DOCREVIEW_POSTGRES_DB:-docreview}
+      POSTGRES_USER: ${DOCREVIEW_POSTGRES_USER:-docreview}
+      POSTGRES_PASSWORD: ${DOCREVIEW_POSTGRES_PASSWORD:?Set DOCREVIEW_POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["migrate"]
+    environment:
+      <<: *database-environment
+      DOCREVIEW_ENVIRONMENT: production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  seed-demo:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["seed-demo"]
+    profiles: ["demo"]
+    environment:
+      <<: *database-environment
+      DOCREVIEW_ENVIRONMENT: demo
+      DOCREVIEW_ALLOW_DEMO_SEED: "true"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+volumes:
+  postgres_data:
+    name: ${DOCREVIEW_POSTGRES_VOLUME:-docreview-postgres-data}

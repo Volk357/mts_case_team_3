@@ -1,0 +1,24 @@
+{
+  "profile": "real-core-cli-smoke-1.0",
+  "analysis_core": "0.2.0",
+  "schema": "1.0",
+  "cases": [
+    {
+      "name": "docx-completed",
+      "input": "generated UTF-8 DOCX",
+      "exit_code": 0,
+      "stdout": "UTF-8 progress log",
+      "stderr": "empty",
+      "result": "docx-result.json",
+      "artifacts": "docx-analysis-debug.json"
+    },
+    {
+      "name": "pdf-unsupported",
+      "input": "minimal PDF signature",
+      "exit_code": 3,
+      "stdout": "empty",
+      "stderr": "empty",
+      "result": "pdf-result.json"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "run_id": "smoke-docx-utf8",
+  "counters": {
+    "found_raw": 0,
+    "verified": 0,
+    "rejected_count": 0,
+    "before_dedupe": 0,
+    "merged_away": 0,
+    "capped_away": 0,
+    "severity_fixed": 0
+  },
+  "reject_reasons": {},
+  "formal_findings": 1,
+  "rejected": [],
+  "capped": []
+}

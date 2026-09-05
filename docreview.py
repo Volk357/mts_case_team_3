@@ -642,6 +642,14 @@ def _write(path, obj):
         json.dump(obj, sys.stdout, ensure_ascii=False, indent=2)
 
 
+def _configure_utf8_streams():
+    """Keep the CLI process contract UTF-8 even on legacy Windows consoles."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="strict")
+
+
 def cmd_version(_args):
     """Print stable machine-readable build metadata for delivery acceptance."""
     json.dump(
@@ -702,6 +710,7 @@ def cmd_validate_pack(args):
 
 
 def main(argv=None):
+    _configure_utf8_streams()
     ap = argparse.ArgumentParser(prog="docreview")
     sub = ap.add_subparsers(dest="cmd", required=True)
     sub.add_parser("version", help="показать версию ядра и JSON-схемы")

@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0",
+  "run_id": "smoke-pdf-unsupported",
+  "status": "failed",
+  "error": {
+    "code": "UNSUPPORTED_DOCUMENT",
+    "stage": "read",
+    "message": "Файл в формате pdf: ядро принимает .docx и извлечённый текст (txt/md). Для остальных форматов извлеките текст на стороне приложения.",
+    "retriable": false
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": "1.0",
+  "run_id": "smoke-docx-utf8",
+  "status": "completed",
+  "document": {
+    "filename": "требования.docx",
+    "document_type": "docx"
+  },
+  "engine": {
+    "version": "0.2.0"
+  },
+  "review_pack": {
+    "id": "mts-net",
+    "version": "0.2"
+  },
+  "model": {
+    "name": "smoke-empty-model",
+    "prompt_versions": {
+      "fragment": "dict2",
+      "global": "global"
+    }
+  },
+  "findings": [
+    {
+      "id": "f-000",
+      "defect_id": "TEMPLATE_SECTION_MISSING",
+      "severity": "high",
+      "quote": "Общие сведения",
+      "detected_by": [
+        "deterministic"
+      ]
+    }
+  ],
+  "summary": {
+    "total_candidates": 1,
+    "verified_candidates": 1,
+    "returned_findings": 1,
+    "critical": 0,
+    "high": 1,
+    "medium": 0,
+    "low": 0
+  },
+  "warning_codes": [
+    "NO_EXTERNAL_LINKS"
+  ]
+}

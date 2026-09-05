@@ -28,6 +28,13 @@ run(venvPython, [
   "-m",
   "pip",
   "install",
+  "-r",
+  "requirements-core.lock",
+], { cwd: repositoryDirectory });
+run(venvPython, [
+  "-m",
+  "pip",
+  "install",
   "--no-deps",
   "--no-build-isolation",
   "-e",

@@ -180,7 +180,111 @@ def test_docx_without_links_warns():
     assert ext == "docx" and [w["code"] for w in warn] == ["NO_EXTERNAL_LINKS"]
 
 
-def test_pdf_and_ole_rejected():
+def _minimal_pdf(text=b"Hello Vitrina"):
+    """Собирает валидный PDF с одной страницей и текстовым слоем.
+
+    Генератор нужен прямо здесь: без него тест зависел бы от внешнего файла,
+    а проверить надо именно круг «есть текст в PDF — извлекли текст».
+    """
+    stream = b"BT /F1 12 Tf 20 100 Td (" + text + b") Tj ET"
+    objs = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Contents 4 0 R"
+        b"/Resources<</Font<</F1 5 0 R>>>>>>",
+        b"<</Length " + str(len(stream)).encode() + b">>\nstream\n" + stream + b"\nendstream",
+        b"<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += str(i).encode() + b" 0 obj\n" + body + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 " + str(len(objs) + 1).encode() + b"\n0000000000 65535 f \n"
+    for off in offsets:
+        out += ("%010d 00000 n \n" % off).encode()
+    out += (b"trailer\n<</Size " + str(len(objs) + 1).encode() + b"/Root 1 0 R>>\nstartxref\n"
+            + str(xref).encode() + b"\n%%EOF\n")
+    return bytes(out)
+
+
+def test_pdf_with_text_is_read():
+    """PDF — заявленный формат: текст должен извлекаться, а не отбиваться."""
+    text, kind, warn, digest = _read_document(_tmp("d.pdf", _minimal_pdf()))
+    assert "Hello Vitrina" in text, text
+    assert kind == "pdf", kind
+    # Про таблицы предупреждаем всегда: PDF их разметку не хранит вовсе.
+    codes = {w["code"] for w in warn}
+    assert "PDF_NO_TABLE_STRUCTURE" in codes, warn
+    assert len(digest) == 64
+
+
+def test_pdf_without_text_layer_is_rejected_with_reason():
+    """Скан молча дал бы «замечаний нет» — это обманывает сильнее отказа."""
+    try:
+        _read_document(_tmp("scan.pdf", _minimal_pdf(b" ")))
+        raise AssertionError("скан должен быть отбит")
+    except UnsupportedBinary as e:
+        assert "текстового слоя" in str(e), str(e)
+
+
+def test_text_encodings_with_bom_are_read():
+    """UTF-16/32 полны NUL по устройству кодировки. Без разбора BOM обычный
+    .txt из «Блокнота» отбивался бы как двоичный, а формат заявлен рабочим."""
+    for encoding in ("utf-8", "utf-8-sig", "utf-16", "utf-32"):
+        body = "Описание витрины\nОбновление: ежемесячно"
+        text, kind, _warn, _digest = _read_document(
+            _tmp("d.txt", body.encode(encoding)))
+        assert text.strip().startswith("Описание витрины"), (encoding, text[:40])
+        assert kind == "txt", (encoding, kind)
+
+
+def test_long_utf16_text_survives_probe_boundary():
+    """Окно проверки может оборваться посреди символа — это не повод отказать."""
+    body = ("Описание витрины. " * 600).encode("utf-16")
+    text, kind, _warn, _digest = _read_document(_tmp("long.txt", body))
+    assert kind == "txt"
+    assert text.strip().startswith("Описание витрины")
+
+
+def test_bom_does_not_make_binary_a_text():
+    """BOM объявляет кодировку, но не доказывает, что дальше текст.
+    Двоичную нагрузку можно пометить любым BOM, и без проверки содержимого
+    она декодировалась бы в бессмыслицу, по которой пошёл бы анализ."""
+    for bom, payload in ((b"\xff\xfe", bytes(range(256)) * 4),
+                         (b"\xef\xbb\xbf", b"\x01\x02\x03\x04" * 200),
+                         # Двоичный хвост после валидного текста: проверка
+                         # обязана смотреть весь буфер, а не только начало.
+                         (b"\xef\xbb\xbf", b"normal text " * 100 + b"\xff" * 100)):
+        try:
+            _read_document(_tmp("fake.txt", bom + payload))
+            raise AssertionError("двоичное с BOM должно быть отбито")
+        except UnsupportedBinary:
+            pass
+
+
+def test_pdf_reports_unreadable_pages():
+    """Потерянная страница не должна молча превращаться в неполный анализ,
+    выданный за полный."""
+    import pdf_text
+
+    real = pdf_text.extract
+
+    def broken(path):
+        text, report = real(path)
+        return text, {"pages": 3, "unreadable_pages": 2}
+
+    pdf_text.extract = broken
+    try:
+        _text, _kind, warn, _digest = _read_document(_tmp("d.pdf", _minimal_pdf()))
+    finally:
+        pdf_text.extract = real
+    codes = {w["code"] for w in warn}
+    assert "PDF_PAGES_UNREADABLE" in codes, warn
+
+
+def test_broken_pdf_and_ole_rejected():
     for name, head in (("d.pdf", b"%PDF-1.7\n"), ("d.doc", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")):
         try:
             _read_document(_tmp(name, head + b"\x00\x01binary"))
@@ -618,7 +722,13 @@ if __name__ == "__main__":
     test_formal_findings_present_in_text_pass_untouched()
     test_zip_that_is_not_docx_still_rejected()
     test_docx_without_links_warns()
-    test_pdf_and_ole_rejected()
+    test_pdf_with_text_is_read()
+    test_pdf_without_text_layer_is_rejected_with_reason()
+    test_text_encodings_with_bom_are_read()
+    test_long_utf16_text_survives_probe_boundary()
+    test_bom_does_not_make_binary_a_text()
+    test_pdf_reports_unreadable_pages()
+    test_broken_pdf_and_ole_rejected()
     test_binary_renamed_to_txt_rejected()
     test_txt_still_read_without_warnings()
     test_extracted_text_under_docx_name_still_works_with_warning()

@@ -1,4 +1,10 @@
-import { ApiError, authHeaders, parseApiError, requestJson } from "@/api/client";
+import {
+  ApiError,
+  authHeaders,
+  parseApiError,
+  requestJson,
+  requestNoContent,
+} from "@/api/client";
 import { appConfig } from "@/config";
 
 export interface DocumentUploadResponse {
@@ -14,6 +20,14 @@ export interface DocumentResponse extends DocumentUploadResponse {
 
 export function getDocument(documentId: string, signal?: AbortSignal) {
   return requestJson<DocumentResponse>(`/api/documents/${encodeURIComponent(documentId)}`, {
+    signal,
+  });
+}
+
+/** Удаляет загруженный файл. Замечания и оценки по нему остаются в базе. */
+export function deleteDocument(documentId: string, signal?: AbortSignal) {
+  return requestNoContent(`/api/documents/${encodeURIComponent(documentId)}`, {
+    method: "DELETE",
     signal,
   });
 }

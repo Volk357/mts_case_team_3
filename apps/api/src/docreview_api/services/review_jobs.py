@@ -217,7 +217,11 @@ class ReviewJobService:
         if company is None or not company.is_active:
             raise ReviewJobResourceUnavailableError("company is unavailable")
 
-        document = self._session.get(DocumentModel, document_id)
+        # Строка документа блокируется на время проверки его пригодности:
+        # иначе удаление файла и постановка задачи расходятся по разным
+        # транзакциям, обе видят допустимое состояние, и в очередь попадает
+        # задача на документ, исходника которого уже нет.
+        document = self._session.get(DocumentModel, document_id, with_for_update=True)
         if document is None or document.company_id != company_id or document.deleted_at is not None:
             raise ReviewJobDocumentUnavailableError("document is unavailable")
 

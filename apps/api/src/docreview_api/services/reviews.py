@@ -128,7 +128,13 @@ class ReviewQueryService:
             rows = session.execute(
                 select(ReviewJobModel, DocumentModel.original_filename, findings_count)
                 .join(DocumentModel, DocumentModel.id == ReviewJobModel.document_id)
-                .where(ReviewJobModel.company_id == company_id)
+                .where(
+                    ReviewJobModel.company_id == company_id,
+                    # Документ удалили — проверка уходит из истории вместе с ним.
+                    # Замечания и оценки при этом остаются в базе: это разметка,
+                    # а не копия исходника.
+                    DocumentModel.deleted_at.is_(None),
+                )
                 .order_by(ReviewJobModel.queued_at.desc())
                 .limit(limit)
             ).all()

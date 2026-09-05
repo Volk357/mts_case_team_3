@@ -32,7 +32,26 @@ def create_database_engine(database_url: str, *, echo: bool = False) -> Engine:
         def enable_sqlite_foreign_keys(dbapi_connection: object, _: object) -> None:
             cursor = dbapi_connection.cursor()  # type: ignore[attr-defined]
             cursor.execute("PRAGMA foreign_keys=ON")
+            # Ждём освободившуюся блокировку вместо мгновенного «database is
+            # locked»: писателей мало, а отказ на ровном месте хуже ожидания.
+            cursor.execute("PRAGMA busy_timeout=5000")
             cursor.close()
+
+        @event.listens_for(engine, "begin")
+        def begin_sqlite_immediate(connection: object) -> None:
+            """Открывает транзакцию как BEGIN IMMEDIATE.
+
+            SQLite по умолчанию начинает транзакцию отложенно и берёт блокиров-
+            ку записи только на первом изменении, а `SELECT ... FOR UPDATE` он
+            игнорирует вовсе. Из-за этого две транзакции могут одновременно
+            прочитать «документ жив» и разойтись во взаимно противоречивые
+            решения: одна удалит файл, другая поставит проверку на него.
+            IMMEDIATE берёт блокировку записи сразу, то есть сериализует
+            писателей — ровно та гарантия, на которую опирается удаление
+            документа. Читатели не затронуты: транзакции только на чтение
+            блокировку записи не удерживают дольше своей области.
+            """
+            connection.exec_driver_sql("BEGIN IMMEDIATE")  # type: ignore[attr-defined]
 
     return engine
 

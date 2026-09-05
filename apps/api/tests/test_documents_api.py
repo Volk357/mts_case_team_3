@@ -1,4 +1,5 @@
 import hashlib
+from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
 from typing import Final
@@ -8,12 +9,19 @@ from zipfile import ZIP_DEFLATED, ZipFile
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import select
 
 from docreview_api.config import Settings
 from docreview_api.db.base import Base
-from docreview_api.db.models import DocumentModel
+from docreview_api.db.models import (
+    CompanyModel,
+    DocumentModel,
+    ReviewJobModel,
+    ReviewPackReferenceModel,
+)
 from docreview_api.db.session import create_database_engine, create_session_factory
 from docreview_api.main import create_app
+from docreview_api.models.review_job_state import ReviewJobStatus
 from docreview_api.repositories.database import DocumentRepository
 
 PDF_MEDIA_TYPE: Final = "application/pdf"
@@ -48,6 +56,7 @@ def upload_settings(tmp_path: Path) -> Settings:
     [
         ("Требования.pdf", PDF_MEDIA_TYPE, b"%PDF-1.7\ntest\n%%EOF"),
         ("Specification.docx", DOCX_MEDIA_TYPE, docx_bytes()),
+        ("Витрина.txt", "text/plain", "Описание витрины\nОбновление: ежемесячно".encode()),
     ],
 )
 async def test_upload_accepts_pdf_and_docx_multipart(
@@ -95,14 +104,14 @@ async def test_upload_rejects_an_unsupported_declared_media_type(
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(
             "/api/documents",
-            files={"document": ("notes.txt", b"text", "text/plain")},
+            files={"document": ("notes.rtf", b"{\\rtf1}", "application/rtf")},
         )
 
     assert response.status_code == 415
     assert response.json() == {
         "error": {
             "code": "DOCUMENT_TYPE_UNSUPPORTED",
-            "message": "Only PDF and DOCX documents are supported.",
+            "message": "Only PDF, DOCX and TXT documents are supported.",
             "details": [],
         }
     }
@@ -334,3 +343,323 @@ async def test_documents_get_openapi_uses_uuid_and_path_free_response(
         "media_type",
         "created_at",
     }
+
+
+@pytest.mark.anyio
+async def test_uploaded_document_can_be_deleted(upload_settings: Settings) -> None:
+    """Человек должен уметь убрать ранее загруженный файл сам.
+
+    Проверяем, что файл действительно исчезает с диска, а не только из выдачи:
+    ради этого удаление и делается.
+    """
+
+    app = create_app(upload_settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("Витрина.txt", "текст витрины".encode(), "text/plain")},
+        )
+        document_id = uploaded.json()["document_id"]
+
+        stored = list(upload_settings.documents_dir.rglob("*.txt"))
+        assert len(stored) == 1, stored
+
+        deleted = await client.delete(f"/api/documents/{document_id}")
+        missing = await client.get(f"/api/documents/{document_id}")
+
+    assert uploaded.status_code == 201
+    assert deleted.status_code == 204
+    assert missing.status_code == 404
+    assert not stored[0].exists()
+
+
+@pytest.mark.anyio
+async def test_deleting_a_document_twice_is_not_an_error_for_the_second_caller(
+    upload_settings: Settings,
+) -> None:
+    """Повторное удаление отвечает 404, а не падает: запись уже помечена."""
+
+    app = create_app(upload_settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("Витрина.txt", "текст".encode(), "text/plain")},
+        )
+        document_id = uploaded.json()["document_id"]
+        first = await client.delete(f"/api/documents/{document_id}")
+        second = await client.delete(f"/api/documents/{document_id}")
+
+    assert first.status_code == 204
+    assert second.status_code == 404
+
+
+@pytest.mark.anyio
+async def test_document_under_review_is_not_deleted(upload_settings: Settings) -> None:
+    """Пока проверка не завершилась, воркер читает файл — сносить его нельзя."""
+
+    app = create_app(upload_settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("Витрина.txt", "текст".encode(), "text/plain")},
+        )
+        document_id = uploaded.json()["document_id"]
+
+    engine = create_database_engine(upload_settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        company = session.scalar(select(CompanyModel))
+        if company is None:
+            company = CompanyModel(
+                id=upload_settings.default_company_id,
+                slug=upload_settings.default_company_slug,
+                display_name=upload_settings.default_company_name,
+            )
+            session.add(company)
+            session.flush()
+        pack = ReviewPackReferenceModel(
+            company_id=company.id,
+            pack_key="requirements",
+            version="1.0",
+            display_name="Requirements",
+            locator="review-packs/requirements/1.0",
+        )
+        session.add(pack)
+        session.flush()
+        session.add(
+            ReviewJobModel(
+                run_id="review-active",
+                company_id=company.id,
+                document_id=UUID(document_id),
+                review_pack_reference_id=pack.id,
+                status=ReviewJobStatus.RUNNING,
+                queued_at=datetime.now(UTC),
+            )
+        )
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        blocked = await client.delete(f"/api/documents/{document_id}")
+
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "DOCUMENT_BUSY"
+    assert list(upload_settings.documents_dir.rglob("*.txt"))
+
+
+@pytest.mark.anyio
+async def test_review_cannot_be_created_for_a_deleted_document(
+    upload_settings: Settings,
+) -> None:
+    """Гонка «удаляем файл ↔ ставим проверку» закрыта порядком операций.
+
+    Удаление сначала помечает документ и лишь потом стирает файл, поэтому
+    момента «файла нет, а ставить проверку ещё можно» не существует.
+    Проверяем следствие: после удаления постановка отвергается, а не создаёт
+    задачу, которая упадёт на чтении отсутствующего исходника.
+    """
+
+    app = create_app(upload_settings)
+
+    engine = create_database_engine(upload_settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        company = session.scalar(select(CompanyModel))
+        if company is None:
+            company = CompanyModel(
+                id=upload_settings.default_company_id,
+                slug=upload_settings.default_company_slug,
+                display_name=upload_settings.default_company_name,
+            )
+            session.add(company)
+            session.flush()
+        pack = ReviewPackReferenceModel(
+            company_id=company.id,
+            pack_key="requirements",
+            version="1.0",
+            display_name="Requirements",
+            locator="review-packs/requirements/1.0",
+        )
+        session.add(pack)
+        session.flush()
+        pack_id = str(pack.id)
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("Витрина.txt", "текст".encode(), "text/plain")},
+        )
+        document_id = uploaded.json()["document_id"]
+
+        await client.delete(f"/api/documents/{document_id}")
+        queued = await client.post(
+            "/api/reviews",
+            json={"document_id": document_id, "review_pack_id": pack_id},
+            headers={"Idempotency-Key": "after-delete-1"},
+        )
+
+    assert queued.status_code == 404, queued.text
+    assert not list(upload_settings.documents_dir.rglob("*.txt"))
+
+
+@pytest.mark.anyio
+async def test_delete_marks_the_row_before_removing_the_file(
+    upload_settings: Settings,
+) -> None:
+    """Порядок внутри удаления: пометка, потом файл.
+
+    Если бы файл стирался первым, между его исчезновением и запретом на новые
+    проверки оставался бы промежуток, в который задача успевала бы встать в
+    очередь. Проверяем сам инвариант: файла нет и запись помечена.
+    """
+
+    app = create_app(upload_settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        uploaded = await client.post(
+            "/api/documents",
+            files={"document": ("Витрина.txt", "текст".encode(), "text/plain")},
+        )
+        document_id = uploaded.json()["document_id"]
+        await client.delete(f"/api/documents/{document_id}")
+
+    engine = create_database_engine(upload_settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions() as session:
+        row = session.get(DocumentModel, UUID(document_id))
+        assert row is not None
+        assert row.deleted_at is not None
+    engine.dispose()
+    assert not list(upload_settings.documents_dir.rglob("*.txt"))
+
+
+def test_delete_and_create_review_do_not_interleave(upload_settings: Settings) -> None:
+    """Конкурентный сценарий: удаление и постановка проверки в двух потоках.
+
+    Запрещённое состояние — задача в очереди на документ, файла которого уже
+    нет: воркер поднимет её и упадёт на чтении исходника. Оба исхода гонки
+    допустимы (успела проверка или успело удаление), недопустимо только их
+    сочетание. Прогоняем повторно, потому что гонка по своей природе
+    воспроизводится не с первого раза.
+    """
+
+    import threading
+
+    from docreview_api.services.documents import (
+        DocumentBusyError,
+        DocumentCleanupService,
+        DocumentUnavailableError,
+    )
+    from docreview_api.services.review_jobs import (
+        ReviewJobDocumentUnavailableError,
+        ReviewJobService,
+    )
+
+    engine = create_database_engine(upload_settings.database_url)
+    Base.metadata.create_all(engine)
+    sessions = create_session_factory(engine)
+
+    with sessions.begin() as session:
+        company = session.scalar(select(CompanyModel))
+        if company is None:
+            company = CompanyModel(
+                id=upload_settings.default_company_id,
+                slug=upload_settings.default_company_slug,
+                display_name=upload_settings.default_company_name,
+            )
+            session.add(company)
+            session.flush()
+        pack = ReviewPackReferenceModel(
+            company_id=company.id,
+            pack_key="requirements",
+            version="1.0",
+            display_name="Requirements",
+            locator="review-packs/requirements/1.0",
+        )
+        session.add(pack)
+        session.flush()
+        company_id, pack_id = company.id, pack.id
+
+    documents_dir = upload_settings.documents_dir
+    documents_dir.mkdir(parents=True, exist_ok=True)
+
+    for attempt in range(12):
+        storage_key = f"{company_id.hex}/race-{attempt}.txt"
+        path = documents_dir / storage_key
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("текст витрины", encoding="utf-8")
+        with sessions.begin() as session:
+            document = DocumentModel(
+                company_id=company_id,
+                original_filename="Витрина.txt",
+                media_type="text/plain",
+                size_bytes=path.stat().st_size,
+                sha256="d" * 64,
+                storage_key=storage_key,
+            )
+            session.add(document)
+            session.flush()
+            document_id = document.id
+
+        start = threading.Barrier(2)
+        outcome: dict[str, object] = {}
+
+        def do_delete() -> None:
+            start.wait()
+            try:
+                DocumentCleanupService(sessions, documents_root=documents_dir).delete(
+                    document_id, company_id=company_id
+                )
+                outcome["deleted"] = True
+            except (DocumentUnavailableError, DocumentBusyError):
+                outcome["deleted"] = False
+            except Exception as error:  # noqa: BLE001 - фиксируем для отчёта
+                outcome["delete_error"] = repr(error)
+
+        def do_create() -> None:
+            start.wait()
+            try:
+                with sessions.begin() as session:
+                    ReviewJobService(session).create(
+                        company_id=company_id,
+                        document_id=document_id,
+                        review_pack_reference_id=pack_id,
+                        idempotency_key=f"race-{attempt}",
+                    )
+                outcome["queued"] = True
+            except ReviewJobDocumentUnavailableError:
+                outcome["queued"] = False
+            except Exception as error:  # noqa: BLE001 - фиксируем для отчёта
+                outcome["create_error"] = repr(error)
+
+        threads = [threading.Thread(target=do_delete), threading.Thread(target=do_create)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=15)
+
+        assert "delete_error" not in outcome, outcome
+        assert "create_error" not in outcome, outcome
+
+        with sessions() as session:
+            row = session.get(DocumentModel, document_id)
+            assert row is not None
+            marked_deleted = row.deleted_at is not None
+            job_exists = session.scalar(
+                select(ReviewJobModel.id).where(ReviewJobModel.document_id == document_id)
+            )
+
+        file_exists = path.exists()
+        # Инвариант: задачи на документ без файла быть не может.
+        assert not (job_exists is not None and not file_exists), (
+            attempt,
+            outcome,
+            {"marked_deleted": marked_deleted, "file_exists": file_exists},
+        )
+        # И наоборот: помечен удалённым — значит файла нет.
+        assert marked_deleted == (not file_exists), (attempt, outcome)
+
+    engine.dispose()

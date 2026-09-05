@@ -40,7 +40,7 @@ it("shows accepted formats and selected file size", async () => {
   const user = userEvent.setup();
   render(<FileDropzone />);
 
-  expect(screen.getByText(/DOCX до/)).toBeInTheDocument();
+  expect(screen.getByText(/DOCX, PDF или TXT до/)).toBeInTheDocument();
   await user.upload(fileInput(), docx());
 
   expect(screen.getByText("Требования.docx")).toBeInTheDocument();
@@ -70,11 +70,14 @@ it("explains client-side size and format errors", async () => {
   await user.upload(fileInput(), oversized);
   expect(screen.getByText(/Файл больше допустимых/)).toBeInTheDocument();
 
-  const text = new File(["notes"], "notes.txt", { type: "text/plain" });
-  fireEvent.drop(screen.getByRole("button", { name: "Область загрузки документа" }), {
-    dataTransfer: { files: [text] },
+  // .txt теперь поддерживается, поэтому берём формат, который ядро не читает.
+  const spreadsheet = new File(["sheet"], "Выгрузка.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-  expect(screen.getByText("Выберите документ в формате DOCX.")).toBeInTheDocument();
+  fireEvent.drop(screen.getByRole("button", { name: "Область загрузки документа" }), {
+    dataTransfer: { files: [spreadsheet] },
+  });
+  expect(screen.getByText("Выберите документ в формате DOCX, PDF или TXT.")).toBeInTheDocument();
 });
 
 it("renders upload progress and a successful result", async () => {
@@ -120,17 +123,29 @@ it("turns server failures into a clear user-facing message", async () => {
   expect(screen.getByRole("button", { name: "Загрузить документ" })).toBeEnabled();
 });
 
-it("отклоняет PDF и объясняет, что делать", () => {
+it.each([
+  ["Требования.pdf", "application/pdf"],
+  ["Витрина.txt", "text/plain"],
+  // Текстовый файл браузер может не пометить вовсе — это не повод отказать.
+  ["Витрина.txt", ""],
+])("принимает %s с типом «%s»", async (name, type) => {
+  const user = userEvent.setup();
   render(<FileDropzone />);
-  const pdf = new File(["%PDF-1.7\n%%EOF"], "Требования.pdf", { type: "application/pdf" });
+
+  await user.upload(fileInput(), new File(["содержимое документа"], name, { type }));
+
+  expect(screen.getByText(name)).toBeInTheDocument();
+  expect(screen.queryByText(/Выберите документ/)).not.toBeInTheDocument();
+});
+
+it("отклоняет формат, который ядро не читает", () => {
+  render(<FileDropzone />);
+  const rtf = new File(["{\\rtf1}"], "Требования.rtf", { type: "application/rtf" });
 
   fireEvent.drop(screen.getByRole("button", { name: "Область загрузки документа" }), {
-    dataTransfer: { files: [pdf] },
+    dataTransfer: { files: [rtf] },
   });
 
-  // Извлекать текст из PDF в закрытом контуре нечем: отказать надо сразу,
-  // а не после загрузки и минуты ожидания.
-  expect(screen.getByText("PDF пока не поддерживается. Сохраните документ в DOCX.")).toBeInTheDocument();
-  expect(screen.queryByText("Требования.pdf")).not.toBeInTheDocument();
+  expect(screen.getByText("Выберите документ в формате DOCX, PDF или TXT.")).toBeInTheDocument();
   expect(uploadDocumentMock).not.toHaveBeenCalled();
 });

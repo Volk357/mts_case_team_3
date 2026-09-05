@@ -18,14 +18,24 @@ import { appConfig } from "@/config";
 import { cn } from "@/lib/utils";
 
 /*
-  Только DOCX. Сервер принимает и PDF, но извлекать из него текст нечем:
-  библиотеки в закрытом контуре нет, и ядро отбивает такой файл ошибкой
-  «формат не поддерживается» уже после загрузки. Предлагать формат, который
-  заведомо не сработает, — обманывать пользователя, поэтому выбор сужен здесь,
-  а не оставлен на отказ в конце пути.
+  DOCX, PDF и TXT. У форматов разная глубина разбора, и об этом честно
+  предупреждает сам результат проверки: .docx даёт таблицы строками
+  «ячейка | ячейка» и адреса гиперссылок, PDF разметки таблиц не хранит
+  вовсе, а .txt — это уже извлечённый текст.
 */
+const PDF_MEDIA_TYPE = "application/pdf";
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const ACCEPTED_FILES = `${DOCX_MEDIA_TYPE},.docx`;
+const TXT_MEDIA_TYPE = "text/plain";
+const ACCEPTED_FILES = `${PDF_MEDIA_TYPE},${DOCX_MEDIA_TYPE},${TXT_MEDIA_TYPE},.pdf,.docx,.txt`;
+
+// Что браузер вправе прислать для каждого расширения. Текстовый файл
+// помечают по-разному, вплоть до отсутствия типа, поэтому для .txt набор
+// шире — иначе годный файл отбивался бы ещё до отправки.
+const ACCEPTED_TYPES: Record<string, readonly string[]> = {
+  ".pdf": [PDF_MEDIA_TYPE],
+  ".docx": [DOCX_MEDIA_TYPE],
+  ".txt": [TXT_MEDIA_TYPE, "text/markdown", "application/octet-stream", ""],
+};
 
 type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
 
@@ -37,13 +47,9 @@ function formatBytes(bytes: number): string {
 
 function validateFile(file: File): string | null {
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  const expectedType = extension === ".docx" ? DOCX_MEDIA_TYPE : null;
-  if (!expectedType) {
-    return extension === ".pdf"
-      ? "PDF пока не поддерживается. Сохраните документ в DOCX."
-      : "Выберите документ в формате DOCX.";
-  }
-  if (file.type && file.type !== expectedType) {
+  const accepted = ACCEPTED_TYPES[extension];
+  if (!accepted) return "Выберите документ в формате DOCX, PDF или TXT.";
+  if (file.type && !accepted.includes(file.type)) {
     return "Расширение файла не соответствует его формату.";
   }
   if (file.size === 0) return "Файл пуст. Выберите документ с содержимым.";
@@ -56,7 +62,7 @@ function validateFile(file: File): string | null {
 function uploadErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 413) return "Файл слишком большой для загрузки.";
-    if (error.status === 415) return "Сервер принимает только DOCX.";
+    if (error.status === 415) return "Сервер принимает DOCX, PDF и TXT.";
     if (error.status === 422) return "Файл повреждён или его формат не подтверждён.";
     if (error.status === 0) return "Не удалось подключиться к серверу. Попробуйте ещё раз.";
   }
@@ -156,7 +162,7 @@ export function FileDropzone() {
       <div className="border-b border-border px-5 py-5 sm:px-8">
         <h2 className="text-lg font-semibold sm:text-xl">Загрузите документ</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
+          DOCX, PDF или TXT до {formatBytes(appConfig.maxUploadSizeBytes)}
         </p>
       </div>
       <div className="p-5 sm:p-8">

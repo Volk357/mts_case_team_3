@@ -74,7 +74,7 @@ ln -s /opt/docreview/src core        # ядро лежит в корне реп�
 
 ```bash
 python3.12 -m venv /opt/docreview/core-venv
-/opt/docreview/core-venv/bin/pip install requests pyyaml
+/opt/docreview/core-venv/bin/pip install -r /opt/docreview/core/requirements-core.txt
 
 # исполняемая обёртка: приложение вызывает ядро ОДНОЙ командой,
 # «python script.py» в настройку не поместится

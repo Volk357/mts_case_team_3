@@ -62,3 +62,25 @@ export async function requestJson<T>(path: string, init?: RequestInit): Promise<
 
   return (await response.json()) as T;
 }
+
+/** Запрос без тела в ответе: 204 у requestJson упал бы на разборе JSON. */
+export async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...authHeaders(),
+      ...init?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
+    const error = parseApiError(body);
+    throw new ApiError(
+      error.message ?? `API request failed with status ${response.status}`,
+      response.status,
+      error.code,
+    );
+  }
+}

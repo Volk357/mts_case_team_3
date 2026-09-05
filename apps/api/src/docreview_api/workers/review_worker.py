@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import sys
 from contextlib import suppress
 from datetime import timedelta
+from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
@@ -20,6 +23,23 @@ from docreview_api.services.review_result_receiver import ReviewResultReceiver
 from docreview_api.services.run_workspace import RunWorkspaceManager
 
 LOGGER = logging.getLogger(__name__)
+
+
+def resolve_analysis_executable(
+    configured: str,
+    *,
+    executable_directory: Path | None = None,
+) -> str:
+    """Resolve an installed console script next to the worker's Python executable."""
+
+    path = Path(configured)
+    if path.name != configured:
+        return configured
+    directory = executable_directory or Path(sys.executable).resolve().parent
+    candidate = directory / configured
+    if os.name == "nt" and not candidate.suffix:
+        candidate = candidate.with_suffix(".exe")
+    return str(candidate.resolve()) if candidate.is_file() else configured
 
 
 class ReviewJobExecutor(Protocol):
@@ -83,7 +103,7 @@ def build_worker(settings: Settings) -> ReviewJobWorker:
     sessions = create_session_factory(engine)
     queue = DatabaseReviewJobQueue(sessions)
     runner = ProcessRunner(
-        (settings.analysis_executable,),
+        (resolve_analysis_executable(settings.analysis_executable),),
         stdout_limit_bytes=settings.process_stdout_limit_bytes,
         stderr_limit_bytes=settings.process_stderr_limit_bytes,
     )

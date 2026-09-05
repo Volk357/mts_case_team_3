@@ -26,9 +26,23 @@ from docreview_api.services.review_job_executor import AnalysisJobExecutor
 from docreview_api.services.review_job_queue import DatabaseReviewJobQueue
 from docreview_api.services.review_result_receiver import ReviewResultReceiver
 from docreview_api.services.run_workspace import RunWorkspaceManager
-from docreview_api.workers.review_worker import ReviewJobWorker
+from docreview_api.workers.review_worker import ReviewJobWorker, resolve_analysis_executable
 
 SCHEMA_PATH = Path(__file__).resolve().parents[3] / "contracts" / "review-result.schema.json"
+
+
+def test_resolve_analysis_executable_finds_console_script_next_to_python(tmp_path: Path) -> None:
+    filename = "docreview.exe" if sys.platform == "win32" else "docreview"
+    executable = tmp_path / filename
+    executable.touch()
+
+    assert resolve_analysis_executable("docreview", executable_directory=tmp_path) == str(
+        executable.resolve()
+    )
+    assert (
+        resolve_analysis_executable("tools/docreview", executable_directory=tmp_path)
+        == "tools/docreview"
+    )
 
 
 def seed_queued_job(

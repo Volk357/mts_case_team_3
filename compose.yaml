@@ -11,6 +11,29 @@ x-backend-depends-on: &backend-depends-on
     condition: service_healthy
   migrate:
     condition: service_completed_successfully
+  storage-check:
+    condition: service_completed_successfully
+
+# API and worker share these mounts. Independent volumes keep uploaded source
+# documents, Analysis Core workspaces and exported diagnostics separable for
+# retention/backup purposes. The heartbeat volume lets API observe worker state.
+x-backend-volumes: &backend-volumes
+  - type: volume
+    source: documents_data
+    target: /app/data/documents
+  - type: volume
+    source: runs_data
+    target: /app/data/runs
+  - type: volume
+    source: artifacts_data
+    target: /app/data/artifacts
+  - type: volume
+    source: runtime_state
+    target: /app/data/state
+  - type: bind
+    source: ./review-packs
+    target: /app/review-packs
+    read_only: true
 
 services:
   postgres:
@@ -45,6 +68,15 @@ services:
         condition: service_healthy
     restart: "no"
 
+  storage-check:
+    image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command: ["storage-check"]
+    volumes: *backend-volumes
+    restart: "no"
+
   seed-demo:
     image: docreview-backend:${DOCREVIEW_BACKEND_IMAGE_TAG:-local}
     build:
@@ -64,3 +96,11 @@ services:
 volumes:
   postgres_data:
     name: ${DOCREVIEW_POSTGRES_VOLUME:-docreview-postgres-data}
+  documents_data:
+    name: ${DOCREVIEW_DOCUMENTS_VOLUME:-docreview-documents}
+  runs_data:
+    name: ${DOCREVIEW_RUNS_VOLUME:-docreview-runs}
+  artifacts_data:
+    name: ${DOCREVIEW_ARTIFACTS_VOLUME:-docreview-artifacts}
+  runtime_state:
+    name: ${DOCREVIEW_STATE_VOLUME:-docreview-state}

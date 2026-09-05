@@ -27,6 +27,7 @@ COMMANDS = {
         "head",
     ),
     "seed-demo": ("python", "/app/bin/seed_demo.py"),
+    "storage-check": ("python", "/app/bin/verify_container_storage.py"),
 }
 
 

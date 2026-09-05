@@ -78,6 +78,29 @@ docker compose --profile demo run --rm seed-demo
 Команда откажется работать, если окружение не `demo` или не установлен
 `DOCREVIEW_ALLOW_DEMO_SEED=true`.
 
+## Хранилища контейнеров
+
+Compose создаёт отдельные именованные volumes для загруженных документов,
+рабочих каталогов Analysis Core, экспортируемых диагностик и heartbeat worker.
+Имена можно переопределить переменными `DOCREVIEW_DOCUMENTS_VOLUME`,
+`DOCREVIEW_RUNS_VOLUME`, `DOCREVIEW_ARTIFACTS_VOLUME` и
+`DOCREVIEW_STATE_VOLUME`. API и worker будут подключать один и тот же набор.
+
+Каталог `review-packs` подключается из репозитория как read-only bind mount:
+контейнеры могут читать таксономию и промпты, но не менять исходный Context Pack.
+Перед стартом backend-сервисов одноразовый `storage-check` проверяет, что все
+рабочие volumes принадлежат непривилегированному пользователю `10001:10001`,
+доступны для записи, а Review Packs действительно защищены от записи.
+
+```powershell
+docker compose run --rm storage-check
+```
+
+Удаление контейнеров не удаляет данные. Полное удаление именованных volumes
+выполняется только явной командой `docker compose down --volumes`; она удаляет
+загруженные документы и результаты запусков, поэтому для обычной остановки её
+использовать не следует.
+
 
 Корневой `npm run dev` запускает API, worker и web-приложение вместе. Worker
 атомарно забирает старейший `queued` job, поэтому два одновременно запущенных

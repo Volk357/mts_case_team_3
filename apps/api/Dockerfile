@@ -50,7 +50,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     DOCREVIEW_ARTIFACTS_DIR=/app/data/artifacts \
     DOCREVIEW_REVIEW_PACKS_DIR=/app/review-packs \
     DOCREVIEW_REVIEW_RESULT_SCHEMA_PATH=/app/contracts/review-result.schema.json \
-    DOCREVIEW_WORKER_HEARTBEAT_PATH=/app/data/worker-heartbeat \
+    DOCREVIEW_WORKER_HEARTBEAT_PATH=/app/data/state/worker-heartbeat \
     DOCREVIEW_CONTAINER_ROLE=api
 
 RUN groupadd --gid "${APP_GID}" docreview \
@@ -64,10 +64,11 @@ COPY apps/api/alembic /app/apps/api/alembic
 COPY apps/api/scripts/container_entrypoint.py /app/bin/container_entrypoint.py
 COPY apps/api/scripts/container_healthcheck.py /app/bin/container_healthcheck.py
 COPY apps/api/scripts/seed_demo.py /app/bin/seed_demo.py
+COPY apps/api/scripts/verify_container_storage.py /app/bin/verify_container_storage.py
 COPY contracts/review-result.schema.json /app/contracts/review-result.schema.json
 COPY review-packs /app/review-packs
 
-RUN mkdir -p /app/data/documents /app/data/runs /app/data/artifacts \
+RUN mkdir -p /app/data/documents /app/data/runs /app/data/artifacts /app/data/state \
     && chown -R docreview:docreview /app/data \
     && chmod -R a-w /app/contracts /app/review-packs /app/apps/api/alembic
 

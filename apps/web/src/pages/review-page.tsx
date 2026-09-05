@@ -20,7 +20,7 @@ const STAGES = [
   { key: "result_ready", title: "Собираем замечания" },
 ] as const;
 
-type Filter = "all" | "high" | "medium" | "low";
+type Filter = "all" | ReviewFinding["severity"];
 
 /** Секунды с открытия страницы. Тикает раз в секунду, а не раз в опрос. */
 function useElapsedSeconds(active: boolean) {
@@ -114,7 +114,8 @@ export function ReviewPage() {
     const list = findings ?? [];
     return {
       all: list.length,
-      high: list.filter((f) => f.severity === "high" || f.severity === "critical").length,
+      critical: list.filter((f) => f.severity === "critical").length,
+      high: list.filter((f) => f.severity === "high").length,
       medium: list.filter((f) => f.severity === "medium").length,
       low: list.filter((f) => f.severity === "low").length,
     };
@@ -123,9 +124,6 @@ export function ReviewPage() {
   const visible = useMemo(() => {
     const list = findings ?? [];
     if (filter === "all") return list;
-    if (filter === "high") {
-      return list.filter((f) => f.severity === "high" || f.severity === "critical");
-    }
     return list.filter((f) => f.severity === filter);
   }, [findings, filter]);
 
@@ -219,9 +217,10 @@ export function ReviewPage() {
           className="flex flex-wrap gap-2"
         >
           <FilterTab active={filter} count={counts.all} label="Все" onSelect={setFilter} value="all" />
+          <FilterTab active={filter} count={counts.critical} label="Критическая" onSelect={setFilter} value="critical" />
           <FilterTab active={filter} count={counts.high} label="Высокая" onSelect={setFilter} value="high" />
           <FilterTab active={filter} count={counts.medium} label="Средняя" onSelect={setFilter} value="medium" />
-          <FilterTab active={filter} count={counts.low} label="Уточнения" onSelect={setFilter} value="low" />
+          <FilterTab active={filter} count={counts.low} label="Низкая" onSelect={setFilter} value="low" />
         </nav>
       ) : null}
 

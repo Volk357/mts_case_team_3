@@ -8,6 +8,7 @@ it("loads the public Review Pack catalog without server locators", async () => {
         display_name: "Technical requirements",
         document_type: "technical_specification",
         version: "1.0",
+        description: "Organization-specific completeness rules.",
       },
     ],
     total: 1,

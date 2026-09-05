@@ -11,6 +11,7 @@ from sqlalchemy import select
 from docreview_api.config import get_settings
 from docreview_api.db import create_database_engine, create_session_factory
 from docreview_api.db.models import CompanyModel, ReviewPackReferenceModel
+from docreview_api.services.review_packs import load_review_pack_manifest
 
 DEMO_PACK_ID = UUID("00000000-0000-0000-0000-000000000002")
 
@@ -25,6 +26,16 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    pack_locator = os.environ.get("DOCREVIEW_DEMO_PACK_LOCATOR", "").strip()
+    manifest = load_review_pack_manifest(settings.review_packs_dir, pack_locator)
+    if manifest is None:
+        print(
+            "Demo Review Pack manifest is missing or invalid; "
+            "set DOCREVIEW_DEMO_PACK_LOCATOR to a server-approved relative directory.",
+            file=sys.stderr,
+        )
+        return 3
 
     sessions = create_session_factory(create_database_engine(settings.database_url))
     with sessions.begin() as session:
@@ -41,8 +52,8 @@ def main() -> int:
         pack = session.scalar(
             select(ReviewPackReferenceModel).where(
                 ReviewPackReferenceModel.company_id == company.id,
-                ReviewPackReferenceModel.pack_key == "mts-net",
-                ReviewPackReferenceModel.version == "0.2",
+                ReviewPackReferenceModel.pack_key == manifest.pack_key,
+                ReviewPackReferenceModel.version == manifest.version,
             )
         )
         if pack is None:
@@ -50,14 +61,18 @@ def main() -> int:
                 ReviewPackReferenceModel(
                     id=DEMO_PACK_ID,
                     company_id=company.id,
-                    pack_key="mts-net",
-                    version="0.2",
-                    display_name="Потоковые данные и витрины",
-                    document_type="data_mart_or_stream",
-                    locator="mts-net/0.2",
+                    pack_key=manifest.pack_key,
+                    version=manifest.version,
+                    display_name=manifest.display_name,
+                    document_type=manifest.document_type,
+                    locator=pack_locator,
                     checksum=None,
                 )
             )
+        else:
+            pack.display_name = manifest.display_name
+            pack.document_type = manifest.document_type
+            pack.locator = pack_locator
     return 0
 
 

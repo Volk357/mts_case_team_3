@@ -109,8 +109,9 @@ erDiagram
 | `id` | UUID | Primary key |
 | `company_id` | UUID | Компания-владелец |
 | `pack_key` | string | Стабильный ID пакета |
-| `version` | string | Версия, передаваемая в результат и UI |
-| `display_name` | string | Пользовательское название |
+| `version` | string | Версия allowlist-записи; должна совпасть с манифестом |
+| `display_name` | string | Совместимый служебный снимок; UI получает название из манифеста |
+| `document_type` | string | Совместимый служебный снимок; UI получает тип из манифеста |
 | `locator` | string | Путь или storage key, разрешаемый backend |
 | `checksum` | string/null | Контроль неизменности опубликованной версии |
 | `is_active` | boolean | Можно ли выбирать пакет для нового запуска |
@@ -118,6 +119,8 @@ erDiagram
 
 Пара `(company_id, pack_key, version)` уникальна. Использованная версия не
 редактируется задним числом; новая редакция получает новую `version`.
+Название, тип и описание для каталога читаются из серверного `pack.yaml`.
+Пакет скрывается, если его `id` или `version` не совпадают с allowlist-записью.
 
 ### ReviewJob
 

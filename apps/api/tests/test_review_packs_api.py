@@ -15,11 +15,45 @@ from docreview_api.main import create_app
 def catalog_settings(tmp_path: Path, database_url: str) -> tuple[Settings, UUID, UUID]:
     packs_root = tmp_path / "review-packs"
     (packs_root / "requirements-v1").mkdir(parents=True)
-    (packs_root / "requirements-v1" / "pack.yaml").write_text("version: '1.0'\n", encoding="utf-8")
+    (packs_root / "requirements-v1" / "pack.yaml").write_text(
+        """id: requirements
+version: '1.0'
+name: Architecture requirements
+document_type: architecture_decision
+description: Rules supplied by the Review Pack manifest.
+""",
+        encoding="utf-8",
+    )
     (packs_root / "inactive").mkdir()
-    (packs_root / "inactive" / "pack.yaml").write_text("version: '1.0'\n", encoding="utf-8")
+    (packs_root / "inactive" / "pack.yaml").write_text(
+        """id: inactive
+version: '1.0'
+name: Inactive
+document_type: technical_specification
+description: Inactive pack.
+""",
+        encoding="utf-8",
+    )
     (packs_root / "foreign").mkdir()
-    (packs_root / "foreign" / "pack.yaml").write_text("version: '1.0'\n", encoding="utf-8")
+    (packs_root / "foreign" / "pack.yaml").write_text(
+        """id: foreign
+version: '1.0'
+name: Foreign
+document_type: technical_specification
+description: Another tenant pack.
+""",
+        encoding="utf-8",
+    )
+    (packs_root / "mismatched").mkdir()
+    (packs_root / "mismatched" / "pack.yaml").write_text(
+        """id: another-pack
+version: '1.0'
+name: Mismatched
+document_type: technical_specification
+description: The manifest id does not match the allowlist record.
+""",
+        encoding="utf-8",
+    )
     (packs_root / "empty").mkdir()
 
     settings = Settings(
@@ -59,6 +93,14 @@ def catalog_settings(tmp_path: Path, database_url: str) -> tuple[Settings, UUID,
                     document_type="technical_specification",
                     locator="inactive",
                     is_active=False,
+                ),
+                ReviewPackReferenceModel(
+                    company_id=company.id,
+                    pack_key="mismatched",
+                    version="1.0",
+                    display_name="Must stay hidden",
+                    document_type="technical_specification",
+                    locator="mismatched",
                 ),
                 ReviewPackReferenceModel(
                     company_id=company.id,
@@ -116,9 +158,10 @@ async def test_catalog_returns_only_active_valid_tenant_packs_without_locator(
         "items": [
             {
                 "review_pack_id": str(visible_id),
-                "display_name": "Requirements",
-                "document_type": "technical_specification",
+                "display_name": "Architecture requirements",
+                "document_type": "architecture_decision",
                 "version": "1.0",
+                "description": "Rules supplied by the Review Pack manifest.",
             }
         ],
         "total": 1,
@@ -148,4 +191,5 @@ async def test_catalog_is_declared_in_openapi(
         "display_name",
         "document_type",
         "version",
+        "description",
     }

@@ -33,6 +33,7 @@ def list_review_packs(
             display_name=item.display_name,
             document_type=item.document_type,
             version=item.version,
+            description=item.description,
         )
         for item in snapshots
     ]

@@ -803,12 +803,20 @@
         "additionalProperties": false,
         "description": "Public metadata for one server-approved Review Pack version.",
         "properties": {
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
           "display_name": {
+            "maxLength": 255,
             "minLength": 1,
             "title": "Display Name",
             "type": "string"
           },
           "document_type": {
+            "maxLength": 100,
             "minLength": 1,
             "title": "Document Type",
             "type": "string"
@@ -820,6 +828,7 @@
             "type": "string"
           },
           "version": {
+            "maxLength": 100,
             "minLength": 1,
             "title": "Version",
             "type": "string"
@@ -829,7 +838,8 @@
           "review_pack_id",
           "display_name",
           "document_type",
-          "version"
+          "version",
+          "description"
         ],
         "title": "ReviewPackResponse",
         "type": "object"

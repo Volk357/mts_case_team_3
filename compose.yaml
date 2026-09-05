@@ -215,6 +215,7 @@ services:
       <<: *database-environment
       DOCREVIEW_ENVIRONMENT: demo
       DOCREVIEW_ALLOW_DEMO_SEED: "true"
+      DOCREVIEW_DEMO_PACK_LOCATOR: ${DOCREVIEW_DEMO_PACK_LOCATOR:-mts-net/0.2}
     depends_on:
       migrate:
         condition: service_completed_successfully

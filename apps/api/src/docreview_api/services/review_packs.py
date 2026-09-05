@@ -2,8 +2,10 @@
 
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any
 from uuid import UUID
 
+import yaml
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -16,6 +18,103 @@ class ReviewPackSnapshot:
     display_name: str
     document_type: str
     version: str
+    description: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewPackManifest:
+    """Validated, presentation-safe metadata owned by a Review Pack."""
+
+    pack_key: str
+    version: str
+    display_name: str
+    document_type: str
+    description: str
+
+
+_MANIFEST_FILENAMES = ("pack.yaml", "pack.yml", "pack.json")
+_MAX_MANIFEST_BYTES = 64 * 1024
+
+
+def _required_text(value: Any, *, max_length: int) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    if not normalized or len(normalized) > max_length:
+        return None
+    return normalized
+
+
+def _resolve_locator(review_packs_root: Path, locator: str) -> Path | None:
+    posix = PurePosixPath(locator)
+    if (
+        not locator
+        or locator == "."
+        or posix.is_absolute()
+        or PureWindowsPath(locator).is_absolute()
+        or "\\" in locator
+        or ".." in posix.parts
+    ):
+        return None
+    try:
+        root = review_packs_root.resolve()
+        candidate = root.joinpath(*posix.parts).resolve()
+        if not candidate.is_relative_to(root):
+            return None
+        if candidate.is_file():
+            return candidate if candidate.name.casefold() in _MANIFEST_FILENAMES else None
+        if not candidate.is_dir():
+            return None
+        return next(
+            (
+                manifest
+                for filename in _MANIFEST_FILENAMES
+                if (manifest := candidate / filename).is_file()
+            ),
+            None,
+        )
+    except OSError:
+        return None
+
+
+def load_review_pack_manifest(
+    review_packs_root: Path,
+    locator: str,
+) -> ReviewPackManifest | None:
+    """Load only bounded metadata from a server-approved relative locator."""
+
+    manifest_path = _resolve_locator(review_packs_root, locator)
+    if manifest_path is None:
+        return None
+    try:
+        if manifest_path.stat().st_size > _MAX_MANIFEST_BYTES:
+            return None
+        payload = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, yaml.YAMLError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    pack_key = _required_text(payload.get("id"), max_length=255)
+    version = _required_text(payload.get("version"), max_length=100)
+    display_name = _required_text(payload.get("name"), max_length=255)
+    document_type = _required_text(payload.get("document_type"), max_length=100)
+    description = _required_text(payload.get("description"), max_length=2000)
+    if (
+        pack_key is None
+        or version is None
+        or display_name is None
+        or document_type is None
+        or description is None
+    ):
+        return None
+    return ReviewPackManifest(
+        pack_key=pack_key,
+        version=version,
+        display_name=display_name,
+        document_type=document_type,
+        description=description,
+    )
 
 
 class ReviewPackCatalogService:
@@ -44,48 +143,34 @@ class ReviewPackCatalogService:
                     ReviewPackReferenceModel.id,
                 )
             ).all()
-            return tuple(
+            snapshots = tuple(
                 snapshot
                 for record in records
                 if (snapshot := self._public_snapshot(record)) is not None
             )
+            return tuple(
+                sorted(
+                    snapshots,
+                    key=lambda item: (
+                        item.display_name.casefold(),
+                        item.version,
+                        str(item.id),
+                    ),
+                )
+            )
 
     def _public_snapshot(self, record: ReviewPackReferenceModel) -> ReviewPackSnapshot | None:
-        display_name = record.display_name.strip()
-        document_type = record.document_type.strip()
-        version = record.version.strip()
-        if not display_name or not document_type or not version:
-            return None
-        if self._resolve_locator(record.locator) is None:
+        manifest = load_review_pack_manifest(self._review_packs_root, record.locator)
+        if (
+            manifest is None
+            or manifest.pack_key != record.pack_key
+            or manifest.version != record.version
+        ):
             return None
         return ReviewPackSnapshot(
             id=record.id,
-            display_name=display_name,
-            document_type=document_type,
-            version=version,
+            display_name=manifest.display_name,
+            document_type=manifest.document_type,
+            version=manifest.version,
+            description=manifest.description,
         )
-
-    def _resolve_locator(self, locator: str) -> Path | None:
-        posix = PurePosixPath(locator)
-        if (
-            not locator
-            or locator == "."
-            or posix.is_absolute()
-            or PureWindowsPath(locator).is_absolute()
-            or "\\" in locator
-            or ".." in posix.parts
-        ):
-            return None
-        try:
-            candidate = self._review_packs_root.joinpath(*posix.parts).resolve()
-            if not candidate.is_relative_to(self._review_packs_root):
-                return None
-            if candidate.is_file():
-                return (
-                    candidate if candidate.suffix.casefold() in {".yaml", ".yml", ".json"} else None
-                )
-            if candidate.is_dir() and any(candidate.iterdir()):
-                return candidate
-        except OSError:
-            return None
-        return None

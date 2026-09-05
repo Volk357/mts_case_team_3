@@ -1,6 +1,5 @@
 import type { FindingFeedback } from "@/api/feedback";
 import { FeedbackControls } from "@/components/feedback-controls";
-import { defectTitle } from "@/lib/defect-titles";
 import type { ReviewFinding } from "@/api/reviews";
 
 /**
@@ -19,7 +18,7 @@ const SEVERITY = {
   critical: { label: "Критично", dot: "bg-red", text: "text-red", tint: "bg-red-soft" },
   high: { label: "Высокая", dot: "bg-red", text: "text-red", tint: "bg-red-soft" },
   medium: { label: "Средняя", dot: "bg-amber", text: "text-amber", tint: "bg-amber-soft" },
-  low: { label: "Уточнение", dot: "bg-gold", text: "text-gold", tint: "bg-gold-soft" },
+  low: { label: "Низкая", dot: "bg-gold", text: "text-gold", tint: "bg-gold-soft" },
 } as const;
 
 interface FindingCardProps {
@@ -53,9 +52,10 @@ export function FindingCard({
             </span>
           ) : null}
         </div>
-        <h3 className="mt-1.5 text-[0.9375rem] leading-6 font-semibold">
-          {defectTitle(finding.defect_id)}
-        </h3>
+        <h3 className="mt-1.5 text-[0.9375rem] leading-6 font-semibold">{finding.problem}</h3>
+        <p className="mt-1 text-xs text-text-muted">
+          Код правила: <code>{finding.defect_id}</code>
+        </p>
       </div>
 
       <blockquote className="mx-4 mt-3.5 overflow-x-auto overscroll-x-contain rounded-(--radius-sm) bg-background-subtle px-4 py-3 sm:mx-5">
@@ -65,7 +65,6 @@ export function FindingCard({
       </blockquote>
 
       <div className="space-y-2 px-4 pt-4 sm:px-5">
-        <p className="text-[0.9375rem] leading-7">{finding.problem}</p>
         <p className="text-[0.9375rem] leading-7 text-text-secondary">
           <span className="font-medium text-accent">Что уточнить. </span>
           {finding.clarification}

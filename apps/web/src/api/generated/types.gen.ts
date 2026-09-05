@@ -497,6 +497,10 @@ export type ReviewPackListResponse = {
  */
 export type ReviewPackResponse = {
     /**
+     * Description
+     */
+    description: string;
+    /**
      * Display Name
      */
     display_name: string;

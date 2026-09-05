@@ -100,7 +100,9 @@ python-dotenv==1.2.3
 python-multipart==0.0.32
     # via -r requirements.in
 pyyaml==6.0.3
-    # via uvicorn
+    # via
+    #   -r requirements.in
+    #   uvicorn
 referencing==0.37.0
     # via
     #   jsonschema
@@ -119,6 +121,8 @@ sqlalchemy==2.0.52
 starlette==1.6.0
     # via fastapi
 types-jsonschema==4.26.0.20260518
+    # via -r requirements-dev.in
+types-pyyaml==6.0.12.20260815
     # via -r requirements-dev.in
 typing-extensions==4.16.0
     # via

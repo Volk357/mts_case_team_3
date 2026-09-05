@@ -79,10 +79,17 @@ it("shows catalog metadata and lets the user choose a Review Pack", async () => 
   expect(
     screen.getByText("Checks assumptions and decision consequences."),
   ).toBeInTheDocument();
+  const route = screen.getByTestId("active-review-route");
+  expect(route).toHaveTextContent("Architecture decisions · 1.0");
+  expect(route).toHaveTextContent("Единое ядро анализа");
+  expect(route).toHaveTextContent("Приложение и ядро остаются теми же");
 
   await user.click(options[1]);
   expect(options[1]).toBeChecked();
   expect(options[0]).not.toBeChecked();
+  expect(route).toHaveTextContent("Security requirements · 2.1");
+  expect(route).toHaveTextContent("Security specification");
+  expect(route).not.toHaveTextContent("Architecture decisions · 1.0");
 });
 
 it("shows accepted formats and selected file size", async () => {

@@ -727,6 +727,20 @@
             "title": "Review Id",
             "type": "string"
           },
+          "review_pack_id": {
+            "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+            "format": "uuid",
+            "title": "Review Pack Id",
+            "type": "string"
+          },
+          "review_pack_name": {
+            "title": "Review Pack Name",
+            "type": "string"
+          },
+          "review_pack_version": {
+            "title": "Review Pack Version",
+            "type": "string"
+          },
           "status": {
             "enum": [
               "queued",
@@ -744,6 +758,9 @@
           "review_id",
           "document_id",
           "document_filename",
+          "review_pack_id",
+          "review_pack_name",
+          "review_pack_version",
           "status",
           "queued_at",
           "finished_at",

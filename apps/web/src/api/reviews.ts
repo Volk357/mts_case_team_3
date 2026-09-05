@@ -65,6 +65,9 @@ export interface ReviewListItem {
   review_id: string;
   document_id: string;
   document_filename: string;
+  review_pack_id: string;
+  review_pack_name: string;
+  review_pack_version: string;
   status: ReviewStatus;
   queued_at: string;
   finished_at: string | null;

@@ -146,6 +146,9 @@ export function ReviewsPage() {
                       по символам, иначе строка распирает список на телефоне. */}
                   <span className="block font-medium break-words">{item.document_filename}</span>
                   <span className="mt-0.5 block text-sm text-text-secondary">
+                    {item.review_pack_name} · версия {item.review_pack_version}
+                  </span>
+                  <span className="mt-0.5 block text-sm text-text-secondary">
                     {formatMoment(item.queued_at)}
                   </span>
                 </span>

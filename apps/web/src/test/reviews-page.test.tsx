@@ -27,6 +27,9 @@ const item = (over: Record<string, unknown> = {}) => ({
   review_id: "11111111-1111-1111-1111-111111111111",
   document_id: "22222222-2222-2222-2222-222222222222",
   document_filename: "Витрина агрегата.docx",
+  review_pack_id: "33333333-3333-3333-3333-333333333333",
+  review_pack_name: "Потоковые данные и витрины",
+  review_pack_version: "0.2",
   status: "completed",
   queued_at: "2026-09-05T07:23:00Z",
   finished_at: "2026-09-05T07:24:10Z",
@@ -50,6 +53,7 @@ it("показывает документ, число замечаний и ве
 
   // Имя файла — то, по чему человек узнаёт свою проверку в списке.
   expect(await screen.findByText("Витрина агрегата.docx")).toBeInTheDocument();
+  expect(screen.getByText("Потоковые данные и витрины · версия 0.2")).toBeInTheDocument();
   expect(screen.getByText("12 замечаний")).toBeInTheDocument();
   expect(screen.getByRole("link", { name: /Витрина агрегата\.docx/ })).toHaveAttribute(
     "href",

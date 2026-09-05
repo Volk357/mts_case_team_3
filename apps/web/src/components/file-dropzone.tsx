@@ -1,7 +1,9 @@
 import {
   AlertCircle,
+  ArrowRight,
   CheckCircle2,
   FileText,
+  Layers3,
   RefreshCw,
   UploadCloud,
 } from "lucide-react";
@@ -84,6 +86,7 @@ export function FileDropzone() {
   const [catalogReload, setCatalogReload] = useState(0);
   const navigate = useNavigate();
   const [dragging, setDragging] = useState(false);
+  const selectedPack = packs.find((pack) => pack.review_pack_id === selectedPackId) ?? null;
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -221,49 +224,91 @@ export function FileDropzone() {
           ) : null}
 
           {catalogPhase === "ready" ? (
-            <fieldset className="grid gap-3 sm:grid-cols-2" disabled={phase === "starting"}>
-              <legend className="sr-only">Выберите профиль проверки</legend>
-              {packs.map((pack) => {
-                const selected = selectedPackId === pack.review_pack_id;
-                return (
-                  <label
-                    className={cn(
-                      "cursor-pointer rounded-(--radius-sm) border p-4 transition-colors",
-                      selected
-                        ? "border-primary bg-primary/5"
-                        : "border-border bg-card hover:border-border-hover",
-                    )}
-                    key={pack.review_pack_id}
-                  >
-                    <input
-                      checked={selected}
-                      className="sr-only"
-                      name="review-pack"
-                      onChange={() => setSelectedPackId(pack.review_pack_id)}
-                      type="radio"
-                      value={pack.review_pack_id}
-                    />
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="min-w-0">
-                        <span className="block text-xs font-medium tracking-wide text-text-muted uppercase">
-                          {pack.company_name}
+            <>
+              <fieldset className="grid gap-3 sm:grid-cols-2" disabled={phase === "starting"}>
+                <legend className="sr-only">Выберите профиль проверки</legend>
+                {packs.map((pack) => {
+                  const selected = selectedPackId === pack.review_pack_id;
+                  return (
+                    <label
+                      className={cn(
+                        "cursor-pointer rounded-(--radius-sm) border p-4 transition-colors",
+                        selected
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-card hover:border-border-hover",
+                      )}
+                      key={pack.review_pack_id}
+                    >
+                      <input
+                        checked={selected}
+                        className="sr-only"
+                        name="review-pack"
+                        onChange={() => setSelectedPackId(pack.review_pack_id)}
+                        type="radio"
+                        value={pack.review_pack_id}
+                      />
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block text-xs font-medium tracking-wide text-text-muted uppercase">
+                            {pack.company_name}
+                          </span>
+                          <span className="mt-1 block font-semibold">{pack.display_name}</span>
                         </span>
-                        <span className="mt-1 block font-semibold">{pack.display_name}</span>
+                        {selected ? (
+                          <CheckCircle2
+                            aria-hidden="true"
+                            className="mt-0.5 size-5 shrink-0 text-primary"
+                          />
+                        ) : null}
                       </span>
-                      {selected ? (
-                        <CheckCircle2 aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-primary" />
-                      ) : null}
+                      <span className="mt-2 block text-xs text-text-muted">
+                        {pack.document_type} · версия {pack.version}
+                      </span>
+                      <span className="mt-2 block text-sm leading-6 text-text-secondary">
+                        {pack.description}
+                      </span>
+                    </label>
+                  );
+                })}
+              </fieldset>
+
+              {selectedPack ? (
+                <div
+                  aria-atomic="true"
+                  aria-live="polite"
+                  className="mt-4 rounded-(--radius-sm) border border-primary/20 bg-primary/[0.035] p-4"
+                  data-testid="active-review-route"
+                >
+                  <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-primary uppercase">
+                    <Layers3 aria-hidden="true" className="size-4" />
+                    Маршрут текущей проверки
+                  </div>
+                  <div className="mt-3 flex flex-col items-stretch gap-2 text-center text-sm font-medium sm:flex-row sm:items-center">
+                    <span className="rounded-(--radius-sm) border border-border bg-card px-3 py-2">
+                      Документ
                     </span>
-                    <span className="mt-2 block text-xs text-text-muted">
-                      {pack.document_type} · версия {pack.version}
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="mx-auto size-4 shrink-0 rotate-90 text-text-muted sm:rotate-0"
+                    />
+                    <span className="rounded-(--radius-sm) bg-primary px-3 py-2 text-primary-foreground">
+                      {selectedPack.display_name} · {selectedPack.version}
                     </span>
-                    <span className="mt-2 block text-sm leading-6 text-text-secondary">
-                      {pack.description}
+                    <ArrowRight
+                      aria-hidden="true"
+                      className="mx-auto size-4 shrink-0 rotate-90 text-text-muted sm:rotate-0"
+                    />
+                    <span className="rounded-(--radius-sm) border border-border bg-card px-3 py-2">
+                      Единое ядро анализа
                     </span>
-                  </label>
-                );
-              })}
-            </fieldset>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-text-secondary">
+                    Приложение и ядро остаются теми же. Профиль подставляет правила и знания для
+                    типа «{selectedPack.document_type}».
+                  </p>
+                </div>
+              ) : null}
+            </>
           ) : null}
         </section>
 

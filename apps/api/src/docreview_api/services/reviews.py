@@ -8,7 +8,12 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from docreview_api.db.models import DocumentModel, FindingModel, ReviewJobModel
+from docreview_api.db.models import (
+    DocumentModel,
+    FindingModel,
+    ReviewJobModel,
+    ReviewPackReferenceModel,
+)
 from docreview_api.models.review_job_state import ReviewJobStatus
 
 
@@ -129,6 +134,9 @@ class ReviewListItem:
     id: UUID
     document_id: UUID
     document_filename: str
+    review_pack_id: UUID
+    review_pack_name: str
+    review_pack_version: str
     status: ReviewJobStatus
     queued_at: datetime
     finished_at: datetime | None
@@ -183,10 +191,22 @@ class ReviewQueryService:
         )
         with self._session_factory() as session:
             rows = session.execute(
-                select(ReviewJobModel, DocumentModel.original_filename, findings_count)
+                select(
+                    ReviewJobModel,
+                    DocumentModel.original_filename,
+                    ReviewPackReferenceModel.display_name,
+                    ReviewPackReferenceModel.version,
+                    findings_count,
+                )
                 .join(DocumentModel, DocumentModel.id == ReviewJobModel.document_id)
+                .join(
+                    ReviewPackReferenceModel,
+                    ReviewPackReferenceModel.id == ReviewJobModel.review_pack_reference_id,
+                )
                 .where(
                     ReviewJobModel.company_id == company_id,
+                    DocumentModel.company_id == company_id,
+                    ReviewPackReferenceModel.company_id == company_id,
                     # Документ удалили — проверка уходит из истории вместе с ним.
                     # Замечания и оценки при этом остаются в базе: это разметка,
                     # а не копия исходника.
@@ -200,6 +220,9 @@ class ReviewQueryService:
                     id=job.id,
                     document_id=job.document_id,
                     document_filename=filename,
+                    review_pack_id=job.review_pack_reference_id,
+                    review_pack_name=pack_name,
+                    review_pack_version=pack_version,
                     status=job.status,
                     queued_at=self._queued_at(job),
                     finished_at=_utc(
@@ -207,7 +230,7 @@ class ReviewQueryService:
                     ),
                     findings_count=count,
                 )
-                for job, filename, count in rows
+                for job, filename, pack_name, pack_version, count in rows
             )
 
     def get_findings(self, review_id: UUID, *, company_id: UUID) -> ReviewFindingsSnapshot:

@@ -374,6 +374,15 @@ async def test_list_reviews_returns_history_newest_first(
         session.add(second)
         session.flush()
         second_id = second.id
+        generic_pack = ReviewPackReferenceModel(
+            company_id=settings.default_company_id,
+            pack_key="generic-tech-spec",
+            version="2.0",
+            display_name="Generic technical specification",
+            locator="generic-tech-spec/2.0",
+        )
+        session.add(generic_pack)
+        session.flush()
 
         older = ReviewJobModel(
             run_id="review-older",
@@ -388,7 +397,7 @@ async def test_list_reviews_returns_history_newest_first(
             run_id="review-newer",
             company_id=settings.default_company_id,
             document_id=second_id,
-            review_pack_reference_id=pack_id,
+            review_pack_reference_id=generic_pack.id,
             status=ReviewJobStatus.FAILED,
             queued_at=datetime(2026, 9, 5, 10, 0, tzinfo=UTC),
             failed_at=datetime(2026, 9, 5, 10, 0, 2, tzinfo=UTC),
@@ -426,6 +435,15 @@ async def test_list_reviews_returns_history_newest_first(
     ]
 
     newest, oldest = body["items"]
+    assert (newest["review_pack_name"], newest["review_pack_version"]) == (
+        "Generic technical specification",
+        "2.0",
+    )
+    assert (oldest["review_pack_name"], oldest["review_pack_version"]) == (
+        "Requirements",
+        "1.0",
+    )
+    assert newest["review_pack_id"] != oldest["review_pack_id"]
     # A failed review remains visible and reports zero findings.
     assert newest["status"] == "failed"
     assert newest["findings_count"] == 0
@@ -436,6 +454,9 @@ async def test_list_reviews_returns_history_newest_first(
         "review_id",
         "document_id",
         "document_filename",
+        "review_pack_id",
+        "review_pack_name",
+        "review_pack_version",
         "status",
         "queued_at",
         "finished_at",

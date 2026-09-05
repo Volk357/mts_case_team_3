@@ -455,6 +455,20 @@ export type ReviewListItemResponse = {
      */
     review_id: string;
     /**
+     * Review Pack Id
+     *
+     * Opaque resource identifier. Clients must not infer meaning from it.
+     */
+    review_pack_id: string;
+    /**
+     * Review Pack Name
+     */
+    review_pack_name: string;
+    /**
+     * Review Pack Version
+     */
+    review_pack_version: string;
+    /**
      * Status
      */
     status: 'queued' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled';

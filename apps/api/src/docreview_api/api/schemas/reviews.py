@@ -99,6 +99,9 @@ class ReviewListItemResponse(ApiModel):
     review_id: OpaqueId
     document_id: OpaqueId
     document_filename: str
+    review_pack_id: OpaqueId
+    review_pack_name: str
+    review_pack_version: str
     status: ReviewStatus
     queued_at: UtcDateTime
     finished_at: UtcDateTime | None

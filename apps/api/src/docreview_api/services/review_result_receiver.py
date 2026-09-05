@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -115,6 +116,7 @@ class ReviewResultReceiver:
             raise ResultIdentityMismatchError("result run_id does not match review job")
         if payload.get("status") != "completed":
             raise ResultSchemaError("exit code 0 requires a completed ReviewResult")
+        self._validate_completed_invariants(payload)
 
         snapshot = prepare_review_result_snapshot(
             payload,
@@ -172,3 +174,32 @@ class ReviewResultReceiver:
             raise IncompatibleSchemaVersionError(
                 f"ReviewResult schema major {match.group('major')} is unsupported"
             )
+
+    @staticmethod
+    def _validate_completed_invariants(payload: Mapping[str, Any]) -> None:
+        """Reject semantic contract violations without repairing core output."""
+
+        findings = cast(list[dict[str, Any]], payload["findings"])
+        summary = cast(dict[str, int], payload["summary"])
+        finding_ids = [finding["id"] for finding in findings]
+        duplicates = sorted(
+            finding_id for finding_id, count in Counter(finding_ids).items() if count > 1
+        )
+        if duplicates:
+            raise ResultSchemaError(
+                f"ReviewResult finding IDs must be unique: {', '.join(duplicates)}"
+            )
+
+        returned = summary["returned_findings"]
+        if returned != len(findings):
+            raise ResultSchemaError(
+                "ReviewResult summary.returned_findings does not match findings length"
+            )
+
+        severity_counts = Counter(finding["severity"] for finding in findings)
+        for severity in ("critical", "high", "medium", "low"):
+            if summary[severity] != severity_counts.get(severity, 0):
+                raise ResultSchemaError(f"ReviewResult summary.{severity} does not match findings")
+
+        if not returned <= summary["verified_candidates"] <= summary["total_candidates"]:
+            raise ResultSchemaError("ReviewResult candidate counters are inconsistent")

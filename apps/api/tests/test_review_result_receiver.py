@@ -197,6 +197,72 @@ def test_json_schema_violation_is_rejected(tmp_path: Path, sessions: sessionmake
     with pytest.raises(ResultSchemaError, match="schema validation"):
         receiver(sessions).receive(job_id, workspace, execution())
 
+    with sessions() as session:
+        stored = ReviewJobRepository(session).require(job_id)
+        assert stored.raw_result is None
+        assert stored.status is ReviewJobStatus.RUNNING
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda payload: payload["findings"].append(deepcopy(payload["findings"][0])),
+        lambda payload: payload["findings"].extend(
+            deepcopy(payload["findings"][0]) | {"id": f"overflow-{index}"} for index in range(20)
+        ),
+        lambda payload: payload["findings"][0].pop("location"),
+        lambda payload: payload["findings"][0].update(quote=""),
+        lambda payload: payload["findings"][0].update(clarification=""),
+    ],
+    ids=[
+        "duplicate-finding-id",
+        "more-than-20-findings",
+        "missing-location",
+        "empty-quote",
+        "empty-clarification",
+    ],
+)
+def test_invalid_finding_contract_is_rejected_without_correction(
+    tmp_path: Path,
+    sessions: sessionmaker[Session],
+    mutate: Any,
+) -> None:
+    payload = success_payload()
+    job_id = seed_running_job(sessions, payload)
+    mutate(payload)
+    workspace = prepare_workspace(tmp_path, payload)
+
+    with pytest.raises(ResultSchemaError):
+        receiver(sessions).receive(job_id, workspace, execution())
+
+    with sessions() as session:
+        stored = ReviewJobRepository(session).require(job_id)
+        assert stored.raw_result is None
+        assert stored.status is ReviewJobStatus.RUNNING
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["returned_findings", "high", "verified_candidates"],
+)
+def test_inconsistent_summary_is_rejected_without_rewriting_core_result(
+    tmp_path: Path,
+    sessions: sessionmaker[Session],
+    field: str,
+) -> None:
+    payload = success_payload()
+    job_id = seed_running_job(sessions, payload)
+    payload["summary"][field] = 0
+    workspace = prepare_workspace(tmp_path, payload)
+
+    with pytest.raises(ResultSchemaError):
+        receiver(sessions).receive(job_id, workspace, execution())
+
+    with sessions() as session:
+        stored = ReviewJobRepository(session).require(job_id)
+        assert stored.raw_result is None
+        assert stored.status is ReviewJobStatus.RUNNING
+
 
 def test_unknown_schema_major_has_specific_error(
     tmp_path: Path, sessions: sessionmaker[Session]

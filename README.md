@@ -94,6 +94,7 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 - [Приём поставки Analysis Core](docs/analysis-core-acceptance.md);
 - [Smoke-проверка реального Analysis Core CLI](docs/real-core-cli-smoke.md);
 - [Таблица совместимости Core/Schema/Application](docs/real-core-compatibility.md);
+- [Совместная отладка Product Application и Analysis Core](docs/core-collaborative-debugging.md);
 - [Модель данных приложения](docs/application-data-model.md);
 - [Политика хранения и tenant-scoped удаления](docs/storage-retention-policy.md);
 - [Roadmaps](roadmaps/README.md).

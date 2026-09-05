@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import shutil
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -12,7 +14,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.db.models import ReviewJobModel
 from docreview_api.repositories.database import ReviewJobRepository
-from docreview_api.services.process_runner import AnalysisProcessRequest, ProcessRunner
+from docreview_api.services.process_runner import (
+    AnalysisProcessRequest,
+    ProcessExecutionResult,
+    ProcessRunner,
+)
 from docreview_api.services.review_job_control import ReviewJobControlService
 from docreview_api.services.review_job_errors import ReviewJobFailureService
 from docreview_api.services.review_job_queue import ReviewJobQueue
@@ -21,6 +27,9 @@ from docreview_api.services.review_result_receiver import (
     ReviewResultReceiver,
 )
 from docreview_api.services.run_workspace import RunWorkspace, RunWorkspaceManager
+
+LOGGER = logging.getLogger(__name__)
+DIAGNOSTIC_ARTIFACT_NAME = "integration-diagnostic.json"
 
 
 class WorkerInputError(ValueError):
@@ -78,15 +87,15 @@ class AnalysisJobExecutor:
             inputs.review_pack_locator,
             kind="Review Pack",
         )
-        process = await self._process_runner.start(
-            AnalysisProcessRequest(
-                run_id=inputs.run_id,
-                document_path=document_path,
-                review_pack_path=review_pack_path,
-                workspace=workspace,
-                model_config_path=self._model_config_path,
-            )
+        request = AnalysisProcessRequest(
+            run_id=inputs.run_id,
+            document_path=document_path,
+            review_pack_path=review_pack_path,
+            workspace=workspace,
+            model_config_path=self._model_config_path,
         )
+        arguments = self._process_runner.build_arguments(request)
+        process = await self._process_runner.start(request)
         if not self._queue.attach_process(job_id, process_pid=process.pid):
             await process.terminate(grace_period_seconds=self._termination_grace_seconds)
             return
@@ -107,6 +116,7 @@ class AnalysisJobExecutor:
             finally:
                 await process.terminate(grace_period_seconds=self._termination_grace_seconds)
             raise
+        self._write_integration_diagnostic(workspace, arguments, controlled.execution)
         if controlled.timed_out or controlled.cancelled:
             return
         execution = controlled.execution
@@ -121,7 +131,47 @@ class AnalysisJobExecutor:
         try:
             self._result_receiver.receive(job_id, workspace, execution)
         except ReviewResultAcceptanceError as error:
-            self._failure_service.record_acceptance_failure(job_id, error)
+            self._write_integration_diagnostic(
+                workspace,
+                arguments,
+                execution,
+                contract_validation_errors=(str(error),),
+            )
+            self._failure_service.record_acceptance_failure(
+                job_id,
+                error,
+                diagnostic=str(error),
+            )
+
+    @staticmethod
+    def _write_integration_diagnostic(
+        workspace: RunWorkspace,
+        arguments: tuple[str, ...],
+        execution: ProcessExecutionResult,
+        *,
+        contract_validation_errors: tuple[str, ...] = (),
+    ) -> None:
+        """Keep one private, bounded handoff artifact next to the core output."""
+
+        payload = {
+            "format_version": "1.0",
+            "run_id": workspace.run_id,
+            "command": list(arguments),
+            "exit_code": execution.exit_code,
+            "stderr": {
+                "text": execution.stderr.utf8(),
+                "truncated": execution.stderr.truncated,
+            },
+            "contract_validation_errors": list(contract_validation_errors),
+        }
+        destination = workspace.artifacts_dir / DIAGNOSTIC_ARTIFACT_NAME
+        try:
+            destination.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            LOGGER.warning("Could not write integration diagnostic for run %s", workspace.run_id)
 
     def _load_inputs(self, job_id: UUID) -> _JobInputs:
         with self._session_factory() as session:

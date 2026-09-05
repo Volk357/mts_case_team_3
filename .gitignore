@@ -63,6 +63,7 @@ coverage/
 runs/
 artifacts/
 documents/
+/diagnostics/
 
 # === Служебное / OS ===
 _tmp_docreview/

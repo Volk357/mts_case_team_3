@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -158,6 +159,53 @@ async def test_worker_terminalizes_every_failure_scenario(
         assert job.raw_result is None
         assert job.user_error_message
         assert "mock:" not in job.user_error_message
+
+
+@pytest.mark.anyio
+async def test_worker_writes_reproducible_private_process_diagnostic(tmp_path: Path) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "model-unavailable")
+
+    assert await worker.run_once()
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None
+        run_id = job.run_id
+    report = json.loads(
+        (tmp_path / "runs" / run_id / "artifacts" / "integration-diagnostic.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["format_version"] == "1.0"
+    assert report["run_id"] == run_id
+    assert report["command"][0:3] == [sys.executable, "-m", "docreview_mock"]
+    assert report["command"][-2:] == [
+        "--artifacts-dir",
+        str(tmp_path / "runs" / run_id / "artifacts"),
+    ]
+    assert report["exit_code"] == 5
+    assert set(report["stderr"]) == {"text", "truncated"}
+    assert report["contract_validation_errors"] == []
+
+
+@pytest.mark.anyio
+async def test_worker_records_exact_contract_rejection_for_core_owner(tmp_path: Path) -> None:
+    worker, sessions, job_id = build_test_worker(tmp_path, "incompatible-schema-version")
+
+    assert await worker.run_once()
+
+    with sessions() as session:
+        job = session.get(ReviewJobModel, job_id)
+        assert job is not None
+        run_id = job.run_id
+        assert "schema major 2 is unsupported" in (job.diagnostic_message or "")
+    report = json.loads(
+        (tmp_path / "runs" / run_id / "artifacts" / "integration-diagnostic.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report["exit_code"] == 0
+    assert report["contract_validation_errors"] == ["ReviewResult schema major 2 is unsupported"]
 
 
 class FailingExecutor:

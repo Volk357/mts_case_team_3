@@ -430,13 +430,48 @@ def extract_known_objects(text):
     return "\n".join(sorted(names))
 
 
+def _split_long_block(block, max_chars):
+    """Делит блок, который сам по себе длиннее предела.
+
+    Нужен для документов из настоящего Word: там между абзацами нет пустых
+    строк, и весь документ приходит одним блоком. Без этого фрагмент уезжал
+    в модель в десяток раз больше проектного — то есть в режиме, на котором
+    не снята ни одна наша метрика.
+
+    Режем по границам строк, а не по символам: строка — это абзац или ячейка
+    таблицы, и разрывать её посередине значит ломать цитату.
+    """
+    if len(block) <= max_chars:
+        return [block]
+    pieces, current = [], ""
+    for line in block.split("\n"):
+        if current and len(current) + len(line) + 1 > max_chars:
+            pieces.append(current)
+            current = line
+        else:
+            current = f"{current}\n{line}" if current else line
+        # Одна строка длиннее предела (например, широкая таблица одной
+        # строкой) — режем её жёстко, иначе предел снова не соблюдён.
+        while len(current) > max_chars:
+            pieces.append(current[:max_chars])
+            current = current[max_chars:]
+    if current.strip():
+        pieces.append(current)
+    return [p for p in pieces if p.strip()]
+
+
 def split_document(text, max_chars=1500, min_chars=200):
     """Режет документ на фрагменты по пустым строкам, склеивая мелкие блоки."""
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    raw_blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
+    blocks = []
+    for b in raw_blocks:
+        blocks.extend(_split_long_block(b, max_chars))
     fragments, current = [], ""
 
     for b in blocks:
-        if current and len(current) + len(b) > max_chars:
+        # +2 — разделитель "\n\n", который добавит склейка ниже. Без него
+        # два блока по 750 символов дают фрагмент 1502 при пределе 1500.
+        if current and len(current) + len(b) + 2 > max_chars:
             fragments.append(current.strip())
             current = b
         else:
@@ -447,7 +482,10 @@ def split_document(text, max_chars=1500, min_chars=200):
 
     merged = []
     for f in fragments:
-        if merged and len(f) < min_chars:
+        # Мелкий хвост приклеиваем к предыдущему, но только если склейка не
+        # выходит за предел: иначе борьба с мелкими фрагментами порождала бы
+        # слишком крупные, ровно то, от чего мы уходим выше.
+        if merged and len(f) < min_chars and len(merged[-1]) + len(f) + 2 <= max_chars:
             merged[-1] = merged[-1] + "\n\n" + f
         else:
             merged.append(f)
@@ -646,13 +684,45 @@ def run(doc_text, mode, taxonomy_text, valid_ids, known_objects,
     }
 
 
+# Во сколько символов документа обходится одна единица окна модели.
+# Оценка грубая и намеренно консервативная: на кириллице токенизатор даёт
+# примерно 2.5 символа на токен, часть окна занимают инструкция, таксономия
+# и ответ. Нужна не точность, а честный сигнал «документ не поместился».
+GLOBAL_DOC_CHARS_PER_CTX = 2.0
+
+
+def global_doc_char_budget():
+    """Бюджет символов для кросс-фрагментного прохода.
+
+    Считается в момент вызова, а не при импорте: `NUM_CTX` переопределяется
+    из model-config уже после загрузки модуля. Константа, снятая на импорте,
+    осталась бы от значения по умолчанию — и при меньшем реальном окне
+    вернулась бы та самая молчаливая обрезка, от которой мы уходим.
+    """
+    return int(NUM_CTX * GLOBAL_DOC_CHARS_PER_CTX)
+
+
 def run_global(doc_text, defects, glossary_text):
     """
     Один вызов на весь документ. Ищет только те типы дефектов,
     которые требуют сопоставления удалённых частей текста.
+
+    Возвращает (kept, truncated_chars): второе — сколько символов не
+    поместилось в окно модели. Молча анализировать кусок и отдавать это как
+    проход по всему документу нельзя: кросс-фрагментные типы именно тем и
+    ценны, что сопоставляют удалённые части, а на обрезанном документе
+    половины сопоставлений просто нет.
     """
     subset = GLOBAL_TYPES & {d["id"] for d in defects}
     taxonomy_text = render_taxonomy(defects, subset)
+
+    budget = global_doc_char_budget()
+    truncated = max(0, len(doc_text) - budget)
+    if truncated:
+        doc_text = doc_text[:budget]
+        print(f"[global] ВНИМАНИЕ: документ длиннее окна модели, "
+              f"в кросс-фрагментный проход ушли первые "
+              f"{budget} символов, не поместилось {truncated}")
 
     print(f"[global] один проход по документу, типов в поиске: {len(subset)}")
 
@@ -682,6 +752,7 @@ def run_global(doc_text, defects, glossary_text):
         "severity_fixed": sum(1 for f in kept if "severity_raw" in f),
         "findings": kept,
         "rejected": dropped,
+        "truncated_chars": truncated,
     }
 
 
@@ -871,6 +942,9 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
         "capped_away": len(capped),
         "rejected_count": frag["rejected_count"] + glob["rejected_count"],
         "reject_reasons": {**frag["reject_reasons"], **glob["reject_reasons"]},
+        # Сколько символов не поместилось в кросс-фрагментный проход.
+        # Ноль — документ прошёл целиком.
+        "truncated_chars": glob.get("truncated_chars", 0),
         "severity_fixed": sum(1 for f in kept if "severity_raw" in f),
         "findings": kept,
         "merged": merged,

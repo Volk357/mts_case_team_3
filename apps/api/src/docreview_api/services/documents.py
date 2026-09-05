@@ -7,14 +7,19 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from docreview_api.db.models import DocumentModel
+from docreview_api.db.models import DocumentModel, ReviewJobModel
+from docreview_api.models.review_job_state import TERMINAL_STATUSES
 
 
 class DocumentUnavailableError(LookupError):
     """A document is absent, deleted, or outside the requesting tenant."""
+
+
+class DocumentBusyError(RuntimeError):
+    """A review of this document is queued or running, so its file must stay."""
 
 
 class DocumentFileUnavailableError(RuntimeError):
@@ -118,3 +123,85 @@ class DocumentQueryService:
                 "document storage object size does not match metadata"
             )
         return resolved
+
+
+class DocumentCleanupService:
+    """Delete a stored document explicitly while preserving review evidence."""
+
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        *,
+        documents_root: Path,
+    ) -> None:
+        self._session_factory = session_factory
+        self._documents_root = documents_root.resolve()
+
+    def delete(self, document_id: UUID, *, company_id: UUID) -> None:
+        with self._session_factory.begin() as session:
+            document = session.scalar(
+                select(DocumentModel)
+                .where(
+                    DocumentModel.id == document_id,
+                    DocumentModel.company_id == company_id,
+                    DocumentModel.deleted_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if document is None:
+                raise DocumentUnavailableError("document is unavailable")
+            storage_key = document.storage_key
+
+            has_active_review = (
+                select(ReviewJobModel.id)
+                .where(
+                    ReviewJobModel.document_id == DocumentModel.id,
+                    ReviewJobModel.company_id == company_id,
+                    ReviewJobModel.status.not_in(TERMINAL_STATUSES),
+                )
+                .exists()
+            )
+            update_result = session.execute(
+                update(DocumentModel)
+                .where(
+                    DocumentModel.id == document_id,
+                    DocumentModel.company_id == company_id,
+                    DocumentModel.deleted_at.is_(None),
+                    ~has_active_review,
+                )
+                .values(deleted_at=datetime.now(UTC))
+            )
+            marked = getattr(update_result, "rowcount", 0)
+
+            if not marked:
+                still_alive = session.scalar(
+                    select(DocumentModel.id).where(
+                        DocumentModel.id == document_id,
+                        DocumentModel.company_id == company_id,
+                        DocumentModel.deleted_at.is_(None),
+                    )
+                )
+                if still_alive is None:
+                    raise DocumentUnavailableError("document is unavailable")
+                raise DocumentBusyError("a review of this document is still running")
+
+            session.flush()
+            self._remove_file(storage_key)
+
+    def _remove_file(self, storage_key: str) -> None:
+        key = PurePosixPath(storage_key)
+        if (
+            not storage_key
+            or key.is_absolute()
+            or PureWindowsPath(storage_key).is_absolute()
+            or ".." in key.parts
+            or "\\" in storage_key
+        ):
+            raise DocumentFileUnavailableError("document storage key is invalid")
+        unresolved = self._documents_root.joinpath(*key.parts)
+        if unresolved.is_symlink():
+            raise DocumentFileUnavailableError("document storage object is invalid")
+        resolved = unresolved.resolve()
+        if not resolved.is_relative_to(self._documents_root):
+            raise DocumentFileUnavailableError("document storage key escapes the root")
+        resolved.unlink(missing_ok=True)

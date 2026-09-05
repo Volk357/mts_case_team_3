@@ -69,7 +69,7 @@ def test_filename_control_characters_and_excessive_length_are_rejected() -> None
 @pytest.mark.parametrize(
     ("filename", "media_type"),
     [
-        ("notes.txt", "text/plain"),
+        ("notes.rtf", "text/plain"),
         ("report.pdf", DOCX_MEDIA_TYPE),
         ("specification.docx", PDF_MEDIA_TYPE),
         ("report.pdf", None),
@@ -126,3 +126,84 @@ def test_spoofed_or_incomplete_format_is_rejected(
             content=content,
             max_size_bytes=1024,
         )
+
+
+@pytest.mark.parametrize(
+    "media_type",
+    ["text/plain", "text/markdown", "application/octet-stream", None],
+)
+def test_txt_is_accepted_with_any_reasonable_declared_type(media_type: str | None) -> None:
+    """Браузеры помечают текстовый файл по-разному, а иногда не помечают вовсе.
+    Отбивать из-за этого годный .txt нельзя — формат заявлен как поддерживаемый."""
+
+    result = validate_upload(
+        filename="Витрина.txt",
+        declared_media_type=media_type,
+        content="Описание витрины\nРегламент расчёта: ежемесячно".encode(),
+        max_size_bytes=1024,
+    )
+
+    assert result.extension == ".txt"
+    assert result.media_type == "text/plain"
+
+
+def test_binary_content_renamed_to_txt_is_rejected() -> None:
+    """NUL-байты — надёжный признак двоичного файла под видом текстового."""
+
+    with pytest.raises(DocumentFormatMismatchError):
+        validate_upload(
+            filename="fake.txt",
+            declared_media_type="text/plain",
+            content=b"PK\x03\x04\x00\x00binary\x00payload",
+            max_size_bytes=1024,
+        )
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "utf-32"])
+def test_txt_in_utf16_and_utf32_is_accepted(encoding: str) -> None:
+    """В UTF-16/32 каждый латинский символ содержит NUL. Проверка «есть NUL —
+    значит двоичный» отбивала бы обычный текстовый файл из «Блокнота»."""
+
+    result = validate_upload(
+        filename="Витрина.txt",
+        declared_media_type="text/plain",
+        content="Описание витрины".encode(encoding),
+        max_size_bytes=4096,
+    )
+
+    assert result.extension == ".txt"
+
+
+@pytest.mark.parametrize(
+    ("bom", "payload"),
+    [
+        (b"\xff\xfe", bytes(range(256)) * 4),
+        (b"\xef\xbb\xbf", b"\x01\x02\x03\x04" * 200),
+        # Двоичный хвост после валидного текста: проверка обязана смотреть
+        # весь буфер, а не только его начало.
+        (b"\xef\xbb\xbf", b"normal text " * 100 + b"\xff" * 100),
+    ],
+)
+def test_bom_prefixed_binary_is_rejected(bom: bytes, payload: bytes) -> None:
+    """BOM можно приписать и двоичному файлу: проверяем содержимое, а не метку."""
+
+    with pytest.raises(DocumentFormatMismatchError):
+        validate_upload(
+            filename="fake.txt",
+            declared_media_type="text/plain",
+            content=bom + payload,
+            max_size_bytes=100000,
+        )
+
+
+def test_long_utf16_text_survives_probe_boundary() -> None:
+    """Окно проверки может оборваться посреди символа — это не повод отказать."""
+
+    result = validate_upload(
+        filename="Витрина.txt",
+        declared_media_type="text/plain",
+        content=("Описание витрины. " * 600).encode("utf-16"),
+        max_size_bytes=100000,
+    )
+
+    assert result.extension == ".txt"

@@ -116,10 +116,11 @@ python3.12 -m venv .venv
 .venv/bin/pip install --no-deps --no-build-isolation -e .
 
 mkdir -p /opt/docreview/data
+chown -R docreview:docreview /opt/docreview/data
 cat > /opt/docreview/app.env <<'ENV'
 DOCREVIEW_ANALYSIS_EXECUTABLE=/usr/local/bin/docreview
 DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH=/opt/docreview/core/model-config.yaml
-DOCREVIEW_DATABASE_URL=sqlite:////opt/docreview/data/docreview.db
+DOCREVIEW_DATABASE_URL=postgresql+psycopg://docreview:ПАРОЛЬ@127.0.0.1/docreview
 DOCREVIEW_DOCUMENTS_DIR=/opt/docreview/data/documents
 DOCREVIEW_RUNS_DIR=/opt/docreview/data/runs
 DOCREVIEW_REVIEW_PACKS_DIR=/opt/docreview/data/review-packs
@@ -263,8 +264,8 @@ curl -s localhost:8010/api/reviews/$RID/findings
 ## Известные ограничения этого развёртывания
 
 - **Аутентификации нет.** Открывать наружу без хотя бы basic-auth нельзя.
-- **PDF не поддерживается.** Ядро читает `.docx` и текст; для PDF библиотеки
-  в контуре нет, файл будет отбит понятной ошибкой.
+- **PDF поддерживается**, но извлечение из него слабее DOCX: PDF не хранит
+  структуру таблиц, а скан без текстового слоя не анализируется.
 - **`--model-config` передаётся worker явно** из
   `DOCREVIEW_ANALYSIS_MODEL_CONFIG_PATH`. Файл должен существовать на хосте
   worker и не должен попадать в Git или журналы.

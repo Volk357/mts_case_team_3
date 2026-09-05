@@ -364,8 +364,20 @@ export type FindingsResponse = {
  * HealthResponse
  *
  * Public health information without infrastructure details.
+ *
+ * `status` отражает реальную готовность, а не факт того, что процесс отвечает:
+ * как предполётная проверка перед демонстрацией константа бесполезна —
+ * она одинаково зелёная и когда база лежит, и когда воркер мёртв.
+ * Подробности инфраструктуры наружу не выходят: только имя зависимости и
+ * её состояние.
  */
 export type HealthResponse = {
+    /**
+     * Checks
+     */
+    checks?: {
+        [key: string]: 'ok' | 'failed';
+    };
     /**
      * Environment
      */
@@ -377,7 +389,7 @@ export type HealthResponse = {
     /**
      * Status
      */
-    status?: 'ok';
+    status?: 'ok' | 'degraded';
     /**
      * Version
      */
@@ -571,6 +583,10 @@ export type ReviewResponse = {
      * Status
      */
     status: 'queued' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled';
+    /**
+     * Warnings
+     */
+    warnings?: Array<ReviewWarningResponse>;
 };
 
 /**
@@ -581,6 +597,28 @@ export type ReviewWarning = {
      * Code
      */
     code: string | null;
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
+ * ReviewWarningResponse
+ *
+ * Предупреждение ядра, адресованное пользователю.
+ *
+ * Не диагностика: она живёт отдельно, в поле ошибки задачи, и сюда не
+ * попадает. Перечень кодов НЕ закрыт — контракт ядра допускает любой код и
+ * вдобавок предупреждение простой строкой; строка приходит сюда под кодом
+ * `NOTICE`. Фильтровать по списку известных кодов нельзя: так молча пропали
+ * бы документированные предупреждения ядра.
+ */
+export type ReviewWarningResponse = {
+    /**
+     * Code
+     */
+    code: string;
     /**
      * Message
      */
@@ -639,6 +677,66 @@ export type UploadDocumentApiDocumentsPostResponses = {
 };
 
 export type UploadDocumentApiDocumentsPostResponse = UploadDocumentApiDocumentsPostResponses[keyof UploadDocumentApiDocumentsPostResponses];
+
+export type DeleteDocumentApiDocumentsDocumentIdDeleteData = {
+    body?: never;
+    path: {
+        /**
+         * Document Id
+         *
+         * Opaque resource identifier. Clients must not infer meaning from it.
+         */
+        document_id: string;
+    };
+    query?: never;
+    url: '/api/documents/{document_id}';
+};
+
+export type DeleteDocumentApiDocumentsDocumentIdDeleteErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type DeleteDocumentApiDocumentsDocumentIdDeleteError = DeleteDocumentApiDocumentsDocumentIdDeleteErrors[keyof DeleteDocumentApiDocumentsDocumentIdDeleteErrors];
+
+export type DeleteDocumentApiDocumentsDocumentIdDeleteResponses = {
+    /**
+     * Successful Response
+     */
+    204: void;
+};
+
+export type DeleteDocumentApiDocumentsDocumentIdDeleteResponse = DeleteDocumentApiDocumentsDocumentIdDeleteResponses[keyof DeleteDocumentApiDocumentsDocumentIdDeleteResponses];
 
 export type GetDocumentApiDocumentsDocumentIdGetData = {
     body?: never;

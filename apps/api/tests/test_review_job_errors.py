@@ -33,8 +33,8 @@ FINISHED_AT = STARTED_AT + timedelta(seconds=5)
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    database_engine = create_database_engine(f"sqlite:///{(tmp_path / 'errors.db').as_posix()}")
+def engine(tmp_path: Path, database_url: str) -> Engine:
+    database_engine = create_database_engine(database_url)
     Base.metadata.create_all(database_engine)
     try:
         yield database_engine

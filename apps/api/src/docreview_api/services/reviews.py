@@ -22,6 +22,69 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+# Предупреждения контракта адресованы пользователю по замыслу: диагностика
+# ядра живёт отдельно, в error.diagnostic_message, и сюда не попадает. Поэтому
+# фильтра по списку кодов здесь нет — он отбрасывал бы и документированные
+# предупреждения (например PAGE_UNKNOWN из contracts/examples/success.json),
+# то есть воспроизводил бы ровно ту проблему, ради которой warnings и выводятся.
+#
+# Контракт допускает предупреждение двумя формами: строкой или объектом
+# {code, message}. Строка приходит без кода — показываем её под общим NOTICE.
+GENERIC_WARNING_CODE = "NOTICE"
+
+# Границы на случай, если ядро пришлёт полотно: экран должен остаться читаемым.
+MAX_WARNINGS = 10
+MAX_WARNING_MESSAGE_CHARS = 400
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewWarning:
+    code: str
+    message: str
+
+
+def _public_warnings(raw_result: dict[str, Any] | None) -> tuple[ReviewWarning, ...]:
+    """Достаёт предупреждения ядра из сохранённого результата.
+
+    Они лежат только в raw_result и до этого наружу не выходили вовсе —
+    из-за чего частичная проверка при отказе модели выглядела как обычная,
+    а обрезанный по окну документ — как пройденный целиком.
+
+    Поддержаны обе формы контракта: строка и объект {code, message}.
+    Отбрасывается только то, что вообще не несёт текста для человека.
+    """
+    if not isinstance(raw_result, dict):
+        return ()
+    items = raw_result.get("warnings")
+    if not isinstance(items, list):
+        return ()
+
+    public: list[ReviewWarning] = []
+    for item in items[:MAX_WARNINGS]:
+        if isinstance(item, str):
+            code, message = GENERIC_WARNING_CODE, item
+        elif isinstance(item, dict):
+            raw_code = item.get("code")
+            code = (
+                raw_code.strip()
+                if isinstance(raw_code, str) and raw_code.strip()
+                else GENERIC_WARNING_CODE
+            )
+            raw_message = item.get("message")
+            message = raw_message if isinstance(raw_message, str) else ""
+        else:
+            continue
+        if not isinstance(message, str) or not message.strip():
+            continue
+        public.append(
+            ReviewWarning(
+                code=code,
+                message=message.strip()[:MAX_WARNING_MESSAGE_CHARS],
+            )
+        )
+    return tuple(public)
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewSnapshot:
     id: UUID
@@ -34,6 +97,7 @@ class ReviewSnapshot:
     error_code: str | None
     user_error_message: str | None
     error_retriable: bool | None
+    warnings: tuple[ReviewWarning, ...] = ()
 
 
 DetectionLayer = Literal["rule", "model", "mixed"]
@@ -86,39 +150,9 @@ class FindingSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
-class ReviewWarningSnapshot:
-    code: str | None
-    message: str
-
-
-@dataclass(frozen=True, slots=True)
 class ReviewFindingsSnapshot:
     items: tuple[FindingSnapshot, ...]
-    warnings: tuple[ReviewWarningSnapshot, ...]
-
-
-def _public_warnings(raw_result: dict[str, Any] | None) -> tuple[ReviewWarningSnapshot, ...]:
-    if not isinstance(raw_result, dict):
-        return ()
-    source = raw_result.get("warnings")
-    if not isinstance(source, list):
-        return ()
-
-    warnings: list[ReviewWarningSnapshot] = []
-    for warning in source:
-        if isinstance(warning, str) and warning:
-            warnings.append(ReviewWarningSnapshot(code=None, message=warning))
-        elif isinstance(warning, dict):
-            code = warning.get("code")
-            message = warning.get("message")
-            if isinstance(message, str) and message:
-                warnings.append(
-                    ReviewWarningSnapshot(
-                        code=code if isinstance(code, str) and code else None,
-                        message=message,
-                    )
-                )
-    return tuple(warnings)
+    warnings: tuple[ReviewWarning, ...]
 
 
 class ReviewQueryService:
@@ -151,7 +185,13 @@ class ReviewQueryService:
             rows = session.execute(
                 select(ReviewJobModel, DocumentModel.original_filename, findings_count)
                 .join(DocumentModel, DocumentModel.id == ReviewJobModel.document_id)
-                .where(ReviewJobModel.company_id == company_id)
+                .where(
+                    ReviewJobModel.company_id == company_id,
+                    # Документ удалили — проверка уходит из истории вместе с ним.
+                    # Замечания и оценки при этом остаются в базе: это разметка,
+                    # а не копия исходника.
+                    DocumentModel.deleted_at.is_(None),
+                )
                 .order_by(ReviewJobModel.queued_at.desc())
                 .limit(limit)
             ).all()
@@ -229,4 +269,5 @@ class ReviewQueryService:
             error_code=job.error_code,
             user_error_message=job.user_error_message,
             error_retriable=job.error_retriable,
+            warnings=_public_warnings(job.raw_result),
         )

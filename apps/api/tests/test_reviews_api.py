@@ -23,10 +23,10 @@ from docreview_api.services.reviews import _detection_layer
 
 
 @pytest.fixture
-def review_resources(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
+def review_resources(tmp_path: Path, database_url: str) -> tuple[Settings, UUID, UUID]:
     settings = Settings(
         environment="test",
-        database_url=f"sqlite:///{(tmp_path / 'reviews.db').as_posix()}",
+        database_url=database_url,
         documents_dir=tmp_path / "documents",
         review_poll_interval_seconds=3,
         _env_file=None,
@@ -96,6 +96,7 @@ async def test_create_is_async_idempotent_and_pollable(
         "finished_at",
         "poll_after_ms",
         "error",
+        "warnings",
     }
 
     engine = create_database_engine(settings.database_url)
@@ -486,3 +487,62 @@ async def test_list_reviews_hides_other_tenants(
     assert listed.status_code == 200
     assert listed.json()["total"] == 0
     assert "Чужой документ.docx" not in listed.text
+
+
+@pytest.mark.anyio
+async def test_core_warnings_reach_the_client(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    """Предупреждения ядра обязаны доходить до пользователя.
+
+    Без этого частичная проверка при отказе модели выглядит как обычная, а
+    документ, обрезанный по окну модели, — как пройденный целиком.
+
+    Контракт допускает предупреждение строкой и объектом, и код может быть
+    любым: фильтровать по списку известных кодов нельзя, иначе документированные
+    предупреждения ядра (PAGE_UNKNOWN) молча пропадут. Проверяем обе формы и то,
+    что отбрасывается лишь бессодержательное.
+    """
+
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions.begin() as session:
+        job = ReviewJobModel(
+            run_id="review-warned",
+            company_id=settings.default_company_id,
+            document_id=document_id,
+            review_pack_reference_id=pack_id,
+            status=ReviewJobStatus.COMPLETED,
+            queued_at=datetime(2026, 9, 5, 10, 0, tzinfo=UTC),
+            completed_at=datetime(2026, 9, 5, 10, 1, tzinfo=UTC),
+            raw_result={
+                "warnings": [
+                    {"code": "MODEL_UNAVAILABLE_PARTIAL", "message": "Проверка неполная."},
+                    {"code": "PAGE_UNKNOWN", "message": "Номер страницы недоступен"},
+                    "Предупреждение строкой из контракта",
+                    {"code": "NO_MESSAGE"},
+                    {"message": "Текст без кода"},
+                ]
+            },
+        )
+        session.add(job)
+        session.flush()
+        review_id = job.id
+    engine.dispose()
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/reviews/{review_id}")
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["warnings"] == [
+        {"code": "MODEL_UNAVAILABLE_PARTIAL", "message": "Проверка неполная."},
+        {"code": "PAGE_UNKNOWN", "message": "Номер страницы недоступен"},
+        {"code": "NOTICE", "message": "Предупреждение строкой из контракта"},
+        {"code": "NOTICE", "message": "Текст без кода"},
+    ]
+    # Предупреждение без текста показывать нечего.
+    assert "NO_MESSAGE" not in response.text

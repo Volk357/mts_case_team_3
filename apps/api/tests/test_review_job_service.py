@@ -28,8 +28,8 @@ NOW = datetime(2026, 9, 3, 15, 0, tzinfo=UTC)
 
 
 @pytest.fixture
-def engine(tmp_path: Path) -> Engine:
-    database_engine = create_database_engine(f"sqlite:///{(tmp_path / 'jobs.db').as_posix()}")
+def engine(tmp_path: Path, database_url: str) -> Engine:
+    database_engine = create_database_engine(database_url)
     Base.metadata.create_all(database_engine)
     try:
         yield database_engine

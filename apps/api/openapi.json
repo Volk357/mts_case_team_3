@@ -607,8 +607,19 @@
       },
       "HealthResponse": {
         "additionalProperties": false,
-        "description": "Public health information without infrastructure details.",
+        "description": "Public health information without infrastructure details.\n\n`status` отражает реальную готовность, а не факт того, что процесс отвечает:\nкак предполётная проверка перед демонстрацией константа бесполезна —\nона одинаково зелёная и когда база лежит, и когда воркер мёртв.\nПодробности инфраструктуры наружу не выходят: только имя зависимости и\nеё состояние.",
         "properties": {
+          "checks": {
+            "additionalProperties": {
+              "enum": [
+                "ok",
+                "failed"
+              ],
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
           "environment": {
             "enum": [
               "development",
@@ -624,8 +635,11 @@
             "type": "string"
           },
           "status": {
-            "const": "ok",
             "default": "ok",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -946,6 +960,13 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewWarningResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -985,6 +1006,26 @@
           "message"
         ],
         "title": "ReviewWarning",
+        "type": "object"
+      },
+      "ReviewWarningResponse": {
+        "additionalProperties": false,
+        "description": "Предупреждение ядра, адресованное пользователю.\n\nНе диагностика: она живёт отдельно, в поле ошибки задачи, и сюда не\nпопадает. Перечень кодов НЕ закрыт — контракт ядра допускает любой код и\nвдобавок предупреждение простой строкой; строка приходит сюда под кодом\n`NOTICE`. Фильтровать по списку известных кодов нельзя: так молча пропали\nбы документированные предупреждения ядра.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReviewWarningResponse",
         "type": "object"
       }
     }
@@ -1108,6 +1149,112 @@
       }
     },
     "/api/documents/{document_id}": {
+      "delete": {
+        "description": "Delete the stored file while retaining findings and feedback.",
+        "operationId": "delete_document_api_documents__document_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+              "format": "uuid",
+              "title": "Document Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource state conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Delete Document",
+        "tags": [
+          "documents"
+        ]
+      },
       "get": {
         "description": "Return metadata only when both the tenant row and private file still exist.",
         "operationId": "get_document_api_documents__document_id__get",
@@ -1778,7 +1925,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "Report that the API process is ready to serve requests.",
+        "description": "Report whether the service can actually serve a review right now.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {

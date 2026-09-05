@@ -219,6 +219,69 @@ def failed_result(run_id, code, stage, message, retriable):
     }
 
 
+# Метки порядка байт текстовых кодировок. UTF-16 и UTF-32 содержат NUL в
+# каждом символе латиницы, поэтому без разбора BOM обычный текстовый файл
+# в этих кодировках выглядит двоичным и отбивается зря.
+_TEXT_BOMS = (
+    (b"\xff\xfe\x00\x00", "utf-32"),
+    (b"\x00\x00\xfe\xff", "utf-32"),
+    (b"\xef\xbb\xbf", "utf-8-sig"),
+    (b"\xff\xfe", "utf-16"),
+    (b"\xfe\xff", "utf-16"),
+)
+
+
+def _decodes_cleanly(raw, encoding):
+    """Проверяет, что начало файла действительно читается этой кодировкой.
+
+    Одного BOM мало: пометить BOM можно и двоичный мусор, а дальше он
+    декодировался бы с errors="replace" в строку из символов замены, и
+    анализ пошёл бы по бессмыслице. Управляющие байты (кроме табуляции и
+    переводов строки) — признак, что перед нами не текст.
+    """
+    probe = raw[:8192]
+    # Строгое декодирование, допуская ТОЛЬКО обрыв на границе окна: срезаем
+    # не больше трёх байт с конца. errors="ignore" здесь недопустим — он
+    # выбрасывает битые байты по всему буферу, и «BOM + текст + двоичный
+    # хвост» прошёл бы как обычный текст.
+    head = None
+    for cut in range(4):
+        chunk = probe[: len(probe) - cut] if cut else probe
+        try:
+            head = chunk.decode(encoding, errors="strict")
+            break
+        except (UnicodeDecodeError, LookupError):
+            continue
+    if head is None:
+        return False
+    if not head.strip():
+        return False
+    control = sum(1 for ch in head if ord(ch) < 32 and ch not in "\t\n\r")
+    if control * 20 > len(head):
+        return False
+    # Второй признак: в связном тексте есть пробелы и переводы строк. В UTF-16
+    # произвольные байты складываются в формально печатные символы, и одной
+    # проверки на управляющие мало — она такой мусор пропускает.
+    if len(head) >= 40:
+        spaces = sum(1 for ch in head if ch.isspace())
+        if spaces * 50 < len(head):
+            return False
+    return True
+
+
+def _text_encoding(raw):
+    """Кодировка текста или None, если это двоичный файл.
+
+    Порядок важен: BOM UTF-32 начинается с BOM UTF-16, и проверка «сначала
+    короткий» определила бы UTF-32 как UTF-16.
+    """
+    for bom, encoding in _TEXT_BOMS:
+        if raw.startswith(bom):
+            # BOM задаёт кодировку, но не делает файл текстом — проверяем.
+            return encoding if _decodes_cleanly(raw, encoding) else None
+    return None if b"\x00" in raw[:8192] else "utf-8"
+
+
 class UnsupportedBinary(Exception):
     """Файл двоичный: извлекать текст ядро не умеет (парсер — POST-submission)."""
 
@@ -227,7 +290,6 @@ class UnsupportedBinary(Exception):
 # расширению: .docx, переименованный в .txt, тоже должен быть отбит.
 _BINARY_SIGNATURES = [
     (b"PK\x03\x04", "xlsx/pptx (zip-контейнер, но не docx)"),
-    (b"%PDF", "pdf"),
     (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "doc/xls (OLE2)"),
     (b"{\\rtf", "rtf"),
 ]
@@ -274,18 +336,54 @@ def _read_document(path):
                            "возможно, ссылки были потеряны при подготовке файла."})
         return text, "docx", warn, digest
 
+    # .pdf разбираем через pypdf. Таблицы и разметку ячеек PDF не хранит
+    # вовсе, поэтому предупреждаем: часть детерминированных проверок,
+    # которые читают документ строками «ячейка | ячейка», на PDF слабее.
+    if raw.startswith(b"%PDF"):
+        import pdf_text
+        try:
+            text, report = pdf_text.extract(path)
+        except pdf_text.NoTextLayer as e:
+            raise UnsupportedBinary(str(e))
+        except pdf_text.PdfSupportMissing as e:
+            raise UnsupportedBinary(str(e))
+        except pdf_text.NotAPdf as e:
+            raise UnsupportedBinary(
+                "Файл не читается как PDF (%s). Возможно, он повреждён." % e)
+        warn = [{
+            "code": "PDF_NO_TABLE_STRUCTURE",
+            "message": "PDF не хранит разметку таблиц: проверки, разбирающие "
+                       "документ по ячейкам, на этом формате менее полны. "
+                       "Для полной проверки пришлите .docx."}]
+        # Часть страниц могла не прочитаться. Молча анализировать остаток
+        # и выдавать это за разбор всего документа нельзя.
+        if report["unreadable_pages"]:
+            warn.append({
+                "code": "PDF_PAGES_UNREADABLE",
+                "message": "Не удалось прочитать %d из %d страниц: замечания "
+                           "относятся только к прочитанной части документа."
+                           % (report["unreadable_pages"], report["pages"])})
+        if not pdf_text.count_links(path):
+            warn.append({
+                "code": "NO_EXTERNAL_LINKS",
+                "message": "В документе нет внешних гиперссылок. Замечания об "
+                           "отсутствующих ссылках следует читать с учётом этого: "
+                           "возможно, ссылки были потеряны при подготовке файла."})
+        return text, "pdf", warn, digest
+
     for sig, what in _BINARY_SIGNATURES:
         if raw.startswith(sig):
             raise UnsupportedBinary(
-                "Файл в формате %s: ядро принимает .docx и извлечённый текст "
-                "(txt/md). Для остальных форматов извлеките текст на стороне "
-                "приложения." % what)
-    if b"\x00" in raw[:8192]:
+                "Файл в формате %s: ядро принимает .docx, .pdf и извлечённый "
+                "текст (txt/md). Для остальных форматов извлеките текст на "
+                "стороне приложения." % what)
+    encoding = _text_encoding(raw)
+    if encoding is None:
         raise UnsupportedBinary(
-            "Файл двоичный (NUL-байты в начале): ядро принимает только "
-            "извлечённый текст (txt/md).")
+            "Файл двоичный (NUL-байты в начале и нет BOM текстовой "
+            "кодировки): ядро принимает только извлечённый текст (txt/md).")
 
-    text = raw.decode("utf-8", errors="replace")
+    text = raw.decode(encoding, errors="replace")
     ext = os.path.splitext(path)[1].lower().lstrip(".")
     if ext in ("txt", "md", "markdown", ""):
         return text, ext or "txt", [], digest
@@ -504,6 +602,10 @@ class ModelUnavailable(Exception):
 def cmd_analyze(args):
     t0 = time.time()
     run_id = args.run_id
+    # Заполняются, как только детерминированный слой посчитан: обработчик
+    # отказа модели отдаёт их как частичный результат вместо пустого экрана.
+    partial_formal = []
+    partial_context = None
     try:
         text, doc_type, warnings, document_sha256 = _read_document(args.file)
     except UnsupportedBinary as e:
@@ -567,12 +669,26 @@ def cmd_analyze(args):
             raise ReviewPackInvalid("не удалось разобрать правила пакета: %s" % e)
         known = run_review.extract_known_objects(text)
         formal = _verified_formal(check_formal.run(text, cfg), text, warnings)
+        partial_formal = formal            # виден в except: см. ниже
+        partial_context = (cfg, doc_type, pack_id, pack_version, document_sha256)
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,
                                       label="full2")
         except requests.exceptions.RequestException as e:
             raise ModelUnavailable(str(e))
+        # Документ не поместился в окно модели целиком: кросс-фрагментные
+        # типы искались только по началу. Молчать об этом нельзя — снаружи
+        # неполный проход выглядел бы как полный.
+        if llm.get("truncated_chars"):
+            warnings.append({
+                "code": "DOCUMENT_TRUNCATED_FOR_GLOBAL_PASS",
+                "message": "Документ длиннее окна модели: кросс-фрагментный "
+                           "проход выполнен по первым %d символам, "
+                           "не поместилось %d. Замечания о противоречиях между "
+                           "удалёнными частями документа могут быть неполными."
+                           % (len(text) - llm["truncated_chars"],
+                              llm["truncated_chars"])})
         result = build_review_result(
             text, os.path.basename(args.file), doc_type, formal, llm["findings"],
             run_id, (pack_id, pack_version), run_review.MODEL,
@@ -582,6 +698,34 @@ def cmd_analyze(args):
             verified_candidates=llm["verified"] + len(formal), cfg=cfg,
             document_sha256=document_sha256)
     except ModelUnavailable as e:
+        # Детерминированный слой к этому моменту уже посчитан и от сети не
+        # зависит. Выбрасывать его вместе с ошибкой модели — терять готовый
+        # результат: на отказе модели пользователь видел бы пустой экран,
+        # хотя часть замечаний у нас на руках. Отдаём их с предупреждением,
+        # чтобы никто не принял неполную проверку за полную.
+        if partial_formal:
+            cfg, doc_type, pack_id, pack_version, document_sha256 = partial_context
+            # Текст исключения сюда НЕ подставляем: предупреждение уходит на
+            # экран пользователю, а в исключении сетевой библиотеки лежат
+            # внутренний адрес и порт модели. Диагностика — в поток ошибок.
+            print("[model] недоступна: %s" % e, file=sys.stderr)
+            warnings.append({
+                "code": "MODEL_UNAVAILABLE_PARTIAL",
+                "message": "Модель недоступна. Показаны только замечания "
+                           "детерминированного слоя — проверка НЕПОЛНАЯ, "
+                           "смысловые и кросс-фрагментные типы не искались. "
+                           "Повторите проверку, когда модель ответит."})
+            partial = build_review_result(
+                text, os.path.basename(args.file), doc_type, partial_formal, [],
+                run_id, (pack_id, pack_version), run_review.MODEL,
+                {"fragment": "dict2", "global": "global"},
+                (time.time() - t0) * 1000, warnings,
+                total_candidates=len(partial_formal),
+                verified_candidates=len(partial_formal), cfg=cfg,
+                document_sha256=document_sha256)
+            _write(args.output, partial)
+            return 0
+        # Правил тоже нет — показывать нечего, честный отказ.
         # retriable=True: сеть или эндпоинт модели, повтор осмыслен
         _write(args.output, failed_result(run_id, "MODEL_UNAVAILABLE", "analyze",
                                           "Модель недоступна: %s" % e, True))

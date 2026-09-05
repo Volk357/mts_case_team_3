@@ -4,7 +4,7 @@ from uuid import uuid4
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import DatabaseError
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.db.base import Base
@@ -68,8 +68,10 @@ class ValidPdfUpload:
 
 
 @pytest.mark.anyio
-async def test_interrupted_upload_leaves_no_file_or_document(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{(tmp_path / 'storage.db').as_posix()}"
+async def test_interrupted_upload_leaves_no_file_or_document(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
@@ -91,8 +93,11 @@ async def test_interrupted_upload_leaves_no_file_or_document(tmp_path: Path) -> 
     engine.dispose()
 
 
-def test_storage_key_resolution_stays_inside_configured_root(tmp_path: Path) -> None:
-    engine = create_database_engine("sqlite:///:memory:")
+def test_storage_key_resolution_stays_inside_configured_root(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
+    engine = create_database_engine(database_url)
     service = storage_service(tmp_path / "documents", create_session_factory(engine))
 
     resolved = service.absolute_path("tenant/document.pdf")
@@ -110,14 +115,16 @@ def test_storage_key_resolution_stays_inside_configured_root(tmp_path: Path) -> 
 
 
 @pytest.mark.anyio
-async def test_database_failure_removes_already_moved_file(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{(tmp_path / 'missing-schema.db').as_posix()}"
+async def test_database_failure_removes_already_moved_file(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     sessions = create_session_factory(engine)
     documents_dir = tmp_path / "documents"
     service = storage_service(documents_dir, sessions)
 
-    with pytest.raises(OperationalError, match="companies"):
+    with pytest.raises(DatabaseError, match="companies"):
         await service.store(
             ValidPdfUpload(),
             max_size_bytes=1024,
@@ -131,8 +138,10 @@ async def test_database_failure_removes_already_moved_file(tmp_path: Path) -> No
 
 
 @pytest.mark.anyio
-async def test_antivirus_rejection_cleans_upload_and_records_failure(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{(tmp_path / 'antivirus.db').as_posix()}"
+async def test_antivirus_rejection_cleans_upload_and_records_failure(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
@@ -168,8 +177,10 @@ async def test_antivirus_rejection_cleans_upload_and_records_failure(tmp_path: P
 
 
 @pytest.mark.anyio
-async def test_success_records_size_and_applies_file_permissions(tmp_path: Path) -> None:
-    database_url = f"sqlite:///{(tmp_path / 'permissions.db').as_posix()}"
+async def test_success_records_size_and_applies_file_permissions(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)

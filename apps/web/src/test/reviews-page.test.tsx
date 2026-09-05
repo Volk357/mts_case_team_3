@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, vi } from "vitest";
 
@@ -94,4 +95,112 @@ it("сообщает об ошибке загрузки списка", async () 
   expect(
     await screen.findByText("Не удалось загрузить список проверок. Обновите страницу."),
   ).toBeInTheDocument();
+});
+
+
+it("удаляет файл после подтверждения и убирает строку", async () => {
+  const user = userEvent.setup();
+  const calls: Array<{ url: string; method?: string }> = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method });
+      if (init?.method === "DELETE") {
+        return Promise.resolve(new Response(null, { status: 204 }));
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [item()], total: 1 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }),
+  );
+  renderPage();
+
+  // Удаление в один клик было бы опасно: подтверждение живёт в строке.
+  await user.click(await screen.findByRole("button", { name: /Удалить файл Витрина/ }));
+  await user.click(screen.getByRole("button", { name: "Удалить файл" }));
+
+  expect(
+    await screen.findByText("Проверок пока нет. Загрузите документ — он появится здесь."),
+  ).toBeInTheDocument();
+  expect(calls.some((c) => c.method === "DELETE" && c.url.includes("/api/documents/"))).toBe(true);
+});
+
+it("не удаляет, если передумали", async () => {
+  const user = userEvent.setup();
+  respondWith([item()]);
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: /Удалить файл Витрина/ }));
+  await user.click(screen.getByRole("button", { name: "Отмена" }));
+
+  expect(screen.getByText("Витрина агрегата.docx")).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "Удалить файл" })).not.toBeInTheDocument();
+});
+
+it("объясняет, почему файл нельзя удалить во время проверки", async () => {
+  const user = userEvent.setup();
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((_url: string, init?: RequestInit) => {
+      if (init?.method === "DELETE") {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({ error: { code: "DOCUMENT_BUSY", message: "busy", details: [] } }),
+            { status: 409, headers: { "Content-Type": "application/json" } },
+          ),
+        );
+      }
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [item()], total: 1 }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    }),
+  );
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: /Удалить файл Витрина/ }));
+  await user.click(screen.getByRole("button", { name: "Удалить файл" }));
+
+  expect(
+    await screen.findByText("Идёт проверка этого документа — удалите после неё."),
+  ).toBeInTheDocument();
+  expect(screen.getByText("Витрина агрегата.docx")).toBeInTheDocument();
+});
+
+
+it("подтверждение раскрывается только в своей строке, даже если документ один", async () => {
+  const user = userEvent.setup();
+  // Один документ можно проверять несколько раз — в базе такие строки есть.
+  respondWith([
+    item({ review_id: "r-1" }),
+    item({ review_id: "r-2", queued_at: "2026-09-04T10:00:00Z" }),
+  ]);
+  renderPage();
+
+  const bins = await screen.findAllByRole("button", { name: /Удалить файл Витрина/ });
+  expect(bins).toHaveLength(2);
+  await user.click(bins[0]);
+
+  // Иначе подтверждение открылось бы в обеих строках и autoFocus подрался бы
+  // сам с собой.
+  expect(screen.getAllByRole("button", { name: "Удалить файл" })).toHaveLength(1);
+  expect(screen.getAllByRole("button", { name: /Удалить файл Витрина/ })).toHaveLength(1);
+});
+
+it("Escape закрывает подтверждение", async () => {
+  const user = userEvent.setup();
+  respondWith([item()]);
+  renderPage();
+
+  await user.click(await screen.findByRole("button", { name: /Удалить файл Витрина/ }));
+  expect(screen.getByRole("button", { name: "Удалить файл" })).toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+
+  expect(screen.queryByRole("button", { name: "Удалить файл" })).not.toBeInTheDocument();
 });

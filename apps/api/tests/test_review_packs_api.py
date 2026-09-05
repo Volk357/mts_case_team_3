@@ -12,7 +12,7 @@ from docreview_api.main import create_app
 
 
 @pytest.fixture
-def catalog_settings(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
+def catalog_settings(tmp_path: Path, database_url: str) -> tuple[Settings, UUID, UUID]:
     packs_root = tmp_path / "review-packs"
     (packs_root / "requirements-v1").mkdir(parents=True)
     (packs_root / "requirements-v1" / "pack.yaml").write_text("version: '1.0'\n", encoding="utf-8")
@@ -24,7 +24,7 @@ def catalog_settings(tmp_path: Path) -> tuple[Settings, UUID, UUID]:
 
     settings = Settings(
         environment="test",
-        database_url=f"sqlite:///{(tmp_path / 'catalog.db').as_posix()}",
+        database_url=database_url,
         review_packs_dir=packs_root,
         _env_file=None,
     )

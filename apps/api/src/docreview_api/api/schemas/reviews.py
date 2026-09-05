@@ -21,6 +21,20 @@ class ReviewPublicError(ApiModel):
     retriable: bool
 
 
+class ReviewWarningResponse(ApiModel):
+    """Предупреждение ядра, адресованное пользователю.
+
+    Не диагностика: она живёт отдельно, в поле ошибки задачи, и сюда не
+    попадает. Перечень кодов НЕ закрыт — контракт ядра допускает любой код и
+    вдобавок предупреждение простой строкой; строка приходит сюда под кодом
+    `NOTICE`. Фильтровать по списку известных кодов нельзя: так молча пропали
+    бы документированные предупреждения ядра.
+    """
+
+    code: str
+    message: str
+
+
 class ReviewResponse(ApiModel):
     review_id: OpaqueId
     document_id: OpaqueId
@@ -32,6 +46,7 @@ class ReviewResponse(ApiModel):
     finished_at: UtcDateTime | None
     poll_after_ms: int | None = Field(default=None, ge=1000)
     error: ReviewPublicError | None = None
+    warnings: list[ReviewWarningResponse] = Field(default_factory=list)
 
 
 class FindingLocation(ApiModel):

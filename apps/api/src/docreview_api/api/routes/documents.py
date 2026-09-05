@@ -20,6 +20,8 @@ from docreview_api.services.antivirus import (
 )
 from docreview_api.services.document_storage import DocumentStorageService
 from docreview_api.services.documents import (
+    DocumentBusyError,
+    DocumentCleanupService,
     DocumentFileUnavailableError,
     DocumentQueryService,
     DocumentSnapshot,
@@ -189,3 +191,32 @@ def get_document_content(
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document(
+    document_id: OpaqueId,
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+) -> None:
+    """Delete the stored file while retaining findings and feedback."""
+
+    try:
+        DocumentCleanupService(
+            session_factory,
+            documents_root=settings.documents_dir,
+        ).delete(document_id, company_id=settings.default_company_id)
+    except DocumentUnavailableError as error:
+        raise ApiError(404, "DOCUMENT_NOT_FOUND", "Document was not found.") from error
+    except DocumentBusyError as error:
+        raise ApiError(
+            409,
+            "DOCUMENT_BUSY",
+            "The document is being reviewed right now. Try again when it finishes.",
+        ) from error
+    except DocumentFileUnavailableError as error:
+        raise ApiError(
+            409,
+            "DOCUMENT_FILE_UNAVAILABLE",
+            "Document content is temporarily unavailable.",
+        ) from error

@@ -9,9 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.db.models import DocumentModel
+from docreview_api.services.upload_validation import SUPPORTED_DOCUMENT_TYPES
 
 _HEX_UUID = re.compile(r"^[0-9a-f]{32}$")
-_DOCUMENT_FILE = re.compile(r"^[0-9a-f]{32}\.(?:pdf|docx)$")
+# Расширения держим в одном месте с валидацией загрузки: когда там появился
+# .txt, уборщик о нём не узнал, и такие файлы оставались бы на диске навсегда.
+_EXTENSIONS = "|".join(sorted(e.lstrip(".") for e in SUPPORTED_DOCUMENT_TYPES))
+_DOCUMENT_FILE = re.compile(rf"^[0-9a-f]{{32}}\.(?:{_EXTENSIONS})$")
 
 
 @dataclass(frozen=True)

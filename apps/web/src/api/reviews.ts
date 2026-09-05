@@ -8,6 +8,12 @@ export type ReviewStatus =
   | "timed_out"
   | "cancelled";
 
+/** Предупреждение ядра: проверка прошла, но с оговоркой. */
+export interface ReviewWarning {
+  code: string;
+  message: string;
+}
+
 export interface ReviewState {
   review_id: string;
   document_id: string;
@@ -19,6 +25,7 @@ export interface ReviewState {
   finished_at: string | null;
   poll_after_ms: number | null;
   error: { code: string; message: string; retriable: boolean } | null;
+  warnings: ReviewWarning[];
 }
 
 export interface ReviewFinding {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Check, LoaderCircle, RotateCcw } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, LoaderCircle, RotateCcw } from "lucide-react";
 
 import { getReviewFeedback, type FindingFeedback } from "@/api/feedback";
 import {
@@ -188,13 +188,27 @@ export function ReviewPage() {
           <ArrowLeft aria-hidden="true" className="size-4" />
           Проверить другой документ
         </Link>
+        {review.warnings?.length ? (
+          <div className="space-y-2" role="status">
+            {review.warnings.map((warning) => (
+              <p
+                className="flex gap-2.5 rounded-(--radius-sm) bg-amber-soft px-4 py-3 text-sm leading-6 text-amber"
+                key={warning.code}
+              >
+                <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{warning.message}</span>
+              </p>
+            ))}
+          </div>
+        ) : null}
+
         <div>
           <h1 className="text-title font-semibold">
             {counts.all === 0 ? "Замечаний нет" : `Замечаний: ${counts.all}`}
           </h1>
           <p className="mt-2 text-[0.9375rem] leading-7 text-text-secondary">
-            Каждое замечание — дословная цитата из документа. Решение принимает аналитик:
-            отметьте лишнее, и проверка подстроится под ваши соглашения.
+            Каждое замечание опирается на цитату из документа. Решение принимает
+            аналитик: отметьте лишнее, и проверка подстроится под ваши соглашения.
           </p>
         </div>
       </header>

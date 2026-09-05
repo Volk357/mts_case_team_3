@@ -4,7 +4,22 @@
 конкретной компании. Product Application принимает документ, запускает независимый
 Analysis Core и показывает найденные замечания, не переписывая исходный текст.
 
-## Быстрый старт
+## Быстрый старт через Docker Compose
+
+Требование: Docker Desktop с Compose v2. Первый запуск не требует модели или
+VPN — профиль `mock` поднимает PostgreSQL, миграции, API, worker и frontend.
+
+```powershell
+Copy-Item .env.example .env
+# Задайте непустой DOCREVIEW_POSTGRES_PASSWORD в .env
+docker compose --profile mock up --build --wait
+```
+
+Приложение откроется на `http://127.0.0.1:8080`. Подробные команды для логов,
+остановки, миграций, healthcheck и запуска с реальной моделью приведены в
+[инструкции Docker Compose](docs/docker-compose-runbook.md).
+
+## Локальная разработка без Docker
 
 Требования: Python 3.11+ и Node.js 22.12+.
 

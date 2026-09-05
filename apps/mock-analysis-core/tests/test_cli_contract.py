@@ -19,7 +19,7 @@ class ProcessResult:
 
 
 def _executable() -> Path:
-    executable_name = "docreview.exe" if sys.platform == "win32" else "docreview"
+    executable_name = "docreview-mock.exe" if sys.platform == "win32" else "docreview-mock"
     return Path(sys.executable).with_name(executable_name)
 
 

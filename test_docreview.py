@@ -8,6 +8,8 @@
 import json
 import os
 import shutil
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 
 try:
     import jsonschema
@@ -18,7 +20,7 @@ from docreview import (build_review_result, failed_result,
                        _read_document, UnsupportedBinary, BUDGET,
                        resolve_pack, ReviewPackMissing, _core_path, main,
                        load_model_config, ModelConfigInvalid, _write_artifacts,
-                       find_model_config, MODEL_CONFIG_ENV)
+                       find_model_config, MODEL_CONFIG_ENV, EXIT_REVIEW_PACK)
 
 
 def _validate(obj):
@@ -67,6 +69,43 @@ def _build():
 
 def test_completed_result_valid_against_contract():
     _validate(_build())
+
+
+def test_version_command_reports_pinned_delivery():
+    output = StringIO()
+    with redirect_stdout(output):
+        exit_code = main(["version"])
+    assert exit_code == 0
+    assert json.loads(output.getvalue()) == {
+        "name": "docreview-analysis-core",
+        "version": "0.2.0",
+        "schema_version": "1.0",
+    }
+
+
+def test_validate_pack_accepts_delivered_pack():
+    output = StringIO()
+    with redirect_stdout(output):
+        exit_code = main(["validate-pack", "--pack", "review-packs/mts-net/0.2"])
+    payload = json.loads(output.getvalue())
+    assert exit_code == 0
+    assert payload["status"] == "valid"
+    assert payload["id"] == "mts-net"
+    assert payload["version"] == "0.2"
+
+
+def test_validate_pack_rejects_incomplete_pack():
+    directory = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "_tmp_docreview", "incomplete-pack")
+    os.makedirs(directory, exist_ok=True)
+    pack = os.path.join(directory, "pack.yaml")
+    with open(pack, "wb") as source:
+        source.write(b'id: broken\nversion: "1.0"\n')
+    output = StringIO()
+    with redirect_stderr(output):
+        exit_code = main(["validate-pack", "--pack", directory])
+    assert exit_code == EXIT_REVIEW_PACK
+    assert "template.yaml" in output.getvalue()
 
 
 def test_failed_result_valid_against_contract():

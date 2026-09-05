@@ -42,6 +42,17 @@ run(venvPython, [
   "-e",
   ".",
 ], { cwd: mockCoreDirectory });
+// Install the accepted real core last so `docreview` resolves to it. The mock
+// remains explicitly available as `docreview-mock` for tests and fallback.
+run(venvPython, [
+  "-m",
+  "pip",
+  "install",
+  "--no-deps",
+  "--no-build-isolation",
+  "-e",
+  ".",
+], { cwd: repositoryDirectory });
 runNpm(["ci"], { cwd: contractsDirectory });
 runNpm(["ci"], { cwd: webDirectory });
 

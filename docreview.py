@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """CLI `docreview` — мост Analysis Core → Product Application по контракту v1.0.
 
-Команда:
+Команды:
     docreview analyze --file <doc> --pack <review_pack> --run-id <id> --output <out.json>
+    docreview validate-pack --pack <review_pack>
+    docreview version
 
 Гоняет наш пайплайн (детерминированный слой + модель) и пишет ReviewResult JSON
 по схеме contracts/review-result.schema.json. location.section_path берётся из
@@ -353,7 +355,11 @@ def resolve_pack(pack):
     """
     if not pack:
         return DEFAULT_PACK_ID, DEFAULT_PACK_VERSION, None, None, None, []
-    looks_like_path = os.sep in pack or pack.endswith((".yaml", ".yml", ".json", "/"))
+    # CLI examples and stored locators use forward slashes on every platform.
+    # Accept both separator styles so Windows does not mistake a path for a pack id.
+    looks_like_path = any(separator in pack for separator in ("/", "\\")) or pack.endswith(
+        (".yaml", ".yml", ".json")
+    )
     if not looks_like_path:
         return pack, DEFAULT_PACK_VERSION, None, None, None, []
     if not os.path.exists(pack):
@@ -636,9 +642,73 @@ def _write(path, obj):
         json.dump(obj, sys.stdout, ensure_ascii=False, indent=2)
 
 
+def cmd_version(_args):
+    """Print stable machine-readable build metadata for delivery acceptance."""
+    json.dump(
+        {
+            "name": "docreview-analysis-core",
+            "version": ENGINE_VERSION,
+            "schema_version": SCHEMA_VERSION,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
+def cmd_validate_pack(args):
+    """Validate that a Review Pack is complete and readable without running a model."""
+    import yaml
+
+    try:
+        pack_id, version, template, defects, glossary, warnings = resolve_pack(args.pack)
+        missing = [
+            name
+            for name, path in (
+                ("template.yaml", template),
+                ("defects.yaml", defects),
+                ("glossary.yaml", glossary),
+            )
+            if path is None
+        ]
+        if missing:
+            raise ReviewPackInvalid("отсутствуют обязательные файлы: %s" % ", ".join(missing))
+
+        for path in (template, defects, glossary):
+            with open(path, encoding="utf-8") as source:
+                content = yaml.safe_load(source)
+            if not isinstance(content, (dict, list)):
+                raise ReviewPackInvalid("%s: ожидался словарь или список" % path)
+    except ReviewPackMissing as error:
+        print("Review Pack не найден: %s" % error, file=sys.stderr)
+        return EXIT_REVIEW_PACK
+    except (OSError, ReviewPackInvalid, yaml.YAMLError) as error:
+        print("Review Pack невалиден: %s" % error, file=sys.stderr)
+        return EXIT_REVIEW_PACK
+
+    json.dump(
+        {
+            "status": "valid",
+            "id": pack_id,
+            "version": version,
+            "warnings": warnings,
+        },
+        sys.stdout,
+        ensure_ascii=False,
+    )
+    sys.stdout.write("\n")
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="docreview")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("version", help="показать версию ядра и JSON-схемы")
+    validate_pack = sub.add_parser(
+        "validate-pack", help="проверить комплектность и синтаксис Review Pack"
+    )
+    validate_pack.add_argument("--pack", required=True)
     a = sub.add_parser("analyze", help="проверить документ, выдать ReviewResult JSON")
     a.add_argument("--file", required=True)
     a.add_argument("--pack", default="mts-net-v0.2")
@@ -659,6 +729,10 @@ def main(argv=None):
                    help="принимается для совместимости с контрактом; отклонённые "
                         "кандидаты в ReviewResult не входят (схема их не содержит)")
     args = ap.parse_args(argv)
+    if args.cmd == "version":
+        return cmd_version(args)
+    if args.cmd == "validate-pack":
+        return cmd_validate_pack(args)
     if args.cmd == "analyze":
         return cmd_analyze(args)
     return EXIT_INVALID_ARGUMENTS

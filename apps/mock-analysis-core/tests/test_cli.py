@@ -11,7 +11,7 @@ from docreview_mock.cli import main
 
 
 def test_installed_executable_exposes_version_command() -> None:
-    executable_name = "docreview.exe" if sys.platform == "win32" else "docreview"
+    executable_name = "docreview-mock.exe" if sys.platform == "win32" else "docreview-mock"
     executable = Path(sys.executable).with_name(executable_name)
     completed = subprocess.run(
         [executable, "version"],

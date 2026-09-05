@@ -13,6 +13,10 @@ npm run setup
 npm run dev
 ```
 
+`npm run setup` устанавливает принятое реальное ядро в окружение worker под
+командой `docreview`. Тестовый и резервный адаптер остаётся доступен отдельно
+как `docreview-mock`.
+
 После запуска доступны:
 
 - frontend — `http://127.0.0.1:5173`;
@@ -87,6 +91,7 @@ Backend-профили находятся в `apps/api/config`, frontend-про�
 - [Покрытие приоритетных областей кейса](docs/case-focus-coverage.md);
 - [Сценарий демонстрации и замеренный тайминг](docs/demo-runbook.md);
 - [Локальная модель](docs/local-model.md);
+- [Приём поставки Analysis Core](docs/analysis-core-acceptance.md);
 - [Модель данных приложения](docs/application-data-model.md);
 - [Политика хранения и tenant-scoped удаления](docs/storage-retention-policy.md);
 - [Roadmaps](roadmaps/README.md).

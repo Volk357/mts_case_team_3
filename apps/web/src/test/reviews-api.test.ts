@@ -1,4 +1,4 @@
-import { createReview, getReview, getReviewFindings } from "@/api/reviews";
+import { createReview, getReview, getReviewFindings, retryReview } from "@/api/reviews";
 
 const queuedReview = {
   review_id: "review-42",
@@ -61,6 +61,29 @@ describe("reviews API", () => {
       2,
       "/api/reviews/review%2F42/findings",
       expect.objectContaining({ headers: { Accept: "application/json" } }),
+    );
+  });
+
+  it("retries a failed review with a new idempotency key", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ ...queuedReview, review_id: "review-retry" }), {
+        status: 202,
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await retryReview("review/failed", "retry-1");
+
+    expect(result.review_id).toBe("review-retry");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/reviews/review%2Ffailed/retry",
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Idempotency-Key": "retry-1",
+        },
+      }),
     );
   });
 });

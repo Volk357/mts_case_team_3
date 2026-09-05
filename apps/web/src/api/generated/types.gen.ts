@@ -1364,3 +1364,69 @@ export type GetReviewFindingsApiReviewsReviewIdFindingsGetResponses = {
 };
 
 export type GetReviewFindingsApiReviewsReviewIdFindingsGetResponse = GetReviewFindingsApiReviewsReviewIdFindingsGetResponses[keyof GetReviewFindingsApiReviewsReviewIdFindingsGetResponses];
+
+export type RetryReviewApiReviewsReviewIdRetryPostData = {
+    body?: never;
+    headers: {
+        /**
+         * Idempotency-Key
+         */
+        'Idempotency-Key': string;
+    };
+    path: {
+        /**
+         * Review Id
+         *
+         * Opaque resource identifier. Clients must not infer meaning from it.
+         */
+        review_id: string;
+    };
+    query?: never;
+    url: '/api/reviews/{review_id}/retry';
+};
+
+export type RetryReviewApiReviewsReviewIdRetryPostErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type RetryReviewApiReviewsReviewIdRetryPostError = RetryReviewApiReviewsReviewIdRetryPostErrors[keyof RetryReviewApiReviewsReviewIdRetryPostErrors];
+
+export type RetryReviewApiReviewsReviewIdRetryPostResponses = {
+    /**
+     * Successful Response
+     */
+    202: ReviewResponse;
+};
+
+export type RetryReviewApiReviewsReviewIdRetryPostResponse = RetryReviewApiReviewsReviewIdRetryPostResponses[keyof RetryReviewApiReviewsReviewIdRetryPostResponses];

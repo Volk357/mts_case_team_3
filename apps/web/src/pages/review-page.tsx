@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Check, LoaderCircle } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Check, LoaderCircle, RotateCcw } from "lucide-react";
 
 import { getReviewFeedback, type FindingFeedback } from "@/api/feedback";
-import { getReview, getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/reviews";
+import {
+  getReview,
+  getReviewFindings,
+  retryReview,
+  type ReviewFinding,
+  type ReviewState,
+} from "@/api/reviews";
 import { FindingCard } from "@/components/finding-card";
 import { currentActorKey } from "@/lib/actor-key";
 
@@ -34,10 +40,12 @@ function useElapsedSeconds(active: boolean) {
 
 export function ReviewPage() {
   const { reviewId = "" } = useParams();
+  const navigate = useNavigate();
   const [review, setReview] = useState<ReviewState | null>(null);
   const [findings, setFindings] = useState<ReviewFinding[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+  const [retrying, setRetrying] = useState(false);
   const [feedbackByFindingId, setFeedbackByFindingId] = useState<
     Record<string, FindingFeedback>
   >({});
@@ -45,6 +53,18 @@ export function ReviewPage() {
   // Один ключ на всю страницу: оценки этого браузера должны прийти от одного
   // отправителя, иначе их не отличить от оценок другого человека.
   const actorKey = useMemo(() => currentActorKey(), []);
+
+  const retry = useCallback(async () => {
+    setRetrying(true);
+    setError(null);
+    try {
+      const next = await retryReview(reviewId, crypto.randomUUID());
+      void navigate(`/reviews/${next.review_id}`, { replace: true });
+    } catch {
+      setRetrying(false);
+      setError("Не удалось повторно запустить проверку.");
+    }
+  }, [navigate, reviewId]);
 
   const load = useCallback(async () => {
     const state = await getReview(reviewId);
@@ -126,13 +146,30 @@ export function ReviewPage() {
           "Попробуйте запустить ещё раз. Если повторится — напишите администратору контура."
         }
       >
-        <Link
-          className="mt-6 inline-flex h-11 items-center gap-2 rounded-(--radius-sm) border border-border bg-card px-4 text-[0.9375rem] font-medium transition-colors hover:border-border-hover"
-          to="/"
-        >
-          <ArrowLeft aria-hidden="true" className="size-4" />
-          К загрузке документа
-        </Link>
+        <div className="mt-6 flex flex-wrap justify-center gap-3">
+          {review.error?.retriable ? (
+            <button
+              className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) bg-accent px-4 text-[0.9375rem] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-60"
+              disabled={retrying}
+              onClick={() => void retry()}
+              type="button"
+            >
+              {retrying ? (
+                <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
+              ) : (
+                <RotateCcw aria-hidden="true" className="size-4" />
+              )}
+              {retrying ? "Запускаем…" : "Повторить проверку"}
+            </button>
+          ) : null}
+          <Link
+            className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) border border-border bg-card px-4 text-[0.9375rem] font-medium transition-colors hover:border-border-hover"
+            to="/"
+          >
+            <ArrowLeft aria-hidden="true" className="size-4" />
+            К загрузке документа
+          </Link>
+        </div>
       </Notice>
     );
   }

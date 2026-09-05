@@ -46,7 +46,7 @@ class IdempotencyConflictError(ReviewJobCreationError):
 
 
 class ReviewJobNotRetryableError(ReviewJobCreationError):
-    """A user retry referenced a job that has not reached a terminal state."""
+    """A user retry referenced a job that is not a retriable failure."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -117,8 +117,8 @@ class ReviewJobService:
         previous = self._session.get(ReviewJobModel, previous_job_id)
         if previous is None or previous.company_id != company_id:
             raise ReviewJobResourceUnavailableError("previous review job is unavailable")
-        if previous.status not in TERMINAL_STATUSES:
-            raise ReviewJobNotRetryableError("only a terminal review job can be retried")
+        if previous.status not in TERMINAL_STATUSES or previous.error_retriable is not True:
+            raise ReviewJobNotRetryableError("only a retriable terminal failure can be retried")
         return self._create(
             company_id=company_id,
             document_id=previous.document_id,

@@ -90,6 +90,21 @@ export function createReview(
   });
 }
 
+export function retryReview(
+  reviewId: string,
+  idempotencyKey: string,
+  signal?: AbortSignal,
+) {
+  return requestJson<ReviewState>(
+    `/api/reviews/${encodeURIComponent(reviewId)}/retry`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      signal,
+    },
+  );
+}
+
 export function getReview(reviewId: string, signal?: AbortSignal) {
   return requestJson<ReviewState>(`/api/reviews/${encodeURIComponent(reviewId)}`, { signal });
 }

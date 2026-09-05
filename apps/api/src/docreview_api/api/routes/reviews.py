@@ -28,6 +28,7 @@ from docreview_api.services.review_jobs import (
     IdempotencyConflictError,
     ReviewJobCreationError,
     ReviewJobDocumentUnavailableError,
+    ReviewJobNotRetryableError,
     ReviewJobPackUnavailableError,
     ReviewJobResourceUnavailableError,
     ReviewJobService,
@@ -121,6 +122,57 @@ def create_review(
     )
     public = _public_review(snapshot, settings.review_poll_interval_seconds * 1000)
     response.headers["Location"] = f"{settings.api_prefix}/reviews/{review_id}"
+    _set_poll_header(response, public, settings.review_poll_interval_seconds)
+    return public
+
+
+@router.post(
+    "/{review_id}/retry",
+    response_model=ReviewResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def retry_review(
+    review_id: OpaqueId,
+    response: Response,
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=255),
+    ],
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+) -> ReviewResponse:
+    """Queue a new run linked to a terminal retriable failure."""
+
+    try:
+        with session_factory.begin() as session:
+            result = ReviewJobService(session).retry(
+                review_id,
+                company_id=settings.default_company_id,
+                idempotency_key=idempotency_key,
+            )
+            retried_review_id = result.job.id
+    except ReviewJobNotRetryableError as error:
+        raise ApiError(
+            409,
+            "REVIEW_NOT_RETRYABLE",
+            "Only a retriable failed review can be started again.",
+        ) from error
+    except IdempotencyConflictError as error:
+        raise ApiError(
+            409,
+            "IDEMPOTENCY_CONFLICT",
+            "Idempotency key was already used for another review request.",
+        ) from error
+    except ReviewJobResourceUnavailableError as error:
+        raise ApiError(404, "REVIEW_NOT_FOUND", "Review was not found.") from error
+    except ReviewJobCreationError as error:
+        raise ApiError(422, "REVIEW_REQUEST_INVALID", "Review request is invalid.") from error
+
+    snapshot = ReviewQueryService(session_factory).get(
+        retried_review_id, company_id=settings.default_company_id
+    )
+    public = _public_review(snapshot, settings.review_poll_interval_seconds * 1000)
+    response.headers["Location"] = f"{settings.api_prefix}/reviews/{retried_review_id}"
     _set_poll_header(response, public, settings.review_poll_interval_seconds)
     return public
 

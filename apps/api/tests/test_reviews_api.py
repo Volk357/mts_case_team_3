@@ -167,6 +167,87 @@ async def test_create_distinguishes_missing_resources_and_idempotency_conflicts(
 
 
 @pytest.mark.anyio
+async def test_retry_queues_a_new_linked_review_only_for_retriable_failure(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/reviews",
+            json={"document_id": str(document_id), "review_pack_id": str(pack_id)},
+            headers={"Idempotency-Key": "initial-run"},
+        )
+        original_id = UUID(created.json()["review_id"])
+
+        engine = create_database_engine(settings.database_url)
+        sessions = create_session_factory(engine)
+        with sessions.begin() as session:
+            original = session.get(ReviewJobModel, original_id)
+            assert original is not None
+            original.status = ReviewJobStatus.FAILED
+            original.error_code = "MODEL_UNAVAILABLE"
+            original.user_error_message = "Модель временно недоступна."
+            original.error_retriable = True
+            original.failed_at = datetime.now(UTC)
+        engine.dispose()
+
+        retried = await client.post(
+            f"/api/reviews/{original_id}/retry",
+            headers={"Idempotency-Key": "retry-run"},
+        )
+        repeated = await client.post(
+            f"/api/reviews/{original_id}/retry",
+            headers={"Idempotency-Key": "retry-run"},
+        )
+
+    assert retried.status_code == 202
+    assert retried.json()["status"] == "queued"
+    assert retried.json()["review_id"] != str(original_id)
+    assert retried.json()["review_id"] == repeated.json()["review_id"]
+    assert retried.headers["Location"].endswith(retried.json()["review_id"])
+    assert retried.headers["Retry-After"] == "3"
+
+    engine = create_database_engine(settings.database_url)
+    sessions = create_session_factory(engine)
+    with sessions() as session:
+        retry = session.get(ReviewJobModel, UUID(retried.json()["review_id"]))
+        assert retry is not None
+        assert retry.retry_of_job_id == original_id
+    engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_retry_rejects_pending_non_retriable_and_missing_reviews(
+    review_resources: tuple[Settings, UUID, UUID],
+) -> None:
+    settings, document_id, pack_id = review_resources
+    app = create_app(settings)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        created = await client.post(
+            "/api/reviews",
+            json={"document_id": str(document_id), "review_pack_id": str(pack_id)},
+            headers={"Idempotency-Key": "not-retriable-initial"},
+        )
+        review_id = created.json()["review_id"]
+        pending = await client.post(
+            f"/api/reviews/{review_id}/retry",
+            headers={"Idempotency-Key": "pending-retry"},
+        )
+        missing = await client.post(
+            f"/api/reviews/{uuid4()}/retry",
+            headers={"Idempotency-Key": "missing-retry"},
+        )
+
+    assert pending.status_code == 409
+    assert pending.json()["error"]["code"] == "REVIEW_NOT_RETRYABLE"
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "REVIEW_NOT_FOUND"
+
+
+@pytest.mark.anyio
 async def test_status_hides_diagnostics_and_findings_are_public_and_ordered(
     review_resources: tuple[Settings, UUID, UUID],
 ) -> None:

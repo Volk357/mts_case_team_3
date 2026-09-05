@@ -1,0 +1,83 @@
+not_applicable_markers:
+  - не применимо
+  - неприменимо
+  - n/a
+  - "—"
+  - "-"
+
+sections:
+  - name: Назначение
+    required: true
+    aliases: [Назначение, Цель]
+  - name: Границы решения
+    required: true
+    aliases: [Границы решения, Область действия, Scope]
+  - name: Пользовательские сценарии
+    required: true
+    aliases: [Пользовательские сценарии, Сценарии использования]
+  - name: Функциональные требования
+    required: true
+    aliases: [Функциональные требования, Функции]
+  - name: Интерфейсы
+    required: true
+    aliases: [Интерфейсы, API, Интеграции]
+  - name: Модель данных
+    required: true
+    aliases: [Модель данных, Данные]
+  - name: Нефункциональные требования
+    required: true
+    aliases: [Нефункциональные требования, НФТ]
+  - name: Безопасность
+    required: true
+    aliases: [Безопасность, Информационная безопасность]
+  - name: Наблюдаемость
+    required: true
+    aliases: [Наблюдаемость, Мониторинг и журналирование]
+  - name: Критерии приемки
+    required: true
+    aliases: [Критерии приемки, Приемочные критерии]
+
+placeholders:
+  - pattern: '\bTBD\b'
+    what: согласованное значение
+  - pattern: '\bTODO\b'
+    what: окончательное описание
+  - pattern: '<[^>]{2,80}>'
+    what: значение вместо шаблонной заглушки
+
+vague_wording:
+  categories:
+    subjective:
+      - быстро
+      - удобно
+      - оптимально
+      - минимальная задержка
+    loophole:
+      - по возможности
+      - при необходимости
+      - при наличии ресурсов
+    open_ended:
+      - "и т.д"
+      - "и т. д"
+      - "и прочее"
+
+section_reference:
+  pattern: '\bраздел(?:а|у|ом|е|ы|ов|ам|ами|ах)?\b\s*[«"]([^»"\n]{3,80})[»"]'
+  external_markers: ['http://', 'https://', 'www.']
+
+# Эти обязательные для текущего детерминированного движка блоки намеренно
+# нейтральны: generic-профиль не предполагает таблицы витрин, Data Catalog или HDFS.
+nullability:
+  field_row: '(?!)'
+  markers: [NOT NULL, NULLABLE]
+  table_markers: []
+  table_requires: ''
+  column_marker: обязательн
+
+data_catalog:
+  markers: [__generic_profile_has_no_data_catalog_section__]
+  link_pattern: 'https?://'
+
+hdfs:
+  trigger: '(?!)'
+  format_markers: []

@@ -5,7 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Protocol
 from uuid import UUID
 
@@ -36,6 +37,7 @@ class ReviewJobWorker:
         *,
         stale_after: timedelta,
         poll_interval_seconds: float,
+        heartbeat_path: Path | None = None,
     ) -> None:
         if stale_after <= timedelta(0):
             raise ValueError("stale_after must be positive")
@@ -45,6 +47,24 @@ class ReviewJobWorker:
         self._executor = executor
         self._stale_after = stale_after
         self._poll_interval_seconds = poll_interval_seconds
+        self._heartbeat_path = heartbeat_path
+
+    def _touch_heartbeat(self) -> None:
+        """Отмечает, что воркер жив, независимо от того, есть ли работа.
+
+        Длина очереди живость не показывает: при пустой очереди мёртвый воркер
+        неотличим от простаивающего — а это ровно предполётный сценарий перед
+        демонстрацией. Отметка на диске, а не в базе, чтобы не заводить
+        миграцию ради одного поля.
+        """
+        if self._heartbeat_path is None:
+            return
+        try:
+            self._heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
+            self._heartbeat_path.write_text(datetime.now(UTC).isoformat(), encoding="utf-8")
+        except OSError:
+            # Отметка — диагностика, а не работа: её сбой не должен ронять воркер.
+            LOGGER.warning("Failed to write worker heartbeat", exc_info=True)
 
     def recover_after_restart(self) -> tuple[UUID, ...]:
         """Terminalize only jobs whose running lease is older than the safety window."""
@@ -68,14 +88,39 @@ class ReviewJobWorker:
             )
         return True
 
+    async def _heartbeat_loop(self, stop: asyncio.Event) -> None:
+        """Отмечается по своему таймеру, независимо от обработки задания.
+
+        Отметка в основном цикле годилась бы только для простаивающего воркера:
+        анализ держит цикл минутами, и здоровье падало бы ровно тогда, когда
+        воркер занят делом. Поэтому отметка живёт отдельной задачей.
+        """
+        while not stop.is_set():
+            self._touch_heartbeat()
+            with suppress(TimeoutError):
+                await asyncio.wait_for(stop.wait(), timeout=self._heartbeat_interval())
+        self._touch_heartbeat()
+
+    def _heartbeat_interval(self) -> float:
+        """Отмечаемся чаще, чем опрашиваем очередь: у health должен быть запас."""
+        return max(0.1, min(self._poll_interval_seconds, 5.0))
+
     async def run_forever(self, stop_event: asyncio.Event | None = None) -> None:
         stop = stop_event or asyncio.Event()
         self.recover_after_restart()
-        while not stop.is_set():
-            if await self.run_once():
-                continue
-            with suppress(TimeoutError):
-                await asyncio.wait_for(stop.wait(), timeout=self._poll_interval_seconds)
+        self._touch_heartbeat()
+        heartbeat = asyncio.create_task(self._heartbeat_loop(stop))
+        try:
+            while not stop.is_set():
+                if await self.run_once():
+                    continue
+                with suppress(TimeoutError):
+                    await asyncio.wait_for(stop.wait(), timeout=self._poll_interval_seconds)
+        finally:
+            stop.set()
+            heartbeat.cancel()
+            with suppress(asyncio.CancelledError):
+                await heartbeat
 
 
 def build_worker(settings: Settings) -> ReviewJobWorker:
@@ -112,6 +157,7 @@ def build_worker(settings: Settings) -> ReviewJobWorker:
         executor,
         stale_after=timedelta(seconds=settings.worker_stale_after_seconds),
         poll_interval_seconds=settings.worker_poll_interval_seconds,
+        heartbeat_path=settings.worker_heartbeat_path,
     )
 
 

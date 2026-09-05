@@ -71,10 +71,7 @@ def _public_review(snapshot: ReviewSnapshot, poll_after_ms: int) -> ReviewRespon
         finished_at=snapshot.finished_at,
         poll_after_ms=None if snapshot.status in TERMINAL_STATUSES else poll_after_ms,
         error=failure,
-        warnings=[
-            ReviewWarningResponse(code=w.code, message=w.message)
-            for w in snapshot.warnings
-        ],
+        warnings=[ReviewWarningResponse(code=w.code, message=w.message) for w in snapshot.warnings],
     )
 
 
@@ -152,9 +149,7 @@ def list_reviews(
     items = ReviewQueryService(session_factory).list_recent(
         company_id=settings.default_company_id, limit=limit
     )
-    return ReviewListResponse(
-        items=[_public_list_item(item) for item in items], total=len(items)
-    )
+    return ReviewListResponse(items=[_public_list_item(item) for item in items], total=len(items))
 
 
 @router.get("/{review_id}", response_model=ReviewResponse)

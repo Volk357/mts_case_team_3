@@ -22,7 +22,10 @@ def touch_at(path: Path, content: bytes, at: datetime) -> None:
     os.utime(path, (timestamp, timestamp))
 
 
-def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path: Path, database_url: str) -> None:
+def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     now = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
     old = now - timedelta(hours=25)
     recent = now - timedelta(hours=1)
@@ -30,10 +33,14 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
     company_id = uuid4()
     referenced_id = uuid4()
     orphan_id = uuid4()
+    orphan_txt_id = uuid4()
     recent_id = uuid4()
     company_directory = documents_dir / company_id.hex
     referenced = company_directory / f"{referenced_id.hex}.pdf"
     old_orphan = company_directory / f"{orphan_id.hex}.docx"
+    # .txt добавили в загрузку 5 сентября, а в уборщик забыли: такие файлы
+    # оставались бы на диске навсегда. Регрессия закрывается этим случаем.
+    old_orphan_txt = company_directory / f"{orphan_txt_id.hex}.txt"
     recent_orphan = company_directory / f"{recent_id.hex}.pdf"
     old_temporary = documents_dir / ".incoming" / "upload-old.tmp"
     recent_temporary = documents_dir / ".incoming" / "upload-recent.tmp"
@@ -41,6 +48,7 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
     for path, moment in (
         (referenced, old),
         (old_orphan, old),
+        (old_orphan_txt, old),
         (recent_orphan, recent),
         (old_temporary, old),
         (recent_temporary, recent),
@@ -71,9 +79,9 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
     report = cleaner.cleanup(now=now, grace_period=timedelta(hours=24))
     repeated = cleaner.cleanup(now=now, grace_period=timedelta(hours=24))
 
-    assert report.scanned_files == 5
+    assert report.scanned_files == 6
     assert report.deleted_temporary_files == 1
-    assert report.deleted_unreferenced_files == 1
+    assert report.deleted_unreferenced_files == 2
     assert report.failed_deletions == 0
     assert repeated.deleted_temporary_files == 0
     assert repeated.deleted_unreferenced_files == 0
@@ -82,6 +90,8 @@ def test_cleanup_removes_only_old_recognized_orphans_and_is_idempotent(tmp_path:
     assert recent_temporary.exists()
     assert unrelated.exists()
     assert not old_orphan.exists()
+    # Регрессия: .txt поддерживается загрузкой, значит и убираться должен.
+    assert not old_orphan_txt.exists()
     assert not old_temporary.exists()
     engine.dispose()
 

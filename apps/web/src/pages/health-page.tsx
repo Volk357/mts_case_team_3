@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, LoaderCircle, RefreshCw } from "lucide-react";
+import { CircleAlert, CircleCheck, LoaderCircle, RefreshCw, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { getHealth, type HealthResponse } from "@/api/health";
@@ -65,10 +65,32 @@ export function HealthPage() {
 
         {state.kind === "ready" && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 font-semibold text-green">
-              <CircleCheck aria-hidden="true" className="size-6" />
-              Backend доступен
-            </div>
+            {state.data.status === "ok" ? (
+              <div className="flex items-center gap-3 font-semibold text-green">
+                <CircleCheck aria-hidden="true" className="size-6" />
+                Backend доступен
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="flex items-center gap-3 font-semibold text-amber">
+                  <TriangleAlert aria-hidden="true" className="size-6" />
+                  Backend отвечает, но не готов обслуживать проверки
+                </div>
+                <ul className="text-sm text-text-secondary">
+                  {Object.entries(state.data.checks)
+                    .filter(([, value]) => value !== "ok")
+                    .map(([name]) => (
+                      <li key={name}>
+                        {name === "database"
+                          ? "База данных недоступна"
+                          : name === "worker"
+                            ? "Обработчик проверок не отвечает"
+                            : name}
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
             <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
               <dt className="text-muted-foreground">Сервис</dt>
               <dd>{state.data.service}</dd>

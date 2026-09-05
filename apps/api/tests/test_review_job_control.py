@@ -28,6 +28,7 @@ from docreview_api.services import (
     RunWorkspaceManager,
 )
 
+
 def moments() -> tuple[datetime, datetime]:
     """Метки постановки и завершения, отсчитанные от «сейчас».
 

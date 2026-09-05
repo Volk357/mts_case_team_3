@@ -65,17 +65,22 @@ def _public_warnings(raw_result):
             code, message = GENERIC_WARNING_CODE, item
         elif isinstance(item, dict):
             raw_code = item.get("code")
-            code = raw_code.strip() if isinstance(raw_code, str) and raw_code.strip() \
+            code = (
+                raw_code.strip()
+                if isinstance(raw_code, str) and raw_code.strip()
                 else GENERIC_WARNING_CODE
+            )
             message = item.get("message")
         else:
             continue
         if not isinstance(message, str) or not message.strip():
             continue
-        public.append(ReviewWarning(
-            code=code,
-            message=message.strip()[:MAX_WARNING_MESSAGE_CHARS],
-        ))
+        public.append(
+            ReviewWarning(
+                code=code,
+                message=message.strip()[:MAX_WARNING_MESSAGE_CHARS],
+            )
+        )
     return tuple(public)
 
 

@@ -440,8 +440,19 @@
       },
       "HealthResponse": {
         "additionalProperties": false,
-        "description": "Public health information without infrastructure details.",
+        "description": "Public health information without infrastructure details.\n\n`status` отражает реальную готовность, а не факт того, что процесс отвечает:\nкак предполётная проверка перед демонстрацией константа бесполезна —\nона одинаково зелёная и когда база лежит, и когда воркер мёртв.\nПодробности инфраструктуры наружу не выходят: только имя зависимости и\nеё состояние.",
         "properties": {
+          "checks": {
+            "additionalProperties": {
+              "enum": [
+                "ok",
+                "failed"
+              ],
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "object"
+          },
           "environment": {
             "enum": [
               "development",
@@ -457,8 +468,11 @@
             "type": "string"
           },
           "status": {
-            "const": "ok",
             "default": "ok",
+            "enum": [
+              "ok",
+              "degraded"
+            ],
             "title": "Status",
             "type": "string"
           },
@@ -1300,7 +1314,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "Report that the API process is ready to serve requests.",
+        "description": "Report whether the service can actually serve a review right now.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {

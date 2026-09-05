@@ -25,9 +25,7 @@ SUPPORTED_DOCUMENT_TYPES: Final = {
 ACCEPTED_MEDIA_TYPES: Final = {
     ".pdf": frozenset({PDF_MEDIA_TYPE}),
     ".docx": frozenset({DOCX_MEDIA_TYPE}),
-    ".txt": frozenset(
-        {TXT_MEDIA_TYPE, "text/markdown", "application/octet-stream", ""}
-    ),
+    ".txt": frozenset({TXT_MEDIA_TYPE, "text/markdown", "application/octet-stream", ""}),
 }
 REQUIRED_DOCX_ENTRIES: Final = frozenset({"[Content_Types].xml", "word/document.xml"})
 

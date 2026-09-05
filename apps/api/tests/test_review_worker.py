@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import sys
+from contextlib import suppress
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import UUID, uuid4
 
 import pytest
@@ -115,7 +117,9 @@ def build_test_worker(
 
 @pytest.mark.parametrize("scenario", ["empty", "standard-12", "maximum-20"])
 @pytest.mark.anyio
-async def test_worker_completes_all_success_scenarios(tmp_path: Path, scenario: str, database_url: str) -> None:
+async def test_worker_completes_all_success_scenarios(
+    tmp_path: Path, scenario: str, database_url: str
+) -> None:
     worker, sessions, job_id = build_test_worker(tmp_path, scenario, database_url)
 
     assert await worker.run_once()
@@ -195,7 +199,9 @@ async def test_worker_survives_executor_error_and_keeps_diagnostic_internal(
 
 
 @pytest.mark.anyio
-async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_path: Path, database_url: str) -> None:
+async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(
+    tmp_path: Path, database_url: str
+) -> None:
     worker, sessions, job_id = build_test_worker(tmp_path, "timeout", database_url)
     task = asyncio.create_task(worker.run_once())
     for _ in range(100):
@@ -219,7 +225,9 @@ async def test_worker_shutdown_terminates_child_and_marks_job_interrupted(tmp_pa
 
 
 @pytest.mark.anyio
-async def test_new_worker_processes_job_left_queued_before_restart(tmp_path: Path, database_url: str) -> None:
+async def test_new_worker_processes_job_left_queued_before_restart(
+    tmp_path: Path, database_url: str
+) -> None:
     worker, sessions, job_id = build_test_worker(tmp_path, "empty", database_url)
     del worker
 
@@ -242,3 +250,66 @@ async def test_new_worker_processes_job_left_queued_before_restart(tmp_path: Pat
     assert restarted.recover_after_restart() == ()
     assert await restarted.run_once()
     assert executor.seen == [job_id]
+
+
+@pytest.mark.anyio
+async def test_heartbeat_keeps_ticking_during_a_long_job(tmp_path: Path) -> None:
+    """Отметка живости не должна зависеть от того, занят воркер или ждёт.
+
+    Анализ держит цикл минутами. Если отмечаться только между заданиями,
+    health объявит воркер мёртвым ровно тогда, когда он работает, — то есть
+    проверка будет вредной, а не бесполезной.
+    """
+
+    heartbeat = tmp_path / "beat"
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    class SlowQueue:
+        def __init__(self) -> None:
+            self.handed_out = False
+
+        def claim_next(self):
+            if self.handed_out:
+                return None
+            self.handed_out = True
+            return SimpleNamespace(id=uuid4(), run_id="review-slow")
+
+        def recover_stale(self, *, stale_after):
+            del stale_after
+            return ()
+
+        def fail_claimed(self, job_id, *, diagnostic):
+            del job_id, diagnostic
+
+    class SlowExecutor:
+        async def execute(self, job_id) -> None:
+            del job_id
+            started.set()
+            await release.wait()
+
+    worker = ReviewJobWorker(
+        SlowQueue(),
+        SlowExecutor(),
+        stale_after=timedelta(seconds=60),
+        poll_interval_seconds=0.05,
+        heartbeat_path=heartbeat,
+    )
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(worker.run_forever(stop))
+    await asyncio.wait_for(started.wait(), timeout=5)
+
+    first = heartbeat.read_text(encoding="utf-8")
+    await asyncio.sleep(0.25)  # задание всё ещё выполняется
+    second = heartbeat.read_text(encoding="utf-8")
+
+    release.set()
+    stop.set()
+    with suppress(TimeoutError):
+        await asyncio.wait_for(task, timeout=5)
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
+
+    assert second != first, "отметка обязана обновляться во время задания"

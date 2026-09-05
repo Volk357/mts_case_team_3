@@ -137,7 +137,10 @@ def test_restart_recovery_fails_only_stale_running_jobs(tmp_path: Path, database
         assert queued_state is not None and queued_state.status is ReviewJobStatus.QUEUED
 
 
-def test_database_contains_one_running_claim_after_concurrency(tmp_path: Path, database_url: str) -> None:
+def test_database_contains_one_running_claim_after_concurrency(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     sessions = make_sessions(database_url)
     seed_jobs(sessions, [ReviewJobStatus.QUEUED])
     queue = DatabaseReviewJobQueue(sessions, clock=lambda: NOW + timedelta(minutes=1))

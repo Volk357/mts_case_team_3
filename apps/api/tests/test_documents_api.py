@@ -395,7 +395,10 @@ async def test_deleting_a_document_twice_is_not_an_error_for_the_second_caller(
 
 
 @pytest.mark.anyio
-async def test_document_under_review_is_not_deleted(upload_settings: Settings, database_url: str) -> None:
+async def test_document_under_review_is_not_deleted(
+    upload_settings: Settings,
+    database_url: str,
+) -> None:
     """Пока проверка не завершилась, воркер читает файл — сносить его нельзя."""
 
     app = create_app(upload_settings)
@@ -535,7 +538,10 @@ async def test_delete_marks_the_row_before_removing_the_file(
     assert not list(upload_settings.documents_dir.rglob("*.txt"))
 
 
-def test_delete_and_create_review_do_not_interleave(upload_settings: Settings, database_url: str) -> None:
+def test_delete_and_create_review_do_not_interleave(
+    upload_settings: Settings,
+    database_url: str,
+) -> None:
     """Конкурентный сценарий: удаление и постановка проверки в двух потоках.
 
     Запрещённое состояние — задача в очереди на документ, файла которого уже
@@ -606,7 +612,11 @@ def test_delete_and_create_review_do_not_interleave(upload_settings: Settings, d
         start = threading.Barrier(2)
         outcome: dict[str, object] = {}
 
-        def do_delete() -> None:
+        def do_delete(
+            start: threading.Barrier = start,
+            outcome: dict[str, object] = outcome,
+            document_id: UUID = document_id,
+        ) -> None:
             start.wait()
             try:
                 DocumentCleanupService(sessions, documents_root=documents_dir).delete(
@@ -615,10 +625,15 @@ def test_delete_and_create_review_do_not_interleave(upload_settings: Settings, d
                 outcome["deleted"] = True
             except (DocumentUnavailableError, DocumentBusyError):
                 outcome["deleted"] = False
-            except Exception as error:  # noqa: BLE001 - фиксируем для отчёта
+            except Exception as error:  # фиксируем для отчёта, тест сам решит
                 outcome["delete_error"] = repr(error)
 
-        def do_create() -> None:
+        def do_create(
+            start: threading.Barrier = start,
+            outcome: dict[str, object] = outcome,
+            document_id: UUID = document_id,
+            attempt: int = attempt,
+        ) -> None:
             start.wait()
             try:
                 with sessions.begin() as session:
@@ -631,7 +646,7 @@ def test_delete_and_create_review_do_not_interleave(upload_settings: Settings, d
                 outcome["queued"] = True
             except ReviewJobDocumentUnavailableError:
                 outcome["queued"] = False
-            except Exception as error:  # noqa: BLE001 - фиксируем для отчёта
+            except Exception as error:  # фиксируем для отчёта, тест сам решит
                 outcome["create_error"] = repr(error)
 
         threads = [threading.Thread(target=do_delete), threading.Thread(target=do_create)]

@@ -373,7 +373,7 @@ async def test_list_reviews_hides_other_tenants(
 ) -> None:
     """Список обязан быть tenant-safe так же, как чтение одной проверки."""
 
-    settings, document_id, pack_id = review_resources
+    settings, _, pack_id = review_resources
     app = create_app(settings)
 
     engine = create_database_engine(settings.database_url)

@@ -68,7 +68,10 @@ class ValidPdfUpload:
 
 
 @pytest.mark.anyio
-async def test_interrupted_upload_leaves_no_file_or_document(tmp_path: Path, database_url: str) -> None:
+async def test_interrupted_upload_leaves_no_file_or_document(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
@@ -90,7 +93,10 @@ async def test_interrupted_upload_leaves_no_file_or_document(tmp_path: Path, dat
     engine.dispose()
 
 
-def test_storage_key_resolution_stays_inside_configured_root(tmp_path: Path, database_url: str) -> None:
+def test_storage_key_resolution_stays_inside_configured_root(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     service = storage_service(tmp_path / "documents", create_session_factory(engine))
 
@@ -109,7 +115,10 @@ def test_storage_key_resolution_stays_inside_configured_root(tmp_path: Path, dat
 
 
 @pytest.mark.anyio
-async def test_database_failure_removes_already_moved_file(tmp_path: Path, database_url: str) -> None:
+async def test_database_failure_removes_already_moved_file(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     sessions = create_session_factory(engine)
     documents_dir = tmp_path / "documents"
@@ -129,7 +138,10 @@ async def test_database_failure_removes_already_moved_file(tmp_path: Path, datab
 
 
 @pytest.mark.anyio
-async def test_antivirus_rejection_cleans_upload_and_records_failure(tmp_path: Path, database_url: str) -> None:
+async def test_antivirus_rejection_cleans_upload_and_records_failure(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)
@@ -165,7 +177,10 @@ async def test_antivirus_rejection_cleans_upload_and_records_failure(tmp_path: P
 
 
 @pytest.mark.anyio
-async def test_success_records_size_and_applies_file_permissions(tmp_path: Path, database_url: str) -> None:
+async def test_success_records_size_and_applies_file_permissions(
+    tmp_path: Path,
+    database_url: str,
+) -> None:
     engine = create_database_engine(database_url)
     Base.metadata.create_all(engine)
     sessions = create_session_factory(engine)

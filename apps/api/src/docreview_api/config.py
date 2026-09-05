@@ -55,6 +55,12 @@ class Settings(BaseSettings):
     worker_poll_interval_seconds: float = Field(default=1.0, gt=0, le=60)
     review_poll_interval_seconds: int = Field(default=2, ge=1, le=30)
     worker_stale_after_seconds: float = Field(default=600.0, gt=0, le=48 * 60 * 60)
+    # Отметка живости воркера. Живёт рядом с рабочими каталогами, а не в базе:
+    # заводить миграцию ради одного поля дороже, чем файл.
+    worker_heartbeat_path: Path = REPOSITORY_DIRECTORY / "data" / "worker-heartbeat"
+    # Во сколько интервалов опроса укладывается живой воркер. Три — запас на
+    # один пропущенный цикл и разброс планировщика.
+    worker_heartbeat_tolerance: float = Field(default=3.0, ge=1.0, le=100.0)
     review_result_schema_path: Path = (
         REPOSITORY_DIRECTORY / "contracts" / "review-result.schema.json"
     )

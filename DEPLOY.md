@@ -136,6 +136,9 @@ python3.12 -m venv .venv
 .venv/bin/pip install --no-deps --no-build-isolation -e .
 
 mkdir -p /opt/docreview/data
+# Каталог создаётся под root, а сервисы работают под docreview: без этого
+# воркер не сможет писать отметку живости, и health будет считать его мёртвым.
+chown -R docreview:docreview /opt/docreview/data
 cat > /opt/docreview/app.env <<'ENV'
 DOCREVIEW_ANALYSIS_EXECUTABLE=/usr/local/bin/docreview
 DOCREVIEW_DATABASE_URL=postgresql+psycopg://docreview:ПАРОЛЬ@127.0.0.1/docreview
@@ -143,6 +146,9 @@ DOCREVIEW_DOCUMENTS_DIR=/opt/docreview/data/documents
 DOCREVIEW_RUNS_DIR=/opt/docreview/data/runs
 DOCREVIEW_REVIEW_PACKS_DIR=/opt/docreview/data/review-packs
 DOCREVIEW_ANALYSIS_TIMEOUT_SECONDS=600
+# Отметка живости воркера: каталог должен быть доступен на запись
+# пользователю docreview, поэтому она лежит в data/, а не рядом с кодом.
+DOCREVIEW_WORKER_HEARTBEAT_PATH=/opt/docreview/data/worker-heartbeat
 DOCREVIEW_WORKER_STALE_AFTER_SECONDS=900
 ENV
 
@@ -293,3 +299,41 @@ curl -s localhost:8010/api/reviews/$RID/findings
 - **Автоудаление документов выключено** в текущей версии приложения: загруженные
   файлы и результаты хранятся бессрочно. Для демо приемлемо, для пилота нет.
 - Первый запрос после простоя дольше: модель прогревается (`keep_alive`).
+
+
+---
+
+## Резервное копирование
+
+В базе лежит не только состояние сервиса, но и **собранная разметка** — оценки
+замечаний. Документы можно загрузить заново, разметку восстановить неоткуда,
+а именно она закрывает вопрос о доле полезных замечаний.
+
+Скрипт лежит в репозитории — `scripts/backup-docreview.sh`. Установка:
+
+```bash
+install -m 755 scripts/backup-docreview.sh /opt/docreview/backup-docreview.sh
+(crontab -l 2>/dev/null | grep -v backup-docreview;
+ echo "0 */6 * * * /opt/docreview/backup-docreview.sh >> /var/log/docreview-backup.log 2>&1") | crontab -
+```
+
+Он снимает дамп базы (`pg_dump -Fc`) и архив загруженных документов, после чего
+**проверяет дамп чтением** (`pg_restore --list`): бэкап, который не читается,
+хуже отсутствующего, потому что на него рассчитывают. Обе части пишутся во
+временные файлы и переименовываются только после успешной проверки — сбой на
+середине не оставляет неполный комплект под финальным именем. Копии старше
+14 дней удаляются.
+
+Каждый прогон кладёт комплект в каталог `<штамп>/` с файлами `docreview.dump`
+и `documents.tar.gz`.
+
+Восстановление проверяется в отдельной базе, а не в боевой:
+
+```bash
+sudo -u postgres psql -c 'CREATE DATABASE docreview_restore_test OWNER docreview;'
+sudo -u postgres pg_restore -d docreview_restore_test /opt/docreview/backups/<штамп>/docreview.dump
+sudo -u postgres psql -d docreview_restore_test -c 'select count(*) from findings;'
+sudo -u postgres psql -c 'DROP DATABASE docreview_restore_test;'
+```
+
+Проверено 5 сентября: из дампа поднялись 24 документа, 239 замечаний, 2 оценки.

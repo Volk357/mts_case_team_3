@@ -23,6 +23,36 @@ Worker запускается отдельным процессом:
 .venv\Scripts\python -m docreview_api.workers.review_worker
 ```
 
+## Backend Docker image
+
+Один образ содержит Backend API, worker, миграции и установленный настоящий
+Analysis Core. Сборка выполняется от корня репозитория, поскольку ядро и JSON
+Schema находятся вне `apps/api`:
+
+```powershell
+docker build --file apps/api/Dockerfile --tag docreview-backend:local .
+```
+
+Команда образа по умолчанию запускает API. Worker и миграции используют тот же
+образ с другой командой; entrypoint заменяет себя целевым процессом и корректно
+передаёт ему сигналы остановки:
+
+```text
+API:        api
+Worker:     worker
+Миграции:   migrate
+```
+
+Для worker задаётся `DOCREVIEW_CONTAINER_ROLE=worker`. Оба процесса работают
+от непривилегированного пользователя `docreview` (UID/GID 10001). Настройки
+PostgreSQL и путь к смонтированному model config передаются окружением; сам
+model config и секреты в образ не копируются.
+
+Healthcheck API вызывает `/api/health` и требует готовности базы и worker.
+Healthcheck worker проверяет свежесть файла `DOCREVIEW_WORKER_HEARTBEAT_PATH`.
+При запуске двух ролей они должны видеть общий каталог `/app/data`.
+
+
 Корневой `npm run dev` запускает API, worker и web-приложение вместе. Worker
 атомарно забирает старейший `queued` job, поэтому два одновременно запущенных
 экземпляра не исполняют одну проверку. После перезапуска он помечает слишком старые

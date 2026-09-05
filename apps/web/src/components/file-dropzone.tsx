@@ -17,9 +17,15 @@ import { Card } from "@/components/ui/card";
 import { appConfig } from "@/config";
 import { cn } from "@/lib/utils";
 
-const PDF_MEDIA_TYPE = "application/pdf";
+/*
+  Только DOCX. Сервер принимает и PDF, но извлекать из него текст нечем:
+  библиотеки в закрытом контуре нет, и ядро отбивает такой файл ошибкой
+  «формат не поддерживается» уже после загрузки. Предлагать формат, который
+  заведомо не сработает, — обманывать пользователя, поэтому выбор сужен здесь,
+  а не оставлен на отказ в конце пути.
+*/
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const ACCEPTED_FILES = `${PDF_MEDIA_TYPE},${DOCX_MEDIA_TYPE},.pdf,.docx`;
+const ACCEPTED_FILES = `${DOCX_MEDIA_TYPE},.docx`;
 
 type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
 
@@ -31,8 +37,12 @@ function formatBytes(bytes: number): string {
 
 function validateFile(file: File): string | null {
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  const expectedType = extension === ".pdf" ? PDF_MEDIA_TYPE : extension === ".docx" ? DOCX_MEDIA_TYPE : null;
-  if (!expectedType) return "Выберите документ в формате PDF или DOCX.";
+  const expectedType = extension === ".docx" ? DOCX_MEDIA_TYPE : null;
+  if (!expectedType) {
+    return extension === ".pdf"
+      ? "PDF пока не поддерживается. Сохраните документ в DOCX."
+      : "Выберите документ в формате DOCX.";
+  }
   if (file.type && file.type !== expectedType) {
     return "Расширение файла не соответствует его формату.";
   }
@@ -46,7 +56,7 @@ function validateFile(file: File): string | null {
 function uploadErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
     if (error.status === 413) return "Файл слишком большой для загрузки.";
-    if (error.status === 415) return "Сервер принимает только PDF и DOCX.";
+    if (error.status === 415) return "Сервер принимает только DOCX.";
     if (error.status === 422) return "Файл повреждён или его формат не подтверждён.";
     if (error.status === 0) return "Не удалось подключиться к серверу. Попробуйте ещё раз.";
   }
@@ -146,7 +156,7 @@ export function FileDropzone() {
       <div className="border-b border-border px-5 py-5 sm:px-8">
         <h2 className="text-lg font-semibold sm:text-xl">Загрузите документ</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          PDF или DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
+          DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
         </p>
       </div>
       <div className="p-5 sm:p-8">

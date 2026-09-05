@@ -4,9 +4,7 @@ import { ArrowLeft, Check, LoaderCircle } from "lucide-react";
 
 import { getReview, getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/reviews";
 import { FindingCard } from "@/components/finding-card";
-
-/** Ключ отправителя оценок: неперсональный, нужен API обратной связи. */
-const ACTOR_KEY = "web-ui";
+import { currentActorKey } from "@/lib/actor-key";
 
 /** Порядок важен: по нему рисуется список шагов на экране ожидания. */
 const STAGES = [
@@ -39,6 +37,10 @@ export function ReviewPage() {
   const [findings, setFindings] = useState<ReviewFinding[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<Filter>("all");
+
+  // Один ключ на всю страницу: оценки этого браузера должны прийти от одного
+  // отправителя, иначе их не отличить от оценок другого человека.
+  const actorKey = useMemo(() => currentActorKey(), []);
 
   const load = useCallback(async () => {
     const state = await getReview(reviewId);
@@ -167,7 +169,7 @@ export function ReviewPage() {
       ) : (
         <div className="space-y-4">
           {visible.map((finding) => (
-            <FindingCard actorKey={ACTOR_KEY} finding={finding} key={finding.finding_id} />
+            <FindingCard actorKey={actorKey} finding={finding} key={finding.finding_id} />
           ))}
         </div>
       )}

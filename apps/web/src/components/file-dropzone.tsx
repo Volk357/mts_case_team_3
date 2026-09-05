@@ -6,28 +6,28 @@ import {
   UploadCloud,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { uploadDocument, type DocumentUploadResponse } from "@/api/documents";
-import { ErrorReference } from "@/components/error-reference";
+import { getReviewPacks } from "@/api/review-packs";
+import { createReview } from "@/api/reviews";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { appConfig } from "@/config";
 import { cn } from "@/lib/utils";
 
-const PDF_MEDIA_TYPE = "application/pdf";
+/*
+  Только DOCX. Сервер принимает и PDF, но извлекать из него текст нечем:
+  библиотеки в закрытом контуре нет, и ядро отбивает такой файл ошибкой
+  «формат не поддерживается» уже после загрузки. Предлагать формат, который
+  заведомо не сработает, — обманывать пользователя, поэтому выбор сужен здесь,
+  а не оставлен на отказ в конце пути.
+*/
 const DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const ACCEPTED_FILES = `${PDF_MEDIA_TYPE},${DOCX_MEDIA_TYPE},.pdf,.docx`;
+const ACCEPTED_FILES = `${DOCX_MEDIA_TYPE},.docx`;
 
-type UploadPhase = "idle" | "ready" | "uploading" | "success" | "error";
-
-interface FileDropzoneProps {
-  uploadAllowed?: boolean;
-  uploadBlockedReason?: string;
-  onSelectionChange?: (file: File | null) => void;
-  onUploadStateChange?: (uploading: boolean) => void;
-  onUploadComplete?: (document: DocumentUploadResponse) => void;
-}
+type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -37,8 +37,12 @@ function formatBytes(bytes: number): string {
 
 function validateFile(file: File): string | null {
   const extension = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-  const expectedType = extension === ".pdf" ? PDF_MEDIA_TYPE : extension === ".docx" ? DOCX_MEDIA_TYPE : null;
-  if (!expectedType) return "Выберите документ в формате PDF или DOCX.";
+  const expectedType = extension === ".docx" ? DOCX_MEDIA_TYPE : null;
+  if (!expectedType) {
+    return extension === ".pdf"
+      ? "PDF пока не поддерживается. Сохраните документ в DOCX."
+      : "Выберите документ в формате DOCX.";
+  }
   if (file.type && file.type !== expectedType) {
     return "Расширение файла не соответствует его формату.";
   }
@@ -51,32 +55,23 @@ function validateFile(file: File): string | null {
 
 function uploadErrorMessage(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.code === "DOCUMENT_REJECTED") {
-      return "Файл не прошёл проверку безопасности. Выберите другой документ.";
-    }
     if (error.status === 413) return "Файл слишком большой для загрузки.";
-    if (error.status === 415) return "Сервер принимает только PDF и DOCX.";
+    if (error.status === 415) return "Сервер принимает только DOCX.";
     if (error.status === 422) return "Файл повреждён или его формат не подтверждён.";
     if (error.status === 0) return "Не удалось подключиться к серверу. Попробуйте ещё раз.";
   }
   return "Не удалось загрузить документ. Попробуйте ещё раз.";
 }
 
-export function FileDropzone({
-  uploadAllowed = true,
-  uploadBlockedReason,
-  onSelectionChange,
-  onUploadStateChange,
-  onUploadComplete,
-}: FileDropzoneProps) {
+export function FileDropzone() {
   const inputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<UploadPhase>("idle");
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
-  const [correlationId, setCorrelationId] = useState<string | undefined>();
   const [receipt, setReceipt] = useState<DocumentUploadResponse | null>(null);
+  const navigate = useNavigate();
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => () => abortRef.current?.abort(), []);
@@ -86,62 +81,68 @@ export function FileDropzone({
     const validationError = validateFile(nextFile);
     setReceipt(null);
     setProgress(0);
-    setCorrelationId(undefined);
     if (validationError) {
       setFile(null);
-      onSelectionChange?.(null);
       setPhase("error");
       setMessage(validationError);
       return;
     }
     setFile(nextFile);
-    onSelectionChange?.(nextFile);
     setPhase("ready");
     setMessage(null);
-    setCorrelationId(undefined);
   };
 
   const openPicker = () => {
-    if (phase === "uploading") return;
+    if (phase === "uploading" || phase === "starting") return;
     if (inputRef.current) inputRef.current.value = "";
     inputRef.current?.click();
   };
 
   const startUpload = async () => {
-    if (!file || phase === "uploading" || !uploadAllowed) return;
+    if (!file || phase === "uploading") return;
     const controller = new AbortController();
     abortRef.current = controller;
     setPhase("uploading");
     setMessage(null);
     setProgress(0);
-    onUploadStateChange?.(true);
     try {
       const result = await uploadDocument(file, setProgress, controller.signal);
       setReceipt(result);
       setPhase("success");
-      onUploadComplete?.(result);
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setPhase("error");
       setMessage(uploadErrorMessage(error));
-      setCorrelationId(error instanceof ApiError ? error.correlationId : undefined);
     } finally {
       abortRef.current = null;
-      onUploadStateChange?.(false);
     }
   };
 
-  const clearSelection = () => {
-    if (phase === "uploading") return;
-    setFile(null);
-    setPhase("idle");
-    setProgress(0);
+  // Загрузка и проверка — один шаг для человека: документ загружают, чтобы
+  // его проверили, а не чтобы он лежал. Пакет правил берём первый доступный:
+  // выбор профиля появится, когда пакетов станет больше одного.
+  const startReview = async () => {
+    if (!receipt || phase === "starting") return;
+    setPhase("starting");
     setMessage(null);
-    setCorrelationId(undefined);
-    setReceipt(null);
-    setDragging(false);
-    if (inputRef.current) inputRef.current.value = "";
-    onSelectionChange?.(null);
+    try {
+      const packs = await getReviewPacks();
+      const pack = packs.items[0];
+      if (!pack) {
+        setPhase("error");
+        setMessage("В контуре не настроен ни один профиль проверки. Обратитесь к администратору.");
+        return;
+      }
+      const review = await createReview(
+        receipt.document_id,
+        pack.review_pack_id,
+        crypto.randomUUID(),
+      );
+      void navigate(`/reviews/${review.review_id}`);
+    } catch (error) {
+      setPhase("error");
+      setMessage(uploadErrorMessage(error));
+    }
   };
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
@@ -152,13 +153,13 @@ export function FileDropzone({
 
   return (
     <Card className="overflow-hidden" id="upload">
-      <div className="border-b border-border px-6 py-5 sm:px-8">
-        <h2 className="text-xl font-semibold">Загрузите документ</h2>
+      <div className="border-b border-border px-5 py-5 sm:px-8">
+        <h2 className="text-lg font-semibold sm:text-xl">Загрузите документ</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          PDF или DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
+          DOCX до {formatBytes(appConfig.maxUploadSizeBytes)}
         </p>
       </div>
-      <div className="p-6 sm:p-8">
+      <div className="p-5 sm:p-8">
         <input
           accept={ACCEPTED_FILES}
           aria-hidden="true"
@@ -170,13 +171,13 @@ export function FileDropzone({
           type="file"
         />
         <div
-          aria-describedby={message ? "upload-message" : !file ? "upload-instructions" : undefined}
-          aria-disabled={phase === "uploading"}
           aria-label="Область загрузки документа"
           className={cn(
-            "group flex min-h-64 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-10 text-center transition-colors",
-            dragging ? "border-primary bg-primary/5" : "border-border bg-muted/35 hover:border-primary/50 hover:bg-primary/[0.03]",
-            phase === "uploading" && "cursor-wait opacity-70",
+            "group flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-(--radius-card) border-2 border-dashed px-4 py-8 text-center transition-colors sm:min-h-64 sm:px-6 sm:py-10",
+            dragging
+              ? "border-primary bg-primary/5"
+              : "border-border bg-muted/35 hover:border-primary/50 hover:bg-primary/[0.03] active:border-primary/50 active:bg-primary/[0.05]",
+            phase === "uploading" && "cursor-wait",
           )}
           onClick={openPicker}
           onDragEnter={(event) => {
@@ -199,20 +200,24 @@ export function FileDropzone({
         >
           {file ? (
             <>
-              <span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-                <FileText aria-hidden="true" className="size-7" />
+              <span className="grid size-12 place-items-center rounded-(--radius-card) bg-primary/10 text-primary sm:size-14">
+                <FileText aria-hidden="true" className="size-6 sm:size-7" />
               </span>
               <p className="mt-4 max-w-full truncate font-semibold">{file.name}</p>
               <p className="mt-1 text-sm text-muted-foreground">{formatBytes(file.size)}</p>
             </>
           ) : (
             <>
-              <span className="grid size-14 place-items-center rounded-2xl bg-primary/10 text-primary">
-                <UploadCloud aria-hidden="true" className="size-7" />
+              <span className="grid size-12 place-items-center rounded-(--radius-card) bg-primary/10 text-primary sm:size-14">
+                <UploadCloud aria-hidden="true" className="size-6 sm:size-7" />
               </span>
-              <p className="mt-4 font-semibold">Перетащите файл сюда</p>
-              <p className="mt-1 text-sm text-muted-foreground" id="upload-instructions">
+              {/* Пальцем файл не перетаскивают: на тач-экране обещаем то, что работает */}
+              <p className="mt-4 font-semibold pointer-coarse:hidden">Перетащите файл сюда</p>
+              <p className="mt-1 text-sm text-muted-foreground pointer-coarse:hidden">
                 или нажмите, чтобы выбрать
+              </p>
+              <p className="mt-4 hidden font-semibold pointer-coarse:block">
+                Нажмите, чтобы выбрать файл
               </p>
             </>
           )}
@@ -229,7 +234,6 @@ export function FileDropzone({
               aria-valuemax={100}
               aria-valuemin={0}
               aria-valuenow={progress}
-              aria-valuetext={`Загружено ${progress}%`}
               className="h-2 overflow-hidden rounded-full bg-muted"
               role="progressbar"
             >
@@ -240,55 +244,45 @@ export function FileDropzone({
 
         {message && (
           <div
-            className="mt-5 flex gap-3 rounded-xl bg-danger/10 px-4 py-3 text-sm text-danger"
-            id="upload-message"
-            role="alert"
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-(--radius-sm) bg-red-soft px-4 py-3 text-sm leading-6 text-red"
           >
             <AlertCircle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>{message}</span>
           </div>
         )}
-        {message && correlationId && (
-          <ErrorReference correlationId={correlationId} />
-        )}
 
-        {phase === "success" && receipt && (
-          <div aria-live="polite" className="mt-5 flex gap-3 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+        {(phase === "success" || phase === "starting") && receipt && (
+          <div
+            aria-live="polite"
+            className="mt-5 flex gap-3 rounded-(--radius-sm) bg-green-soft px-4 py-3 text-sm text-green"
+          >
             <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-            <span>Документ загружен и готов к проверке.</span>
+            <span>Документ загружен. Проверка занимает около минуты.</span>
           </div>
         )}
 
         {file && phase !== "uploading" && (
           <div className="mt-5 flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-            {phase !== "success" && (
-              <Button onClick={clearSelection} type="button" variant="ghost">
-                Убрать файл
-              </Button>
-            )}
-            <Button onClick={openPicker} type="button" variant="secondary">
+            <Button className="w-full sm:w-auto" onClick={openPicker} type="button" variant="secondary">
               <RefreshCw aria-hidden="true" className="size-4" />
               Заменить файл
             </Button>
-            {phase !== "success" && (
+            {phase === "success" || phase === "starting" ? (
               <Button
-                aria-describedby={!uploadAllowed ? "upload-blocked-reason" : undefined}
-                disabled={!uploadAllowed}
-                onClick={() => void startUpload()}
+                className="w-full sm:w-auto"
+                disabled={phase === "starting"}
+                onClick={() => void startReview()}
                 type="button"
               >
+                {phase === "starting" ? "Запускаем проверку" : "Проверить документ"}
+              </Button>
+            ) : (
+              <Button className="w-full sm:w-auto" onClick={() => void startUpload()} type="button">
                 Загрузить документ
               </Button>
             )}
           </div>
-        )}
-        {file && phase !== "uploading" && !uploadAllowed && uploadBlockedReason && (
-          <p
-            className="mt-3 text-right text-sm text-muted-foreground"
-            id="upload-blocked-reason"
-          >
-            {uploadBlockedReason}
-          </p>
         )}
       </div>
     </Card>

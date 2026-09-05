@@ -1,59 +1,93 @@
 import { CircleAlert, CircleCheck, LoaderCircle, RefreshCw } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 
-import { getHealth } from "@/api/health";
-import { PageHeader } from "@/components/page-header";
+import { getHealth, type HealthResponse } from "@/api/health";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 
+type HealthState =
+  | { kind: "loading" }
+  | { kind: "ready"; data: HealthResponse }
+  | { kind: "error"; message: string };
+
 export function HealthPage() {
-  const health = useQuery({
-    queryKey: ["system", "health"],
-    queryFn: ({ signal }) => getHealth(signal),
-    retry: false,
-  });
+  const [state, setState] = useState<HealthState>({ kind: "loading" });
+
+  const loadHealth = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await getHealth(signal);
+      setState({ kind: "ready", data });
+    } catch (error) {
+      if (signal?.aborted) return;
+      setState({
+        kind: "error",
+        message: error instanceof Error ? error.message : "Неизвестная ошибка",
+      });
+    }
+  }, []);
+
+  const retry = () => {
+    setState({ kind: "loading" });
+    void loadHealth();
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void getHealth(controller.signal)
+      .then((data) => setState({ kind: "ready", data }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        setState({
+          kind: "error",
+          message: error instanceof Error ? error.message : "Неизвестная ошибка",
+        });
+      });
+    return () => controller.abort();
+  }, []);
 
   return (
     <section className="mx-auto max-w-2xl space-y-6">
-      <PageHeader
-        eyebrow="Диагностика"
-        title="Состояние Backend API"
-        description="Эта страница проверяет реальное подключение frontend к сервису приложения."
-      />
+      <div>
+        <p className="mb-2 text-sm font-medium text-primary">Диагностика</p>
+        <h1 className="text-title font-semibold">Состояние Backend API</h1>
+        <p className="mt-3 text-muted-foreground">
+          Эта страница проверяет реальное подключение frontend к сервису приложения.
+        </p>
+      </div>
 
-      <Card className="p-6" aria-live="polite">
-        {health.isPending && (
+      <Card className="p-5 sm:p-6" aria-live="polite">
+        {state.kind === "loading" && (
           <div className="flex items-center gap-3 text-muted-foreground">
             <LoaderCircle aria-hidden="true" className="size-5 animate-spin" />
             Выполняется проверка…
           </div>
         )}
 
-        {health.isSuccess && (
+        {state.kind === "ready" && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 font-semibold text-success">
+            <div className="flex items-center gap-3 font-semibold text-green">
               <CircleCheck aria-hidden="true" className="size-6" />
               Backend доступен
             </div>
-            <dl className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr] sm:gap-y-3">
+            <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-6 gap-y-3 text-sm">
               <dt className="text-muted-foreground">Сервис</dt>
-              <dd className="mb-2 break-all sm:mb-0">{health.data.service}</dd>
+              <dd>{state.data.service}</dd>
               <dt className="text-muted-foreground">Окружение</dt>
-              <dd className="mb-2 break-all sm:mb-0">{health.data.environment}</dd>
+              <dd>{state.data.environment}</dd>
               <dt className="text-muted-foreground">Версия</dt>
-              <dd className="break-all">{health.data.version}</dd>
+              <dd>{state.data.version}</dd>
             </dl>
           </div>
         )}
 
-        {health.isError && (
+        {state.kind === "error" && (
           <div className="space-y-5">
-            <div className="flex items-center gap-3 font-semibold text-danger">
+            <div className="flex items-center gap-3 font-semibold text-red">
               <CircleAlert aria-hidden="true" className="size-6" />
               Backend недоступен
             </div>
-            <p className="text-sm text-muted-foreground">{health.error.message}</p>
-            <Button onClick={() => void health.refetch()} size="sm" variant="secondary">
+            <p className="text-sm text-muted-foreground">{state.message}</p>
+            <Button onClick={retry} size="sm" variant="secondary">
               <RefreshCw aria-hidden="true" className="size-4" />
               Повторить
             </Button>

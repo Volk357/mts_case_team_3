@@ -44,10 +44,12 @@ const feedbackOptions: Array<{
 
 export function FeedbackControls({
   findingId,
+  actorKey,
   savedFeedback,
   onSaved,
 }: {
   findingId: string;
+  actorKey?: string;
   savedFeedback?: FindingFeedback;
   onSaved?: (feedback: FindingFeedback) => void;
 }) {
@@ -67,7 +69,7 @@ export function FeedbackControls({
     }) =>
       putFindingFeedback(
         findingId,
-        getFeedbackActorKey(),
+        actorKey ?? getFeedbackActorKey(),
         nextDecision,
         nextComment.trim() || null,
       ),

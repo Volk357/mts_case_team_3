@@ -117,6 +117,123 @@ def test_default_ceiling_is_20():
     assert BUDGET_CEILING == 20
 
 
+def test_trim_keeps_short_and_complete_text_untouched():
+    for text in ("Короткое замечание.", "Указать формат: 'timestamp (UTC)'",
+                 "Вопрос?", "Смотри раздел (см. выше)"):
+        assert run_review.trim_to_sentence(text, 300) == text
+
+
+def test_trim_cuts_at_sentence_when_capped():
+    # реальный случай: текст упёрся в лимит и оборван на полуслове
+    body = "Поле не описано в структуре данных. " + "слово " * 45
+    out = run_review.trim_to_sentence(body.strip(), 300)
+    assert out.endswith(("…", ".")), out[-30:]
+    assert "слово слово" not in out or out.endswith("…")
+
+
+def test_trim_marks_cut_with_ellipsis_when_no_sentence_end():
+    body = "Это приводит к неясности где именно находится описание " + "текста " * 40
+    out = run_review.trim_to_sentence(body.strip(), 300)
+    assert out.endswith("…")
+    assert not out.endswith(" …")
+
+
+def test_verify_trims_truncated_explanation():
+    src = "Часовой пояс: UTC\nЕжемесячно (1 раз в месяц)\n"
+    long_tail = "Регламент не указан полностью и не описан " + "деталь " * 40
+    findings = [{"quote": "Ежемесячно (1 раз в месяц)", "defect_id": "NO_SCHEDULE",
+                 "explanation": long_tail.strip(), "suggestion": "Указать окно.",
+                 "severity": "medium"}]
+    kept, _ = run_review.verify(findings, src, None)
+    assert kept[0]["explanation"].endswith(("…", "."))
+    assert len(kept[0]["explanation"]) <= 300
+
+
+def test_every_severity_has_rank_and_weight():
+    """Значение из SEVERITIES обязано быть в обеих таблицах ранжирования:
+    иначе оно молча получит вес medium (блокер ревью 4 сентября — critical
+    разрешён схемой, но резался бы раньше high)."""
+    for sev in run_review.SEVERITIES:
+        assert sev in run_review._SEV_WEIGHT, sev
+    assert run_review._sev_rank({"severity": "critical"}) == 0
+    assert run_review._sev_rank({"severity": "high"}) == 0
+    assert run_review._SEV_WEIGHT["critical"] > run_review._SEV_WEIGHT["high"]
+
+
+def test_critical_ordered_above_high_in_output():
+    # блокер круга 2: проверять надо фактический порядок, а не константы
+    items = ([{"severity": "high", "quote": "высокое замечание", "defect_id": "X"},
+              {"severity": "critical", "quote": "критичное замечание", "defect_id": "X"}]
+             + [{"severity": "medium", "quote": "среднее %d" % i, "defect_id": "Y"}
+                for i in range(19)])
+    kept, _ = apply_budget(items, BUDGET_CEILING)
+    assert kept[0]["severity"] == "critical", [f["severity"] for f in kept[:3]]
+    assert kept[1]["severity"] == "high"
+
+
+def test_critical_not_cut_by_budget():
+    crit = [{"severity": "critical", "quote": "критичное замечание %d" % i,
+             "defect_id": "X"} for i in range(5)]
+    rest = [{"severity": "medium", "quote": "среднее замечание %d" % i,
+             "defect_id": "Y", "merged_count": 3} for i in range(30)]
+    kept, dropped = apply_budget(crit + rest, BUDGET_CEILING)
+    assert all(f in kept for f in crit), "critical не должен резаться бюджетом"
+
+
+def test_normalize_severity_dictionary_values_pass_through():
+    for v in ("high", "medium", "low", "clarification", " HIGH ", "Low."):
+        sev, fixed = run_review.normalize_severity(v)
+        assert sev == v.strip().lower().strip(".") and fixed is False
+
+
+def test_normalize_severity_mixed_alphabet_from_real_run():
+    # реальный ответ модели на документе кейсодателя: латиница + кириллица
+    assert run_review.normalize_severity("clarifiсатио") == ("clarification", True)
+
+
+def test_normalize_severity_russian_and_garbage():
+    assert run_review.normalize_severity("высокая") == ("high", True)
+    assert run_review.normalize_severity("низкая") == ("low", True)
+    assert run_review.normalize_severity("нечто") == ("medium", True)
+    assert run_review.normalize_severity(None) == ("medium", True)
+
+
+def test_normalize_severity_ambiguous_prefix_falls_back():
+    # «cl» подходит и clarification, и (гипотетически) другим — префикс короче 3 не берём
+    assert run_review.normalize_severity("cl") == ("medium", True)
+
+
+def test_verify_normalizes_severity_and_keeps_finding():
+    src = "Часовой пояс: UTC\nЕжемесячно (1 раз в месяц)\n"
+    findings = [{"quote": "Ежемесячно (1 раз в месяц)", "defect_id": "NO_SCHEDULE",
+                 "explanation": "Нет времени запуска.", "suggestion": "Указать окно.",
+                 "severity": "clarifiсатио"}]
+    kept, dropped = run_review.verify(findings, src, None)
+    assert len(kept) == 1 and not dropped
+    assert kept[0]["severity"] == "clarification"
+    assert kept[0]["severity_raw"] == "clarifiсатио"
+
+
+def test_prompt_taxonomy_matches_defects_yaml():
+    """defects_prompt.yaml — та же таксономия для промпта: состав llm-типов
+    и их описания обязаны совпадать с defects.yaml. Расщепление типа, забытое
+    в одном файле, — это молча разъехавшийся промпт (блокер ревью 4 сентября)."""
+    import re as _re
+    import yaml as _yaml
+    full = {d["id"]: d for d in _yaml.safe_load(
+        open("defects.yaml", encoding="utf-8"))["defects"]}
+    prompt = {d["id"]: d for d in _yaml.safe_load(
+        open("defects_prompt.yaml", encoding="utf-8"))["defects"]}
+    llm = {i for i, d in full.items() if d.get("detectable_by") == "llm"}
+    assert set(prompt) == llm, (
+        "промпт-таксономия разошлась: лишние %s, недостающие %s"
+        % (sorted(set(prompt) - llm), sorted(llm - set(prompt))))
+    norm = lambda s: _re.sub(r"\s+", " ", (s or "").strip())
+    drift = [i for i in prompt
+             if norm(full[i].get("description")) != norm(prompt[i].get("description"))]
+    assert not drift, "описания разошлись: %s" % drift
+
+
 if __name__ == "__main__":
     test_under_budget_returns_input_unchanged()
     test_high_never_cut_even_over_ceiling()
@@ -128,4 +245,17 @@ if __name__ == "__main__":
     test_run_full_applies_budget_and_reports_capped()
     test_run_full_drops_deterministic_type_findings()
     test_default_ceiling_is_20()
+    test_trim_keeps_short_and_complete_text_untouched()
+    test_trim_cuts_at_sentence_when_capped()
+    test_trim_marks_cut_with_ellipsis_when_no_sentence_end()
+    test_verify_trims_truncated_explanation()
+    test_every_severity_has_rank_and_weight()
+    test_critical_ordered_above_high_in_output()
+    test_critical_not_cut_by_budget()
+    test_normalize_severity_dictionary_values_pass_through()
+    test_normalize_severity_mixed_alphabet_from_real_run()
+    test_normalize_severity_russian_and_garbage()
+    test_normalize_severity_ambiguous_prefix_falls_back()
+    test_verify_normalizes_severity_and_keeps_finding()
+    test_prompt_taxonomy_matches_defects_yaml()
     print("все тесты пройдены")

@@ -1,32 +1,55 @@
-import { FileCheck2 } from "lucide-react";
+import { Activity, FileCheck2, History, LogOut } from "lucide-react";
 import { Link, Outlet } from "react-router-dom";
 
+import { clearCredentials, setToken } from "@/auth/session";
+
 export function AppLayout() {
+  const signOut = () => {
+    clearCredentials();
+    setToken(null);
+    window.location.assign("/");
+  };
+
   return (
-    <div className="min-h-screen">
-      <a
-        className="fixed top-3 left-3 z-50 -translate-y-20 rounded-lg bg-card px-4 py-2 font-semibold shadow-lg transition-transform focus:translate-y-0"
-        href="#main-content"
-      >
-        Перейти к содержимому
-      </a>
-      <header className="border-b border-border/80 bg-card/80 backdrop-blur">
-        <div className="mx-auto flex min-h-16 max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link className="flex items-center gap-3 font-semibold tracking-tight" to="/">
-            <span className="grid size-9 place-items-center rounded-xl bg-primary text-primary-foreground">
-              <FileCheck2 aria-hidden="true" className="size-5" />
-            </span>
+    <div className="min-h-dvh">
+      {/* Шапка липкая: список замечаний длинный, выход и возврат на главную
+          не должны требовать прокрутки вверх на телефоне. */}
+      <header className="sticky top-0 z-20 border-b border-border bg-navy pt-[env(safe-area-inset-top)]">
+        <div className="px-gutter mx-auto flex h-14 max-w-3xl items-center justify-between gap-4 sm:h-16">
+          <Link
+            className="flex shrink-0 items-center gap-2.5 font-semibold tracking-tight text-white"
+            to="/"
+          >
+            <FileCheck2 aria-hidden="true" className="size-5 text-accent" />
             DocReview
           </Link>
-          <Link
-            className="text-right text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
-            to="/debug/health"
-          >
-            Состояние системы
-          </Link>
+          <nav className="flex items-center gap-1 sm:gap-2">
+            <Link
+              className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) px-2.5 text-sm font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:px-3"
+              to="/reviews"
+            >
+              <History aria-hidden="true" className="size-4" />
+              <span className="sr-only sm:not-sr-only">Проверки</span>
+            </Link>
+            <Link
+              className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) px-2.5 text-sm font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:px-3"
+              to="/debug/health"
+            >
+              <Activity aria-hidden="true" className="size-4" />
+              <span className="sr-only sm:not-sr-only">Состояние системы</span>
+            </Link>
+            <button
+              className="inline-flex h-11 items-center gap-2 rounded-(--radius-sm) px-2.5 text-sm font-medium text-white/75 transition-colors hover:bg-white/10 hover:text-white sm:px-3"
+              onClick={signOut}
+              type="button"
+            >
+              <LogOut aria-hidden="true" className="size-4" />
+              <span className="sr-only sm:not-sr-only">Выйти</span>
+            </button>
+          </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-12" id="main-content">
+      <main className="px-gutter mx-auto max-w-3xl pt-8 pb-[max(3rem,env(safe-area-inset-bottom))] sm:pt-12 sm:pb-16">
         <Outlet />
       </main>
     </div>

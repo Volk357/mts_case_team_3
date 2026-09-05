@@ -4,9 +4,9 @@ import { Button } from "@/components/ui/button";
 
 export function NotFoundPage() {
   return (
-    <section className="mx-auto max-w-xl py-20 text-center">
+    <section className="mx-auto max-w-xl py-16 text-center sm:py-20">
       <p className="text-sm font-medium text-primary">Ошибка 404</p>
-      <h1 className="mt-3 text-3xl font-semibold">Страница не найдена</h1>
+      <h1 className="mt-3 text-title font-semibold">Страница не найдена</h1>
       <p className="mt-4 mb-8 text-muted-foreground">
         Возможно, адрес изменился или страница ещё не реализована.
       </p>

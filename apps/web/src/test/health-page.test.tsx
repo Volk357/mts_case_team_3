@@ -1,11 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, vi } from "vitest";
+import { afterEach, beforeEach, vi } from "vitest";
 
 import { App } from "@/app";
-import { AppProviders } from "@/app-providers";
+import { setToken } from "@/auth/session";
+
+// С коммита 92d7095 App показывает экран входа, пока в сессии нет учётных
+// данных. Эта страница проверяет связь с API, а не вход.
+beforeEach(() => setToken("dGVzdDp0ZXN0"));
 
 afterEach(() => {
+  setToken(null);
   vi.unstubAllGlobals();
 });
 
@@ -27,11 +32,9 @@ describe("Health page", () => {
     );
 
     render(
-      <AppProviders>
-        <MemoryRouter initialEntries={["/debug/health"]}>
-          <App />
-        </MemoryRouter>
-      </AppProviders>,
+      <MemoryRouter initialEntries={["/debug/health"]}>
+        <App />
+      </MemoryRouter>,
     );
 
     expect(await screen.findByText("Backend доступен")).toBeInTheDocument();
@@ -42,11 +45,9 @@ describe("Health page", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("Connection refused")));
 
     render(
-      <AppProviders>
-        <MemoryRouter initialEntries={["/debug/health"]}>
-          <App />
-        </MemoryRouter>
-      </AppProviders>,
+      <MemoryRouter initialEntries={["/debug/health"]}>
+        <App />
+      </MemoryRouter>,
     );
 
     expect(await screen.findByText("Backend недоступен")).toBeInTheDocument();

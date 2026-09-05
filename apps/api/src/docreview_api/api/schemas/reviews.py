@@ -56,6 +56,9 @@ class FindingResponse(ApiModel):
     quote: str
     problem: str
     clarification: str
+    # Public, closed detection-layer vocabulary. Internal analyzer names from
+    # `detected_by` must never cross the API boundary.
+    detection_layer: Literal["rule", "model", "mixed"] | None = None
 
 
 class ReviewWarning(ApiModel):
@@ -68,3 +71,25 @@ class FindingsResponse(ApiModel):
     items: list[FindingResponse]
     total: int = Field(ge=0)
     warnings: list[ReviewWarning]
+
+
+class ReviewListItemResponse(ApiModel):
+    """Строка истории проверок.
+
+    Имя файла нужно, чтобы человек узнал свою проверку в списке: идентификатор
+    для этого бесполезен. Диагностики ошибки здесь нет — в списке достаточно
+    статуса, подробности видны на самой проверке.
+    """
+
+    review_id: OpaqueId
+    document_id: OpaqueId
+    document_filename: str
+    status: ReviewStatus
+    queued_at: UtcDateTime
+    finished_at: UtcDateTime | None
+    findings_count: int = Field(ge=0)
+
+
+class ReviewListResponse(ApiModel):
+    items: list[ReviewListItemResponse]
+    total: int = Field(ge=0)

@@ -260,15 +260,30 @@ def check_data_catalog(text, cfg):
             break                              # следующий раздел — конец тела
         body.append(ln)
     if any(link_re.search(b) for b in body):
-        return []                              # ссылка есть — норма
-    return [{
+        return []                              # прямая ссылка (URL) есть — норма
+    # URL нет — флагуем ВСЕГДА (без ложных пропусков), но severity по наполнению.
+    if any(b.strip() for b in body):
+        # раздел с содержанием: на реальном DOCX ссылка могла быть гиперлинком,
+        # потерянным при конвертации → мягкое «требует уточнения», не ложное high.
+        return [{
+            "quote": lines[header_idx].strip(),
+            "defect_id": "DATA_CATALOG_MISSING",
+            "explanation": (
+                "В разделе Data Catalog не видно прямой ссылки (URL) на "
+                "Дата-каталог. На реальном документе ссылка может быть "
+                "гиперссылкой, потерянной при конвертации в текст — стоит "
+                "проверить. Требование кейсодателя №2."),
+            "suggestion": "Проверить/добавить прямую ссылку на Дата-каталог.",
+            "severity": "clarification",
+        }]
+    return [{                                  # раздел пустой — ссылки точно нет
         "quote": lines[header_idx].strip(),
         "defect_id": "DATA_CATALOG_MISSING",
         "explanation": (
-            "Раздел Data Catalog присутствует, но прямой ссылки (URL) на "
-            "Дата-каталог в нём нет. Требование кейсодателя №2: привязка к "
-            "источникам оформляется прямой ссылкой на Дата-каталог."),
-        "suggestion": "Добавить в раздел прямую ссылку (URL) на Дата-каталог.",
+            "Раздел Data Catalog присутствует, но пуст — ссылки на Дата-каталог "
+            "нет. Требование кейсодателя №2: привязка к источникам оформляется "
+            "ссылкой на Дата-каталог."),
+        "suggestion": "Добавить в раздел прямую ссылку на Дата-каталог.",
         "severity": "high",
     }]
 
@@ -384,8 +399,271 @@ def check_no_filter(text, cfg):
     return []
 
 
+def check_serialization(text, cfg):
+    """В таблице «Источники данных» колонка «Сериализация» пуста для источника.
+    Требование кейсодателя №1. Детерминированно: scope на таблицу источников,
+    парсинг колонки сериализации по заголовку, проверка ячейки."""
+    conf = cfg.get("serialization")
+    if not conf:
+        return []
+    sec_markers = [m.lower() for m in conf["section_markers"]]
+    header_markers = [m.lower() for m in conf.get("header_markers", [])]
+    col_marker = conf["column_marker"].lower()
+    empty = [m.lower() for m in conf.get("empty_markers", ["—", "-"])]
+    lines = lines_of(text)
+    in_table, col_idx, header_seen = False, None, False
+    bad = []
+    for ln in lines:
+        low = ln.lower()
+        if "|" not in ln and norm(strip_numbering(ln)) in sec_markers \
+                and is_section_header(ln, cfg):
+            in_table, col_idx, header_seen = True, None, False
+            continue
+        if not in_table:
+            continue
+        if "|" not in ln:
+            if is_section_header(ln, cfg):     # следующий раздел — конец таблицы
+                in_table = False
+            continue                            # пустые строки пропускаем
+        if not header_seen:
+            cells = [c.strip().lower() for c in ln.split("|")]
+            if not any(h in low for h in header_markers):
+                continue                        # не строка-заголовок таблицы
+            col_idx = next((k for k, c in enumerate(cells) if col_marker in c), None)
+            header_seen = True
+            continue
+        if col_idx is None:
+            continue                            # колонки сериализации нет — не проверяем
+        cells = [c.strip() for c in ln.split("|")]
+        cell = cells[col_idx].strip().lower() if col_idx < len(cells) else ""
+        if not cell or cell in empty:
+            bad.append(ln.strip())
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "SERIALIZATION_UNSPECIFIED",
+        "explanation": (
+            "Для источника в таблице «Источники данных» не указана сериализация "
+            "(формат/схема/способ десериализации). Требование кейсодателя №1: "
+            "сериализация входного потока должна быть задана. Источников без "
+            "сериализации: %d." % len(bad)),
+        "suggestion": "Указать сериализацию (формат/схему) для каждого источника.",
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
+def check_timezone(text, cfg):
+    """Поле «Часовой пояс» заполнено, но конкретный пояс не назван.
+
+    Детерминированно: метка поля стоит в начале строки, значение берётся
+    после «:» или «|» (если строка обрывается — следующая непустая строка),
+    и в значении ищется хотя бы одно конкретное обозначение пояса
+    (UTC / GMT / МСК / смещение / IANA). Ни одного — замечание.
+    Значение вида «Местное время региона» границы периода не задаёт.
+
+    Второй случай — пояс назван, но разделы трактуют его по-разному —
+    выделен в отдельный тип TIMEZONE_INCONSISTENT: он кросс-фрагментный
+    и остаётся за моделью (defects_prompt.yaml, GLOBAL_TYPES)."""
+    conf = cfg.get("timezone")
+    if not conf:
+        return []
+    label_re = re.compile(conf["label_pattern"], re.I)
+    zone_res = [re.compile(p, re.I) for p in conf["zone_patterns"]]
+    lines = lines_of(text)
+    bad = []
+    for i, ln in enumerate(lines):
+        if ":" not in ln and "|" not in ln:
+            continue
+        sep = min([p for p in (ln.find(":"), ln.find("|")) if p >= 0])
+        label = norm(strip_numbering(ln[:sep]))
+        if not label_re.match(label):
+            continue
+        value = ln[sep + 1:].strip(" |")
+        if not value:                       # значение перенесено на следующую строку
+            value = next((n.strip() for n in lines[i + 1:] if n.strip()), "")
+        if any(r.search(value) for r in zone_res):
+            continue
+        bad.append(ln.strip())
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "TIMEZONE_UNDEFINED",
+        "explanation": (
+            "В поле «Часовой пояс» не назван конкретный пояс (UTC, смещение "
+            "или зона IANA). Границы периода в правилах фильтрации становятся "
+            "нетрактуемыми: разные источники сдвинут их по-разному."),
+        "suggestion": ("Указать конкретный часовой пояс (например, UTC) и поле, "
+                       "несущее метку смещения."),
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
+def _structure_tables(text, cfg):
+    """Таблицы структуры данных: [(имя таблицы, {поле: (тип, строка)})].
+
+    Таблицей считается блок строк после заголовка с колонкой «Тип данных».
+    Имя берётся из ближайшей строки «Таблица: X» выше. Блок кончается на
+    первой строке без «|»: иначе строки раздела «Пример данных» дочитались
+    бы как продолжение структуры (проверено — давало ложные пары).
+    """
+    conf = cfg.get("schema_tables")
+    if not conf:
+        return []
+    name_re = re.compile(conf["table_name_pattern"])
+    field_re = re.compile(conf["field_pattern"])
+    type_marker = conf["header_type_marker"].lower()
+    field_markers = [m.lower() for m in conf["header_field_markers"]]
+
+    out, cur, name, fld_i, typ_i = [], None, "?", None, None
+    for ln in lines_of(text):
+        if "|" not in ln:
+            cur = None                      # любая строка без таблицы закрывает блок
+            m = name_re.search(ln)
+            if m:
+                name = m.group(1)
+            continue
+        cells = [c.strip() for c in ln.split("|")]
+        low = [c.lower() for c in cells]
+        if any(type_marker in c for c in low):
+            typ_i = next(i for i, c in enumerate(low) if type_marker in c)
+            fld_i = next((i for i, c in enumerate(low)
+                          if any(fm == c for fm in field_markers)), None)
+            cur = {}
+            out.append((name, cur))
+            continue
+        if cur is None or fld_i is None or typ_i >= len(cells) or fld_i >= len(cells):
+            continue
+        field, typ = cells[fld_i], cells[typ_i]
+        if field_re.match(field) and typ:
+            cur.setdefault(field, (typ, ln.strip()))
+    return out
+
+
+def _type_change_explained(text, field, cfg):
+    """В документе сказано о приведении/преобразовании типа этого поля.
+
+    Ищем не по всему документу, а в строках, где поле названо: иначе одна
+    фраза про приведение типа в алгоритме погасила бы расхождения у всех полей.
+    Имя поля сверяется как ЦЕЛЫЙ идентификатор: подстрокой «FIELD_A» нашлось бы
+    в «FIELD_AB», и объяснение про соседнее поле гасило бы чужое расхождение.
+    """
+    markers = [m.lower() for m in cfg["schema_tables"].get("explained_markers", [])]
+    if not markers:
+        return False
+    field_re = re.compile(r"\b" + re.escape(field) + r"\b", re.I)
+    for ln in lines_of(text):
+        low = ln.lower()
+        if field_re.search(ln) and any(m in low for m in markers):
+            return True
+    return False
+
+
+def check_schema_type_mismatch(text, cfg):
+    """Одноимённое поле описано разными типами в разных таблицах структуры.
+
+    Расхождение, для которого в документе сказано о приведении типа,
+    дефектом не считается: приведение при загрузке — законная практика,
+    дефект — именно необъяснённое расхождение.
+    """
+    tables = _structure_tables(text, cfg)
+    seen, bad = {}, []
+    for name, fields in tables:
+        for field, (typ, line) in fields.items():
+            if field in seen:
+                first_name, first_type, _ = seen[field]
+                if norm(first_type) != norm(typ) and \
+                        not _type_change_explained(text, field, cfg):
+                    bad.append((field, first_name, first_type, name, typ, line))
+                continue
+            seen[field] = (name, typ, line)
+    if not bad:
+        return []
+    field, t1_name, t1, t2_name, t2, line = bad[0]
+    return [{
+        "quote": line,
+        "defect_id": "SCHEMA_TYPE_MISMATCH",
+        "explanation": (
+            "Поле %s описано разными типами: в таблице %s — %s, в таблице %s — %s. "
+            "Расхождение в документе не объяснено: непонятно, ошибка это или "
+            "приведение типа при загрузке. Полей с расхождением типа: %d."
+            % (field, t1_name, t1, t2_name, t2, len(bad))),
+        "suggestion": ("Привести типы к одному либо описать приведение типа "
+                       "при загрузке."),
+        "severity": "medium",
+        "detail": [b[0] for b in bad],
+    }]
+
+
+def _present_section_names(text, cfg):
+    """Имена разделов, реально присутствующих в документе.
+
+    Берём заголовки и первые ячейки строк таблиц — там же, где раздел ищет
+    find_sections. Если найден любой синоним раздела шаблона, присутствующими
+    считаются все его синонимы: ссылка вправе звать раздел другим именем.
+    """
+    raw = lines_of(text)
+    present = {norm(strip_numbering(ln)) for ln in raw if ln.strip()}
+    for ln in raw:
+        if "|" in ln:
+            present.add(norm(strip_numbering(ln.split("|")[0])))
+    present.discard("")
+    for sec in cfg.get("sections", []):
+        aliases = {norm(a) for a in sec.get("aliases", [])}
+        if aliases & present:
+            present |= aliases
+    return present
+
+
+def check_dangling_section(text, cfg):
+    """Ссылка на раздел, названного в кавычках, в документе нет.
+
+    Детерминированно: имя раздела берётся из самого текста ссылки, наличие
+    проверяется по заголовкам и первым ячейкам таблиц. Обороты без имени
+    («см. выше», «указанные ниже») сюда не входят — без имени правило
+    перестаёт быть формальным, это остаётся модели (DANGLING_REFERENCE).
+    Строка, где рядом стоит URL, не проверяется: цель внешняя, а внешняя
+    ссылка — норма по конвенции EXTERNAL_LINKS_IN_CONFLUENCE.
+    """
+    conf = cfg.get("section_reference")
+    if not conf:
+        return []
+    ref_re = re.compile(conf["pattern"], re.I)
+    external = [m.lower() for m in conf.get("external_markers", [])]
+    present = _present_section_names(text, cfg)
+    bad, names = [], []
+    for ln in lines_of(text):
+        if any(m in ln.lower() for m in external):
+            continue                    # цель внешняя: ссылка живёт в Confluence
+        for m in ref_re.finditer(ln):
+            name = norm(m.group(1))
+            if not name or name in present:
+                continue
+            bad.append(ln.strip())
+            names.append(m.group(1))
+    if not bad:
+        return []
+    return [{
+        "quote": bad[0],
+        "defect_id": "DANGLING_SECTION_REFERENCE",
+        "explanation": (
+            "Ссылка ведёт на раздел «%s», которого в документе нет. "
+            "Читатель не найдёт названного содержания. Ссылок на "
+            "отсутствующие разделы: %d." % (names[0], len(bad))),
+        "suggestion": ("Исправить ссылку на существующий раздел либо добавить "
+                       "названный раздел в документ."),
+        "severity": "high",
+        "detail": bad,
+    }]
+
+
 CHECKS = [check_sections, check_nullability, check_placeholders,
-          check_data_catalog, check_hdfs, check_vague_wording, check_no_filter]
+          check_data_catalog, check_hdfs, check_vague_wording, check_no_filter,
+          check_serialization, check_timezone, check_dangling_section,
+          check_schema_type_mismatch]
 
 
 def run(text, cfg):

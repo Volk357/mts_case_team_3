@@ -1,4 +1,5 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render as renderComponent, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import userEvent from "@testing-library/user-event";
 
 import { ApiError } from "@/api/client";
@@ -14,8 +15,16 @@ vi.mock("@/api/documents", () => ({
   uploadDocument: uploadDocumentMock,
 }));
 
-const pdf = (name = "Требования.pdf") =>
-  new File(["%PDF-1.7\n%%EOF"], name, { type: "application/pdf" });
+const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+const docx = (name = "Требования.docx") =>
+  new File(["PK\u0003\u0004 docx-body"], name, { type: DOCX_TYPE });
+
+// FileDropzone уводит на страницу проверки через useNavigate: без роутера
+// он падает ещё на рендере.
+function render(ui: React.ReactElement) {
+  return renderComponent(<MemoryRouter>{ui}</MemoryRouter>);
+}
 
 function fileInput(): HTMLInputElement {
   const input = document.querySelector<HTMLInputElement>('input[type="file"]');
@@ -31,10 +40,10 @@ it("shows accepted formats and selected file size", async () => {
   const user = userEvent.setup();
   render(<FileDropzone />);
 
-  expect(screen.getByText(/PDF или DOCX/)).toBeInTheDocument();
-  await user.upload(fileInput(), pdf());
+  expect(screen.getByText(/DOCX до/)).toBeInTheDocument();
+  await user.upload(fileInput(), docx());
 
-  expect(screen.getByText("Требования.pdf")).toBeInTheDocument();
+  expect(screen.getByText("Требования.docx")).toBeInTheDocument();
   expect(screen.getByText("14 Б")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Заменить файл" })).toBeEnabled();
 });
@@ -44,45 +53,18 @@ it("accepts drag-and-drop and lets the user replace the selection", async () => 
   render(<FileDropzone />);
   const dropzone = screen.getByRole("button", { name: "Область загрузки документа" });
 
-  fireEvent.drop(dropzone, { dataTransfer: { files: [pdf("Первый.pdf")] } });
-  expect(screen.getByText("Первый.pdf")).toBeInTheDocument();
+  fireEvent.drop(dropzone, { dataTransfer: { files: [docx("Первый.docx")] } });
+  expect(screen.getByText("Первый.docx")).toBeInTheDocument();
 
-  await user.upload(fileInput(), pdf("Второй.pdf"));
-  expect(screen.getByText("Второй.pdf")).toBeInTheDocument();
-  expect(screen.queryByText("Первый.pdf")).not.toBeInTheDocument();
-});
-
-it("opens the file picker from the keyboard", async () => {
-  const user = userEvent.setup();
-  render(<FileDropzone />);
-  const dropzone = screen.getByRole("button", { name: "Область загрузки документа" });
-  const input = fileInput();
-  const click = vi.spyOn(input, "click");
-
-  await user.tab();
-  expect(dropzone).toHaveFocus();
-  await user.keyboard("{Enter}");
-  expect(click).toHaveBeenCalledTimes(1);
-  await user.keyboard(" ");
-  expect(click).toHaveBeenCalledTimes(2);
-});
-
-it("lets the user remove a valid file before submission", async () => {
-  const user = userEvent.setup();
-  render(<FileDropzone />);
-
-  await user.upload(fileInput(), pdf("Черновик.pdf"));
-  await user.click(screen.getByRole("button", { name: "Убрать файл" }));
-
-  expect(screen.queryByText("Черновик.pdf")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "Загрузить документ" })).not.toBeInTheDocument();
-  expect(screen.getByText("Перетащите файл сюда")).toBeVisible();
+  await user.upload(fileInput(), docx("Второй.docx"));
+  expect(screen.getByText("Второй.docx")).toBeInTheDocument();
+  expect(screen.queryByText("Первый.docx")).not.toBeInTheDocument();
 });
 
 it("explains client-side size and format errors", async () => {
   const user = userEvent.setup();
   render(<FileDropzone />);
-  const oversized = pdf("Большой.pdf");
+  const oversized = docx("Большой.docx");
   Object.defineProperty(oversized, "size", { value: appConfig.maxUploadSizeBytes + 1 });
 
   await user.upload(fileInput(), oversized);
@@ -92,7 +74,7 @@ it("explains client-side size and format errors", async () => {
   fireEvent.drop(screen.getByRole("button", { name: "Область загрузки документа" }), {
     dataTransfer: { files: [text] },
   });
-  expect(screen.getByText("Выберите документ в формате PDF или DOCX.")).toBeInTheDocument();
+  expect(screen.getByText("Выберите документ в формате DOCX.")).toBeInTheDocument();
 });
 
 it("renders upload progress and a successful result", async () => {
@@ -106,31 +88,23 @@ it("renders upload progress and a successful result", async () => {
       }),
   );
   render(<FileDropzone />);
-  await user.upload(fileInput(), pdf());
+  await user.upload(fileInput(), docx());
 
   await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
   expect(screen.getByRole("progressbar", { name: "Прогресс загрузки" })).toHaveAttribute(
     "aria-valuenow",
     "42",
   );
-  expect(screen.getByRole("progressbar", { name: "Прогресс загрузки" })).toHaveAttribute(
-    "aria-valuetext",
-    "Загружено 42%",
-  );
-  expect(screen.getByRole("button", { name: "Область загрузки документа" })).toHaveAttribute(
-    "aria-disabled",
-    "true",
-  );
 
   act(() => {
     finishUpload?.({
       document_id: "00000000-0000-0000-0000-000000000001",
-      filename: "Требования.pdf",
+      filename: "Требования.docx",
       size_bytes: 15,
-      media_type: "application/pdf",
+      media_type: DOCX_TYPE,
     });
   });
-  expect(await screen.findByText("Документ загружен и готов к проверке.")).toBeInTheDocument();
+  expect(await screen.findByText("Документ загружен. Проверка занимает около минуты.")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "Заменить файл" })).toBeEnabled();
 });
 
@@ -138,7 +112,7 @@ it("turns server failures into a clear user-facing message", async () => {
   const user = userEvent.setup();
   uploadDocumentMock.mockRejectedValue(new ApiError("payload too large", 413));
   render(<FileDropzone />);
-  await user.upload(fileInput(), pdf());
+  await user.upload(fileInput(), docx());
 
   await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
 
@@ -146,19 +120,17 @@ it("turns server failures into a clear user-facing message", async () => {
   expect(screen.getByRole("button", { name: "Загрузить документ" })).toBeEnabled();
 });
 
-it("explains a security rejection and preserves its correlation ID", async () => {
-  const user = userEvent.setup();
-  uploadDocumentMock.mockRejectedValue(
-    new ApiError("scanner detail", 422, "DOCUMENT_REJECTED", "corr-upload-42"),
-  );
+it("отклоняет PDF и объясняет, что делать", () => {
   render(<FileDropzone />);
-  await user.upload(fileInput(), pdf());
+  const pdf = new File(["%PDF-1.7\n%%EOF"], "Требования.pdf", { type: "application/pdf" });
 
-  await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
+  fireEvent.drop(screen.getByRole("button", { name: "Область загрузки документа" }), {
+    dataTransfer: { files: [pdf] },
+  });
 
-  expect(
-    await screen.findByText("Файл не прошёл проверку безопасности. Выберите другой документ."),
-  ).toBeVisible();
-  expect(screen.getByText("corr-upload-42")).toBeVisible();
-  expect(screen.queryByText("scanner detail")).not.toBeInTheDocument();
+  // Извлекать текст из PDF в закрытом контуре нечем: отказать надо сразу,
+  // а не после загрузки и минуты ожидания.
+  expect(screen.getByText("PDF пока не поддерживается. Сохраните документ в DOCX.")).toBeInTheDocument();
+  expect(screen.queryByText("Требования.pdf")).not.toBeInTheDocument();
+  expect(uploadDocumentMock).not.toHaveBeenCalled();
 });

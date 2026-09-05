@@ -1,23 +1,23 @@
 import { appConfig } from "@/config";
-import type { ErrorEnvelope } from "@/api/generated";
+import { currentToken } from "@/auth/session";
 
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
     readonly code?: string,
-    readonly correlationId?: string,
   ) {
     super(message);
     this.name = "ApiError";
   }
 }
 
-export type ApiErrorEnvelope = ErrorEnvelope;
-
-export interface ApiResponse<T> {
-  data: T;
-  correlationId?: string;
+export interface ApiErrorEnvelope {
+  error: {
+    code: string;
+    message: string;
+    details: Array<{ location: string[]; reason: string }>;
+  };
 }
 
 export function parseApiError(body: unknown): { code?: string; message?: string } {
@@ -34,14 +34,18 @@ export function parseApiError(body: unknown): { code?: string; message?: string 
   };
 }
 
-export async function requestJsonWithMetadata<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<ApiResponse<T>> {
+/** Заголовок авторизации, если вход выполнен. Проверяет его nginx на /api/. */
+export function authHeaders(): Record<string, string> {
+  const token = currentToken();
+  return token ? { Authorization: `Basic ${token}` } : {};
+}
+
+export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${appConfig.apiBaseUrl}${path}`, {
     ...init,
     headers: {
       Accept: "application/json",
+      ...authHeaders(),
       ...init?.headers,
     },
   });
@@ -53,16 +57,8 @@ export async function requestJsonWithMetadata<T>(
       error.message ?? `API request failed with status ${response.status}`,
       response.status,
       error.code,
-      response.headers.get("X-Correlation-ID") ?? undefined,
     );
   }
 
-  return {
-    data: (await response.json()) as T,
-    correlationId: response.headers.get("X-Correlation-ID") ?? undefined,
-  };
-}
-
-export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
-  return (await requestJsonWithMetadata<T>(path, init)).data;
+  return (await response.json()) as T;
 }

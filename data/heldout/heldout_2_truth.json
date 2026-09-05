@@ -1,0 +1,57 @@
+{
+  "doc": "heldout_2",
+  "defect_count": 10,
+  "note": "Второй held-out. Прогноз закоммичен ОТДЕЛЬНЫМ КОММИТОМ до создания этого файла (data/heldout/predictions_2.md, коммит e1858cc).",
+  "defects": [
+    {
+      "defect_id": "TIMEZONE_UNDEFINED",
+      "quote": "Часовой пояс: локальное время оператора связи",
+      "surface_form": "формулировка №3, не совпадает ни с мутатором, ни с heldout_1"
+    },
+    {
+      "defect_id": "SERIALIZATION_UNSPECIFIED",
+      "quote": "События роуминга исходящие | Kafka | TOPIC_ROAMING_EVENTS | формат согласовывается",
+      "surface_form": "вне словаря empty_markers — предсказан промах"
+    },
+    {
+      "defect_id": "DATA_CATALOG_MISSING",
+      "quote": "Ссылка на Дата-каталог: см. карточку витрины во внутренней вики",
+      "surface_form": "раздел непустой, URL нет"
+    },
+    {
+      "defect_id": "NO_FILTER_DESCRIPTION",
+      "quote": "",
+      "surface_form": "шаг остался пустым заголовком"
+    },
+    {
+      "defect_id": "DANGLING_SECTION_REFERENCE",
+      "quote": "Меры рассчитываются в границах группы, правила описаны в разделе «Ограничения расчёта».",
+      "surface_form": "ссылка на несуществующий раздел, третья формулировка"
+    },
+    {
+      "defect_id": "SCHEMA_TYPE_MISMATCH",
+      "quote": "FIELD_MCC | string | Мобильный код страны сети пребывания",
+      "surface_form": "int в источнике против string в приёмнике"
+    },
+    {
+      "defect_id": "NULLABILITY_UNSPECIFIED",
+      "quote": "FIELD_PARTNER_CODE | string | Код роуминг-партнёра | — | TABLE_PARTNER_REF.partner_code",
+      "surface_form": "прочерк вместо признака — предсказан возможный промах"
+    },
+    {
+      "defect_id": "HDFS_PATH_INCOMPLETE",
+      "quote": "Витрина выгружается в HDFS по адресу /data/cdm/roaming/agg_roaming_daily.",
+      "surface_form": "формат убран, формулировка изменена"
+    },
+    {
+      "defect_id": "PLACEHOLDER_LEFT",
+      "quote": "Задача: PROJECT-XX999 — Витрина-агрегат по роумингу.",
+      "surface_form": "заглушка вместо номера задачи"
+    },
+    {
+      "defect_id": "TEMPLATE_SECTION_MISSING",
+      "quote": "FAQ",
+      "surface_form": "раздел FAQ удалён, а не помечен «не применимо»"
+    }
+  ]
+}

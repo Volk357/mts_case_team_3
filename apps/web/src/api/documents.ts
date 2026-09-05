@@ -1,20 +1,21 @@
-import { ApiError, parseApiError, requestJson } from "@/api/client";
-import type {
-  DocumentResponse,
-  DocumentUploadResponse,
-} from "@/api/generated";
+import { ApiError, authHeaders, parseApiError, requestJson } from "@/api/client";
 import { appConfig } from "@/config";
 
-export type { DocumentResponse, DocumentUploadResponse } from "@/api/generated";
+export interface DocumentUploadResponse {
+  document_id: string;
+  filename: string;
+  size_bytes: number;
+  media_type: string;
+}
+
+export interface DocumentResponse extends DocumentUploadResponse {
+  created_at: string;
+}
 
 export function getDocument(documentId: string, signal?: AbortSignal) {
   return requestJson<DocumentResponse>(`/api/documents/${encodeURIComponent(documentId)}`, {
     signal,
   });
-}
-
-export function getDocumentContentUrl(documentId: string): string {
-  return `${appConfig.apiBaseUrl}/api/documents/${encodeURIComponent(documentId)}/content`;
 }
 
 export function uploadDocument(
@@ -28,6 +29,10 @@ export function uploadDocument(
     form.append("document", file, file.name);
     request.open("POST", `${appConfig.apiBaseUrl}/api/documents`);
     request.setRequestHeader("Accept", "application/json");
+    // загрузка идёт через XHR ради индикатора прогресса — заголовок ставим руками
+    for (const [name, value] of Object.entries(authHeaders())) {
+      request.setRequestHeader(name, value);
+    }
     request.responseType = "json";
     request.upload.addEventListener("progress", (event) => {
       if (event.lengthComputable && event.total > 0) {
@@ -46,7 +51,6 @@ export function uploadDocument(
           error.message ?? `API request failed with status ${request.status}`,
           request.status,
           error.code,
-          request.getResponseHeader("X-Correlation-ID") ?? undefined,
         ),
       );
     });

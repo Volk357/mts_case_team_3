@@ -1,0 +1,121 @@
+Общие сведения
+Агрегат по качеству радиосети: часовая сводка показателей доступности и удержания соединения в разрезе базовой станции.
+Название таблицы: SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY
+Кластер: KAFKA_CLUSTER_EKB_PROD
+Схема: SCHEMA_CDM_RADIO
+Способ загрузки: Инкремент с обновлением по ключу (upsert)
+
+Решаемая проблема
+Показатели качества радиосети собираются в трёх системах с разными формулами. Инженеры эксплуатации не могут сравнить регионы между собой. Витрина сводит расчёт к одному определению.
+
+Продуктовые метрики
+- Время выявления деградации соты: с 6 часов до 1 часа
+- Доля станций с полным набором показателей: цель выше 98%
+
+Заказчики
+Технический блок, подразделение эксплуатации радиосети
+
+Нефункциональные требования
+Объём данных: Около 2,4 млн строк в суточной партиции, прирост около 900 МБ в сутки
+Задержки: Задержка от события до витрины не более 20 минут
+Регламент расчёта: Ежечасно, на 15-й минуте следующего часа
+Глубина данных: С 01.09.2024
+Часовой пояс: по времени площадки
+Срок хранения по слоям: RAW — 14 дней, DDS — 90 дней, CDM — 1 год
+Обновление: Обновление по ключу (upsert) в пределах партиции
+Идентификаторы абонента в витрине отсутствуют. Данные обезличены на уровне источника, дополнительных требований к маскированию нет.
+
+Системы-источники
+PROVIDER_RAN — платформа сбора счётчиков с eNodeB и RNC
+
+Data Catalog
+Ссылка на Дата-каталог: уточняется у владельца витрины
+
+Исходники проекта
+Ссылка на GitLab: LINK_GITLAB_PROJECT
+
+Команда
+Аналитик: USER_A
+Разработчик: USER_B
+Тестировщик: USER_C
+
+JIRA
+Задача: DATA-4105 — Витрина-агрегат по качеству радиосети. https://jira.corp/browse/DATA-4105
+
+Источники данных
+Описание источника | Тип источника | Ссылка на источник | Сериализация
+Счётчики базовых станций | Kafka | TOPIC_RAN_COUNTERS_NW | уточняется
+Сырые счётчики радиосети | Hive | SCHEMA_RAW.TABLE_RAN_RAW_COUNTERS | ORC
+
+Источники обогащения данных
+не применимо
+
+Приемники данных
+Описание данных | Кластер | Ссылка на Каталог | Сериализация
+Витрина-агрегат по качеству радиосети | KAFKA_CLUSTER_EKB_PROD | SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY | Parquet
+Данные складываются в HDFS: /data/cdm/radio/agg_radio_hourly.
+
+Схема потоков данных
+PROVIDER_RAN → Kafka (KAFKA_CLUSTER_EKB_PROD) → RAW → DDS → ADDS → CDM (SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY)
+
+Алгоритм обработки потока
+Шаг 1. Фильтрация данных
+Шаг 2. Обогащение данных
+Обогащение выполняется справочниками, перечисленными в разделе «Источники обогащения данных».
+Приоритет сопоставления: пара (FIELD_CELL_ID, FIELD_CELL_GEN).
+Если FIELD_CELL_GEN не заполнен — сопоставление только по FIELD_CELL_ID.
+Если сота присутствует в справочнике дважды, берётся запись с наибольшей датой начала действия.
+Если сота отсутствует в TABLE_BS_REF на бизнес-дату расчёта, вендору присваивается значение Unknown, строка сохраняется.
+Шаг 3. Агрегация
+Группировка по: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID.
+Меры рассчитываются в границах группы, см. раздел «Перечень показателей».
+Шаг 4. Запись в CDM
+Результат записывается в SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY в формате Parquet по пути /data/cdm/radio/agg_radio_hourly.
+
+Формирование ключа (kafka) / партиции (hdfs)
+Поле партиционирования: FIELD_BIZ_DATE
+Гранулярность строки: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID
+Правило дедупликации: Ключ обновления: FIELD_BIZ_DATE, FIELD_HOUR, FIELD_CELL_ID. При совпадении ключа сохраняется запись с большим FIELD_PROC_TS
+
+Структура данных
+Приемники. Таблица: SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY
+Атрибут | Тип данных | Описание атрибута | Обязательность | Источник
+FIELD_BIZ_DATE | date | Бизнес-дата часа агрегации | NOT NULL | Партиция источника
+FIELD_HOUR | int | Час агрегации, 0–23 | NOT NULL | Партиция источника
+FIELD_CELL_ID | bigint | Идентификатор соты | NOT NULL | TABLE_BS_REF.cell_id
+FIELD_VENDOR_NAME | string | Наименование вендора оборудования | NULLABLE | TABLE_VENDOR_REF.vendor_name
+FIELD_RRC_SUCCESS_RATE | double | Доля успешных установлений RRC (проценты) | NOT NULL | Расчёт по счётчикам RRC
+FIELD_DROP_CALL_RATE | double | Доля обрывов соединения (проценты) | NOT NULL | Расчёт по счётчикам обрывов
+FIELD_HANDOVER_CNT | bigint | Количество хэндоверов за час |  | sum(TABLE_RAN_RAW_COUNTERS.ho_cnt)
+FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG
+Источники. Таблица: TOPIC_RAN_COUNTERS_NW
+Атрибут | Тип данных | Комментарий
+FIELD_CELL_ID | string | Идентификатор соты
+FIELD_EVENT_TS | timestamp | Время снятия счётчика, UTC
+FIELD_RRC_ATTEMPT | bigint | Попытки установления RRC
+FIELD_RRC_SUCCESS | bigint | Успешные установления RRC
+FIELD_DROP_CNT | bigint | Количество обрывов
+FIELD_HO_CNT | bigint | Количество хэндоверов
+FIELD_CELL_GEN | int | Поколение сети: 3 или 4
+
+DDL
+CREATE TABLE SCHEMA_CDM_RADIO.TABLE_AGG_RADIO_HOURLY (
+  FIELD_BIZ_DATE DATE NOT NULL,
+  FIELD_HOUR INT NOT NULL,
+  FIELD_CELL_ID BIGINT NOT NULL,
+  FIELD_VENDOR_NAME STRING,
+  FIELD_RRC_SUCCESS_RATE DOUBLE NOT NULL,
+  FIELD_DROP_CALL_RATE DOUBLE NOT NULL,
+  FIELD_HANDOVER_CNT BIGINT NOT NULL,
+  FIELD_PROC_TS TIMESTAMP NOT NULL
+)
+PARTITIONED BY (FIELD_BIZ_DATE)
+STORED AS PARQUET
+LOCATION '/data/cdm/radio/agg_radio_hourly';
+
+FAQ
+- Доли рассчитываются в процентах с двумя знаками после запятой, округление банковское.
+- Часы без событий в витрину не попадают, пустые строки не создаются.
+
+История изменений
+не применимо

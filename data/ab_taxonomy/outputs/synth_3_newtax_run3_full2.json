@@ -1,0 +1,263 @@
+{
+  "mode": "full2",
+  "fragments": 5,
+  "total_seconds": 59.3,
+  "found_raw": 52,
+  "verified": 16,
+  "before_dedupe": 31,
+  "merged_away": 15,
+  "capped_away": 0,
+  "rejected_count": 1,
+  "reject_reasons": {
+    "quote_not_found": 1
+  },
+  "severity_fixed": 0,
+  "findings": [
+    {
+      "quote": "Приоритет определения региона: значение FIELD_REGION_CODE из события.\nЕсли FIELD_REGION_CODE в событии не заполнен — берётся регион из TABLE_SUBSCRIBER_STATE на начало месяца.",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Не указано, где физически расположена TABLE_SUBSCRIBER_STATE. В тексте упоминается таблица, но не указано, в каком кластере и схеме она находится.",
+      "suggestion": "Указать кластер и схему, где расположена TABLE_SUBSCRIBER_STATE (например, SCHEMA_DDS.TABLE_SUBSCRIBER_STATE).",
+      "severity": "high",
+      "merged_count": 3
+    },
+    {
+      "quote": "Приоритет определения региона: значение FIELD_REGION_CODE из события.\nЕсли FIELD_REGION_CODE в событии не заполнен — берётся регион из TABLE_SUBSCRIBER_STATE на начало месяца.\nЕсли регион не определён",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано, что происходит, если FIELD_REGION_CODE не заполнен, но в TABLE_SUBSCRIBER_STATE на начало месяца нет соответствующей записи. Это приведет к неопределенному поведению, так как не указано, как обрабатывать отсутствие данных в справочнике.",
+      "suggestion": "Указать, как обрабатывать случай, когда FIELD_REGION_CODE не заполнен и в TABLE_SUBSCRIBER_STATE на начало месяца нет соответствующей записи (например, использовать значение по умолчанию или логгирова",
+      "severity": "high",
+      "merged_count": 2
+    },
+    {
+      "quote": "FIELD_CHURN_RATE | double | Доля оттока (проценты) | NOT NULL | FIELD_CHURNED_CNT / FIELD_ACTIVE_CNT * 100",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В описании FIELD_CHURN_RATE указано, что доля оттока рассчитывается как FIELD_CHURNED_CNT / FIELD_ACTIVE_CNT * 100, но не указано, что происходит, если FIELD_ACTIVE_CNT равно 0. Это граничный случай, который не описан.",
+      "suggestion": "Указать, как обрабатывать случай, когда FIELD_ACTIVE_CNT равно 0 (например, возвращать NULL или 0).",
+      "severity": "high",
+      "merged_count": 3
+    },
+    {
+      "quote": "Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Не указан ключ или правило дедупликации для целевой таблицы. В тексте упоминается, что партиция перезаписывается целиком, но не указано, как обрабатывать дубли внутри партиции (например, если в одной партиции есть несколько записей с одинаковыми значениями FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CH",
+      "suggestion": "Указать уникальный ключ для таблицы или правило дедупликации внутри партиции (например, использовать последнюю запись по FIELD_STATUS_TS).",
+      "severity": "high",
+      "merged_count": 2
+    },
+    {
+      "quote": "FIELD_STATUS_TS | timestamp | Время изменения статуса, UTC",
+      "defect_id": "TIMEZONE_INCONSISTENT",
+      "explanation": "В описании FIELD_STATUS_TS указано, что время в UTC, но в других местах документа (например, в FIELD_PROC_TS) не указано, какое поле несёт метку смещения. Это может привести к несоответствию при обработке данных в разных часовых поясах.",
+      "suggestion": "Указать, какое поле несёт метку смещения (например, FIELD_STATUS_TS), и уточнить, что все временные метки в UTC.",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "Способ загрузки: Полная перезагрузка периода",
+      "defect_id": "INTERNAL_CONTRADICTION",
+      "explanation": "Способ загрузки указан как 'Полная перезагрузка периода', но в разделе 'Нефункциональные требования' указано 'Обновление: Полная перезагрузка периода без upsert'. Это противоречие, так как 'Полная перезагрузка периода' подразумевает, что данные перезаписываются, но 'без upsert' означает, что обновля",
+      "suggestion": "Уточнить способ загрузки и обновление, чтобы они совпадали. Например, 'Полная перезагрузка периода (без upsert)' или 'Полная перезагрузка периода без upsert'.",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "Поле FIELD_SUBSCRIBER_ID хешируется при выгрузке в CDM. Доступ к слою DDS разграничен ролью ROLE_PII_READ.",
+      "defect_id": "DANGLING_REFERENCE",
+      "explanation": "В разделе 'Структура данных' упоминается поле FIELD_SUBSCRIBER_ID, но в разделе 'Структура данных' не описано, что это за поле и как оно используется. В разделе 'Источники данных' указано, что в источнике есть FIELD_SUBSCRIBER_ID, но в разделе 'Структура данных' не описано, что это за поле и как оно",
+      "suggestion": "Добавить описание поля FIELD_SUBSCRIBER_ID в раздел 'Структура данных' или уточнить, что это идентификатор абонента, как указано в источниках.",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "FIELD_PROC_TS | timestamp | Дата и время формирования агрегата | NOT NULL | Метка обработки DAG",
+      "defect_id": "DANGLING_REFERENCE",
+      "explanation": "В разделе 'Структура данных' упоминается 'Метка обработки DAG', но в документе не описано, что такое DAG и какая метка используется. Это ссылка на несуществующий объект в документе, так как DAG не описан в документе и не назван по имени в кавычках.",
+      "suggestion": "Добавить описание DAG или уточнить, что 'Метка обработки DAG' означает дату и время обработки в DAG, как указано в разделе 'Алгоритм обработки потока'.",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "Поле FIELD_SUBSCRIBER_ID хешируется при выгрузке в CDM. Доступ к слою DDS разграничен ролью ROLE_PII_READ.",
+      "defect_id": "PII_NO_PROTECTION",
+      "explanation": "В структуре присутствует поле FIELD_SUBSCRIBER_ID, которое является идентификатором абонента, но требования к маскированию или защите персональных данных не описаны. Требуется указать, как именно происходит хеширование и какие требования к защите применяются.",
+      "suggestion": "Описать метод хеширования и требования к защите персональных данных для поля FIELD_SUBSCRIBER_ID, например, 'Поле FIELD_SUBSCRIBER_ID хешируется с использованием алгоритма SHA-256 и хранится в зашифро",
+      "severity": "medium",
+      "merged_count": 1
+    },
+    {
+      "quote": "Регламент расчёта: Ежемесячно, 1-го числа в 04:00 UTC за предыдущий месяц",
+      "defect_id": "NO_SCHEDULE",
+      "explanation": "Указана частота обновления (ежемесячно), но не указано число, время запуска или окно обработки. Время запуска указано как '04:00 UTC', но не указано, какое число месяца, и не указано окно обработки, что может привести к неоднозначности.",
+      "suggestion": "Указать конкретное число месяца и окно обработки, например, 'Ежемесячно, 1-го числа в 04:00 UTC, окно обработки с 04:00 до 06:00 UTC'.",
+      "severity": "clarification",
+      "merged_count": 1
+    },
+    {
+      "quote": "Справочник | Схема | Назначение в расчёте",
+      "defect_id": "REFERENCE_LIST_MISSING",
+      "explanation": "В описании витрины отсутствует перечень используемых справочников, хотя в разделе «Источники обогащения данных» упомянуты справочники TABLE_REGION_REF и TABLE_CHURN_REASON_REF. В документе не приведён сводный перечень справочников с их назначением.",
+      "suggestion": "Добавить раздел с перечнем используемых справочников и их назначением в расчёте.",
+      "severity": "medium",
+      "merged_count": 1
+    },
+    {
+      "quote": "События с FIELD_STATUS_CODE вне справочника статусов отбрасываются и логируются в TABLE_CHURN_REJECT.",
+      "defect_id": "REFERENCE_LIST_MISSING",
+      "explanation": "Не указан перечень используемых справочников. В тексте упоминается справочник статусов, но не приведен его перечень, что приводит к неопределенности в фильтрации.",
+      "suggestion": "Добавить перечень используемых справочников в раздел «Источники обогащения данных» или в отдельный раздел «Справочники».",
+      "severity": "medium",
+      "merged_count": 1
+    },
+    {
+      "quote": "FIELD_CHURN_REASON | string | Код причины расторжения | NULLABLE | TABLE_CHURN_REASON_REF.reason_code",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В разделе 'Структура данных' для поля FIELD_CHURN_REASON указан источник TABLE_CHURN_REASON_REF.reason_code, но в разделе 'Источники обогащения данных' указан справочник TABLE_CHURN_REASON_REF с назначением 'Справочник причин расторжения договора'. Однако в разделе 'Структура данных' не указано, что",
+      "suggestion": "Уточнить, что поле FIELD_CHURN_REASON берётся из TABLE_CHURN_REASON_REF.reason_code, и добавить это в описание поля.",
+      "severity": "medium",
+      "merged_count": 6
+    },
+    {
+      "quote": "FIELD_CHURN_REASON STRING",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_CHURN_REASON описано как STRING, но не указано, какие значения допустимы. Это поле-код, и для него требуется перечень допустимых значений.",
+      "suggestion": "Указать перечень допустимых значений для поля FIELD_CHURN_REASON, например: 'Допустимые значения: 'CHURN_REASON_1', 'CHURN_REASON_2', ...'.",
+      "severity": "medium",
+      "merged_count": 2
+    },
+    {
+      "quote": "FIELD_REASON_CODE | string | Код причины расторжения",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_REASON_CODE описано как string, но не указано, какие значения допустимы или как они форматируются. Это может привести к неоднозначности при обработке данных.",
+      "suggestion": "Указать перечень допустимых значений или формат кода причины расторжения.",
+      "severity": "medium",
+      "merged_count": 3
+    },
+    {
+      "quote": "Срок хранения по слоям: RAW — 30 дней, DDS — 400 дней, CDM — 5 лет",
+      "defect_id": "RETENTION_GAP",
+      "explanation": "Срок хранения указан только для слоёв RAW, DDS и CDM, но не для всех слоёв, упомянутых в документе. В частности, не указан срок хранения для слоя ADDS, который может быть упомянут в других разделах документа, но в данном фрагменте не описан.",
+      "suggestion": "Указать срок хранения для всех слоёв, упомянутых в документе, включая ADDS, если он используется в данном проекте.",
+      "severity": "low",
+      "merged_count": 2
+    }
+  ],
+  "merged": [
+    {
+      "quote": "Глубина данных: С 01.05.2023",
+      "defect_id": "RETENTION_GAP",
+      "explanation": "В разделе 'Нефункциональные требования' указан срок хранения для слоёв RAW — 30 дней, DDS — 400 дней, CDM — 5 лет, но глубина данных указана как 'С 01.05.2023', что не соответствует сроку хранения. Глубина данных должна быть меньше или равна сроку хранения, но здесь глубина данных указана как дата,",
+      "suggestion": "Уточнить глубину данных, чтобы она соответствовала сроку хранения. Например, 'С 01.05.2023' должно быть указано как 'С 01.05.2023, срок хранения 5 лет'.",
+      "severity": "low"
+    },
+    {
+      "quote": "Витрина активных абонентов | Hive | SCHEMA_DDS.TABLE_SUBSCRIBER_STATE | ORC",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Для источника данных Hive не указан кластер, хотя в таблице указано, что источник - Hive. В документе не указано, в каком кластере находится таблица SCHEMA_DDS.TABLE_SUBSCRIBER_STATE.",
+      "suggestion": "Указать кластер, в котором находится таблица SCHEMA_DDS.TABLE_SUBSCRIBER_STATE (например, HIVE_CLUSTER_PROD).",
+      "severity": "high"
+    },
+    {
+      "quote": "События изменения статуса договора | Kafka | TOPIC_CRM_CONTRACT_EVENTS | —",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Для Kafka-топика TOPIC_CRM_CONTRACT_EVENTS не указан кластер, хотя в таблице указано, что источник - Kafka. В документе не указано, в каком кластере находится топик TOPIC_CRM_CONTRACT_EVENTS.",
+      "suggestion": "Указать кластер, в котором находится топик TOPIC_CRM_CONTRACT_EVENTS (например, KAFKA_CLUSTER_MSK_PROD).",
+      "severity": "high"
+    },
+    {
+      "quote": "Ушедшим считается абонент, у которого FIELD_STATUS_CODE принял значение CLOSED в границах месяца агрегации по UTC и не вернулся в статус ACTIVE до конца месяца.",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано поведение, если абонент перешел в статус CLOSED, а затем вернулся в ACTIVE в том же месяце. Согласно формулировке, ушедшим считается абонент, который не вернулся в статус ACTIVE до конца месяца, но не указано, что происходит, если статус меняется несколько раз в течение месяца. Это привед",
+      "suggestion": "Описать, как обрабатывать случаи, когда статус абонента меняется несколько раз в течение месяца (например, CLOSED -> ACTIVE -> CLOSED). Уточнить, что ушедшим считается абонент, у которого последний ст",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_ACTIVE_CNT | bigint | Количество активных абонентов на начало месяца | NOT NULL | count по TABLE_SUBSCRIBER_STATE",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В описании FIELD_ACTIVE_CNT указано, что количество активных абонентов считается как count по TABLE_SUBSCRIBER_STATE, но не указано, что происходит, если в TABLE_SUBSCRIBER_STATE отсутствуют данные или есть невалидные значения. Это граничный случай, который не описан.",
+      "suggestion": "Указать, как обрабатывать отсутствие данных в TABLE_SUBSCRIBER_STATE или невалидные значения при подсчёте количества активных абонентов.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_CHURN_REASON STRING",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В FAQ указано, что абонент, расторгнувший и заключивший договор в одном месяце, в отток не попадает. Однако не описано, как обрабатывается случай, когда абонент расторг и заключил договор в одном месяце, и как это влияет на поле FIELD_CHURN_REASON. Это граничный случай, который не описан.",
+      "suggestion": "Описать, как обрабатывается случай, когда абонент расторг и заключил договор в одном месяце, и как это влияет на поле FIELD_CHURN_REASON.",
+      "severity": "high"
+    },
+    {
+      "quote": "Правило дедупликации: Партиция перезаписывается целиком, дубли невозможны",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Правило дедупликации указано, но оно не соответствует требованиям. Если партиция перезаписывается целиком, то дубли внутри партиции не могут возникнуть, но это не означает, что дубли невозможны. В тексте упоминается, что дубли невозможны, но не указано, как это достигается (например, через уникально",
+      "suggestion": "Уточнить, что дубли невозможны благодаря уникальности ключа (FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON), или указать, что партиция перезаписывается целиком, поэтому дубли не возникают.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_CHURN_REASON | string | Код причины расторжения | NULLABLE | TABLE_CHURN_REASON_REF.reason_code",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В структуре данных указано, что FIELD_CHURN_REASON берётся из TABLE_CHURN_REASON_REF.reason_code, но в источниках (TOPIC_CRM_CONTRACT_EVENTS) есть FIELD_REASON_CODE, который, вероятно, должен быть использован для этой цели. Это несоответствие между источником данных и описанием источника в таблице.",
+      "suggestion": "Уточнить, какой источник данных используется для FIELD_CHURN_REASON: TABLE_CHURN_REASON_REF.reason_code или FIELD_REASON_CODE из TOPIC_CRM_CONTRACT_EVENTS. Если используется FIELD_REASON_CODE, то испр",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В структуре данных указано, что FIELD_REGION_CODE берётся из TABLE_REGION_REF.region_code, но в источниках (TOPIC_CRM_CONTRACT_EVENTS) есть FIELD_REGION_CODE, который, вероятно, должен быть использован для этой цели. Это несоответствие между источником данных и описанием источника в таблице.",
+      "suggestion": "Уточнить, какой источник данных используется для FIELD_REGION_CODE: TABLE_REGION_REF.region_code или FIELD_REGION_CODE из TOPIC_CRM_CONTRACT_EVENTS. Если используется FIELD_REGION_CODE, то испр",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В разделе 'Структура данных' для поля FIELD_REGION_CODE указан источник TABLE_REGION_REF.region_code, но в разделе 'Источники обогащения данных' указан справочник TABLE_REGION_REF с назначением 'Справочник регионов'. Однако в разделе 'Структура данных' не указано, что",
+      "suggestion": "Уточнить, что поле FIELD_REGION_CODE берётся из TABLE_REGION_REF.region_code, и добавить это в описание поля.",
+      "severity": "medium"
+    },
+    {
+      "quote": "Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В разделе «Структура данных» не указано, что поля FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_CHURN_REASON являются ключевыми для таблицы. Это может привести к несоответствию между гранулярностью и структурой данных.",
+      "suggestion": "Убедиться, что в разделе «Структура данных» указано, что эти поля являются ключевыми для таблицы, или уточнить, что гранулярность определяется этими полями.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_CHURN_REASON STRING",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "Поле FIELD_CHURN_REASON упомянуто в DDL, но в FAQ указано, что абонент, расторгнувший и заключивший договор в одном месяце, в отток не попадает. Это противоречит описанию поля, так как поле FIELD_CHURN_REASON должно содержать причину оттока, но в FAQ не уточняется, как обрабатывается случай, когда у",
+      "suggestion": "Уточнить в FAQ, как обрабатывается случай, когда абонент расторг и заключил договор в одном месяце, и как это влияет на поле FIELD_CHURN_REASON.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_CHURN_REASON STRING",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_CHURN_REASON описано как STRING, но не указано, какие значения допустимы. Это поле-код, и для него требуется перечень допустимых значений.",
+      "suggestion": "Указать перечень допустимых значений для поля FIELD_CHURN_REASON, например: 'Допустимые значения: 'CHURN_REASON_1', 'CHURN_REASON_2', ...'.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_CHURN_RATE DOUBLE NOT NULL",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_CHURN_RATE описано как DOUBLE, но не указана единица измерения (проценты, доля). Это числовое поле, и для него требуется указать единицу измерения.",
+      "suggestion": "Указать единицу измерения для поля FIELD_CHURN_RATE, например: 'Доля оттока в процентах'.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_REGION_CODE STRING NOT NULL",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_REGION_CODE описано как STRING, но не указано, какие значения допустимы. Это поле-код, и для него требуется перечень допустимых значений.",
+      "suggestion": "Указать перечень допустимых значений для поля FIELD_REGION_CODE, например: 'Допустимые значения: 'RU', 'US', ...'.",
+      "severity": "medium"
+    }
+  ],
+  "capped": [],
+  "rejected": [
+    {
+      "quote": "FIELD_CHURNED_CNT | bigint | Количество ушедших абонентов | NOT NULL | count(distinct FIELD_SUBSCRER_ID)",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В описании FIELD_CHURNED_CNT указано, что количество ушедших абонентов считается как count(distinct FIELD_SUBSCRIBER_ID), но не указано, что происходит, если FIELD_SUBSCRIBER_ID отсутствует или имеет невалидные значения. Это граничный случай, который не описан.",
+      "suggestion": "Указать, как обрабатывать отсутствие FIELD_SUBSCRIBER_ID или его невалидные значения при подсчёте количества ушедших абонентов.",
+      "severity": "high",
+      "reject_reason": "quote_not_found"
+    }
+  ]
+}

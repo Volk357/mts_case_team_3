@@ -308,6 +308,10 @@ export type FindingResponse = {
      */
     defect_id: string;
     /**
+     * Detection Layer
+     */
+    detection_layer?: 'rule' | 'model' | 'mixed' | null;
+    /**
      * Finding Id
      *
      * Opaque resource identifier. Clients must not infer meaning from it.
@@ -396,6 +400,66 @@ export type ReviewCreateRequest = {
      * Opaque resource identifier. Clients must not infer meaning from it.
      */
     review_pack_id: string;
+};
+
+/**
+ * ReviewListItemResponse
+ *
+ * Строка истории проверок.
+ *
+ * Имя файла нужно, чтобы человек узнал свою проверку в списке: идентификатор
+ * для этого бесполезен. Диагностики ошибки здесь нет — в списке достаточно
+ * статуса, подробности видны на самой проверке.
+ */
+export type ReviewListItemResponse = {
+    /**
+     * Document Filename
+     */
+    document_filename: string;
+    /**
+     * Document Id
+     *
+     * Opaque resource identifier. Clients must not infer meaning from it.
+     */
+    document_id: string;
+    /**
+     * Findings Count
+     */
+    findings_count: number;
+    /**
+     * Finished At
+     */
+    finished_at: string | null;
+    /**
+     * Queued At
+     *
+     * UTC timestamp in ISO 8601 format
+     */
+    queued_at: string;
+    /**
+     * Review Id
+     *
+     * Opaque resource identifier. Clients must not infer meaning from it.
+     */
+    review_id: string;
+    /**
+     * Status
+     */
+    status: 'queued' | 'running' | 'completed' | 'failed' | 'timed_out' | 'cancelled';
+};
+
+/**
+ * ReviewListResponse
+ */
+export type ReviewListResponse = {
+    /**
+     * Items
+     */
+    items: Array<ReviewListItemResponse>;
+    /**
+     * Total
+     */
+    total: number;
 };
 
 /**
@@ -997,6 +1061,64 @@ export type ListReviewPacksApiReviewPacksGetResponses = {
 };
 
 export type ListReviewPacksApiReviewPacksGetResponse = ListReviewPacksApiReviewPacksGetResponses[keyof ListReviewPacksApiReviewPacksGetResponses];
+
+export type ListReviewsApiReviewsGetData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Limit
+         */
+        limit?: number;
+    };
+    url: '/api/reviews';
+};
+
+export type ListReviewsApiReviewsGetErrors = {
+    /**
+     * Invalid request
+     */
+    400: ErrorEnvelope;
+    /**
+     * Resource not found
+     */
+    404: ErrorEnvelope;
+    /**
+     * Resource state conflict
+     */
+    409: ErrorEnvelope;
+    /**
+     * Request payload is too large
+     */
+    413: ErrorEnvelope;
+    /**
+     * Unsupported media type
+     */
+    415: ErrorEnvelope;
+    /**
+     * Request validation failed
+     */
+    422: ErrorEnvelope;
+    /**
+     * Rate limit exceeded
+     */
+    429: ErrorEnvelope;
+    /**
+     * Internal server error
+     */
+    500: ErrorEnvelope;
+};
+
+export type ListReviewsApiReviewsGetError = ListReviewsApiReviewsGetErrors[keyof ListReviewsApiReviewsGetErrors];
+
+export type ListReviewsApiReviewsGetResponses = {
+    /**
+     * Successful Response
+     */
+    200: ReviewListResponse;
+};
+
+export type ListReviewsApiReviewsGetResponse = ListReviewsApiReviewsGetResponses[keyof ListReviewsApiReviewsGetResponses];
 
 export type CreateReviewApiReviewsPostData = {
     body: ReviewCreateRequest;

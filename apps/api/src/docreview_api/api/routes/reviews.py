@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Header, Response, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.api.schemas.common import OpaqueId
@@ -11,6 +11,8 @@ from docreview_api.api.schemas.reviews import (
     FindingResponse,
     FindingsResponse,
     ReviewCreateRequest,
+    ReviewListItemResponse,
+    ReviewListResponse,
     ReviewPublicError,
     ReviewResponse,
     ReviewWarning,
@@ -31,6 +33,7 @@ from docreview_api.services.review_jobs import (
     ReviewJobService,
 )
 from docreview_api.services.reviews import (
+    ReviewListItem,
     ReviewQueryService,
     ReviewSnapshot,
     ReviewUnavailableError,
@@ -122,6 +125,32 @@ def create_review(
     return public
 
 
+def _public_list_item(item: ReviewListItem) -> ReviewListItemResponse:
+    return ReviewListItemResponse(
+        review_id=item.id,
+        document_id=item.document_id,
+        document_filename=item.document_filename,
+        status=item.status.value,
+        queued_at=item.queued_at,
+        finished_at=item.finished_at,
+        findings_count=item.findings_count,
+    )
+
+
+@router.get("", response_model=ReviewListResponse)
+def list_reviews(
+    settings: Annotated[Settings, Depends(get_settings)],
+    session_factory: Annotated[sessionmaker[Session], Depends(get_session_factory)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+) -> ReviewListResponse:
+    """Return recent reviews of the tenant, newest first."""
+
+    items = ReviewQueryService(session_factory).list_recent(
+        company_id=settings.default_company_id, limit=limit
+    )
+    return ReviewListResponse(items=[_public_list_item(item) for item in items], total=len(items))
+
+
 @router.get("/{review_id}", response_model=ReviewResponse)
 def get_review(
     review_id: OpaqueId,
@@ -167,6 +196,7 @@ def get_review_findings(
             quote=item.quote,
             problem=item.problem,
             clarification=item.clarification,
+            detection_layer=item.detection_layer,
         )
         for item in result.items
     ]

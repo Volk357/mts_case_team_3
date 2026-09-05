@@ -2,13 +2,13 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from docreview_api.db.models import FindingModel, ReviewJobModel
+from docreview_api.db.models import DocumentModel, FindingModel, ReviewJobModel
 from docreview_api.models.review_job_state import ReviewJobStatus
 
 
@@ -36,6 +36,41 @@ class ReviewSnapshot:
     error_retriable: bool | None
 
 
+DetectionLayer = Literal["rule", "model", "mixed"]
+
+# `detected_by` contains private analyzer names. Fold known markers into a
+# closed public vocabulary; any unknown marker makes the layer indeterminate.
+_RULE_MARKERS = frozenset({"deterministic"})
+_MODEL_MARKERS = frozenset({"model"})
+
+
+def _detection_layer(detected_by: list[str]) -> DetectionLayer | None:
+    names = {str(name).strip().lower() for name in detected_by}
+    if not names or not names <= (_RULE_MARKERS | _MODEL_MARKERS):
+        # Хотя бы одно незнакомое имя — значит происхождение известно неполно.
+        # Сказать «найдено моделью», когда вклад внесла ещё и неизвестная
+        # проверка, значит подсунуть аналитику неверную оценку надёжности.
+        return None
+    rule = bool(names & _RULE_MARKERS)
+    model = bool(names & _MODEL_MARKERS)
+    if rule and model:
+        return "mixed"
+    return "rule" if rule else "model"
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewListItem:
+    """One compact row in review history."""
+
+    id: UUID
+    document_id: UUID
+    document_filename: str
+    status: ReviewJobStatus
+    queued_at: datetime
+    finished_at: datetime | None
+    findings_count: int
+
+
 @dataclass(frozen=True, slots=True)
 class FindingSnapshot:
     id: UUID
@@ -47,6 +82,7 @@ class FindingSnapshot:
     quote: str
     problem: str
     clarification: str
+    detection_layer: DetectionLayer | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +139,37 @@ class ReviewQueryService:
                 raise ReviewUnavailableError
             return self._snapshot(job)
 
+    def list_recent(self, *, company_id: UUID, limit: int = 50) -> tuple[ReviewListItem, ...]:
+        """Return recent tenant reviews with a correlated finding count."""
+        findings_count = (
+            select(func.count(FindingModel.id))
+            .where(FindingModel.review_job_id == ReviewJobModel.id)
+            .correlate(ReviewJobModel)
+            .scalar_subquery()
+        )
+        with self._session_factory() as session:
+            rows = session.execute(
+                select(ReviewJobModel, DocumentModel.original_filename, findings_count)
+                .join(DocumentModel, DocumentModel.id == ReviewJobModel.document_id)
+                .where(ReviewJobModel.company_id == company_id)
+                .order_by(ReviewJobModel.queued_at.desc())
+                .limit(limit)
+            ).all()
+            return tuple(
+                ReviewListItem(
+                    id=job.id,
+                    document_id=job.document_id,
+                    document_filename=filename,
+                    status=job.status,
+                    queued_at=self._queued_at(job),
+                    finished_at=_utc(
+                        job.completed_at or job.failed_at or job.timed_out_at or job.cancelled_at
+                    ),
+                    findings_count=count,
+                )
+                for job, filename, count in rows
+            )
+
     def get_findings(self, review_id: UUID, *, company_id: UUID) -> ReviewFindingsSnapshot:
         with self._session_factory() as session:
             job = session.scalar(
@@ -133,11 +200,18 @@ class ReviewQueryService:
                         quote=item.quote,
                         problem=item.problem,
                         clarification=item.clarification,
+                        detection_layer=_detection_layer(item.detected_by),
                     )
                     for item in findings
                 ),
                 warnings=_public_warnings(job.raw_result),
             )
+
+    @staticmethod
+    def _queued_at(job: ReviewJobModel) -> datetime:
+        queued_at = _utc(job.queued_at)
+        assert queued_at is not None
+        return queued_at
 
     @staticmethod
     def _snapshot(job: ReviewJobModel) -> ReviewSnapshot:

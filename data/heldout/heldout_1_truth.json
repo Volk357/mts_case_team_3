@@ -1,0 +1,57 @@
+{
+  "doc": "heldout_1",
+  "defect_count": 10,
+  "note": "Дефекты внесены ВРУЧНУЮ, формулировки намеренно отличаются от тех, что порождают мутаторы. Проверка на обобщение детерминированного слоя.",
+  "defects": [
+    {
+      "defect_id": "TIMEZONE_UNDEFINED",
+      "quote": "Часовой пояс: по времени площадки",
+      "surface_form": "мутатор пишет «Местное время региона» — здесь другая формулировка без пояса"
+    },
+    {
+      "defect_id": "SERIALIZATION_UNSPECIFIED",
+      "quote": "Счётчики базовых станций | Kafka | TOPIC_RAN_COUNTERS_NW | уточняется",
+      "surface_form": "мутатор ставит «—»; «уточняется» в empty_markers НЕ входит"
+    },
+    {
+      "defect_id": "DATA_CATALOG_MISSING",
+      "quote": "Ссылка на Дата-каталог: уточняется у владельца витрины",
+      "surface_form": "мутатор удаляет ссылку целиком; здесь раздел непустой, но URL нет"
+    },
+    {
+      "defect_id": "NO_FILTER_DESCRIPTION",
+      "quote": "",
+      "surface_form": "шаг фильтрации остался заголовком без содержания"
+    },
+    {
+      "defect_id": "DANGLING_SECTION_REFERENCE",
+      "quote": "см. раздел «Перечень показателей»",
+      "surface_form": "мутатор ссылается на «Показатели витрины»; здесь другое имя и другой оборот"
+    },
+    {
+      "defect_id": "SCHEMA_TYPE_MISMATCH",
+      "quote": "FIELD_CELL_ID | string | Идентификатор соты",
+      "surface_form": "тип общего поля разошёлся: bigint в приёмнике, string в источнике"
+    },
+    {
+      "defect_id": "NULLABILITY_UNSPECIFIED",
+      "quote": "FIELD_HANDOVER_CNT | bigint | Количество хэндоверов за час |  | sum(TABLE_RAN_RAW_COUNTERS.ho_cnt)",
+      "surface_form": "признак обязательности пуст"
+    },
+    {
+      "defect_id": "HDFS_PATH_INCOMPLETE",
+      "quote": "Данные складываются в HDFS: /data/cdm/radio/agg_radio_hourly.",
+      "surface_form": "мутатор режет формат в строке «Путь хранения»; здесь другая формулировка"
+    },
+    {
+      "defect_id": "PLACEHOLDER_LEFT",
+      "quote": "Ссылка на GitLab: LINK_GITLAB_PROJECT",
+      "surface_form": "заглушка вместо ссылки"
+    },
+    {
+      "defect_id": "TEMPLATE_SECTION_MISSING",
+      "quote": "",
+      "surface_form": "раздел «Пример данных» удалён, а не помечен «не применимо»"
+    }
+  ]
+}

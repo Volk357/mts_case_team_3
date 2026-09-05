@@ -505,6 +505,22 @@
             "title": "Defect Id",
             "type": "string"
           },
+          "detection_layer": {
+            "anyOf": [
+              {
+                "enum": [
+                  "rule",
+                  "model",
+                  "mixed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detection Layer"
+          },
           "finding_id": {
             "description": "Opaque resource identifier. Clients must not infer meaning from it.",
             "format": "uuid",
@@ -647,6 +663,102 @@
           "review_pack_id"
         ],
         "title": "ReviewCreateRequest",
+        "type": "object"
+      },
+      "ReviewListItemResponse": {
+        "additionalProperties": false,
+        "description": "Строка истории проверок.\n\nИмя файла нужно, чтобы человек узнал свою проверку в списке: идентификатор\nдля этого бесполезен. Диагностики ошибки здесь нет — в списке достаточно\nстатуса, подробности видны на самой проверке.",
+        "properties": {
+          "document_filename": {
+            "title": "Document Filename",
+            "type": "string"
+          },
+          "document_id": {
+            "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+            "format": "uuid",
+            "title": "Document Id",
+            "type": "string"
+          },
+          "findings_count": {
+            "minimum": 0.0,
+            "title": "Findings Count",
+            "type": "integer"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "description": "UTC timestamp in ISO 8601 format",
+                "examples": [
+                  "2026-09-03T12:00:00.000Z"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Finished At"
+          },
+          "queued_at": {
+            "description": "UTC timestamp in ISO 8601 format",
+            "examples": [
+              "2026-09-03T12:00:00.000Z"
+            ],
+            "title": "Queued At",
+            "type": "string"
+          },
+          "review_id": {
+            "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+            "format": "uuid",
+            "title": "Review Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "running",
+              "completed",
+              "failed",
+              "timed_out",
+              "cancelled"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_id",
+          "document_id",
+          "document_filename",
+          "status",
+          "queued_at",
+          "finished_at",
+          "findings_count"
+        ],
+        "title": "ReviewListItemResponse",
+        "type": "object"
+      },
+      "ReviewListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewListItemResponse"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "total": {
+            "minimum": 0.0,
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total"
+        ],
+        "title": "ReviewListResponse",
         "type": "object"
       },
       "ReviewPackListResponse": {
@@ -1869,6 +1981,120 @@
       }
     },
     "/api/reviews": {
+      "get": {
+        "description": "Return recent reviews of the tenant, newest first.",
+        "operationId": "list_reviews_api_reviews_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewListResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource state conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "List Reviews",
+        "tags": [
+          "reviews"
+        ]
+      },
       "post": {
         "description": "Persist a queued job and return immediately; a worker runs it separately.",
         "operationId": "create_review_api_reviews_post",

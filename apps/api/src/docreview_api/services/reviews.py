@@ -22,6 +22,63 @@ def _utc(value: datetime | None) -> datetime | None:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
+# Предупреждения контракта адресованы пользователю по замыслу: диагностика
+# ядра живёт отдельно, в error.diagnostic_message, и сюда не попадает. Поэтому
+# фильтра по списку кодов здесь нет — он отбрасывал бы и документированные
+# предупреждения (например PAGE_UNKNOWN из contracts/examples/success.json),
+# то есть воспроизводил бы ровно ту проблему, ради которой warnings и выводятся.
+#
+# Контракт допускает предупреждение двумя формами: строкой или объектом
+# {code, message}. Строка приходит без кода — показываем её под общим NOTICE.
+GENERIC_WARNING_CODE = "NOTICE"
+
+# Границы на случай, если ядро пришлёт полотно: экран должен остаться читаемым.
+MAX_WARNINGS = 10
+MAX_WARNING_MESSAGE_CHARS = 400
+
+
+@dataclass(frozen=True, slots=True)
+class ReviewWarning:
+    code: str
+    message: str
+
+
+def _public_warnings(raw_result):
+    """Достаёт предупреждения ядра из сохранённого результата.
+
+    Они лежат только в raw_result и до этого наружу не выходили вовсе —
+    из-за чего частичная проверка при отказе модели выглядела как обычная,
+    а обрезанный по окну документ — как пройденный целиком.
+
+    Поддержаны обе формы контракта: строка и объект {code, message}.
+    Отбрасывается только то, что вообще не несёт текста для человека.
+    """
+    if not isinstance(raw_result, dict):
+        return ()
+    items = raw_result.get("warnings")
+    if not isinstance(items, list):
+        return ()
+
+    public = []
+    for item in items[:MAX_WARNINGS]:
+        if isinstance(item, str):
+            code, message = GENERIC_WARNING_CODE, item
+        elif isinstance(item, dict):
+            raw_code = item.get("code")
+            code = raw_code.strip() if isinstance(raw_code, str) and raw_code.strip() \
+                else GENERIC_WARNING_CODE
+            message = item.get("message")
+        else:
+            continue
+        if not isinstance(message, str) or not message.strip():
+            continue
+        public.append(ReviewWarning(
+            code=code,
+            message=message.strip()[:MAX_WARNING_MESSAGE_CHARS],
+        ))
+    return tuple(public)
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewSnapshot:
     id: UUID
@@ -34,6 +91,7 @@ class ReviewSnapshot:
     error_code: str | None
     user_error_message: str | None
     error_retriable: bool | None
+    warnings: tuple[ReviewWarning, ...] = ()
 
 
 DetectionLayer = Literal["rule", "model", "mixed"]
@@ -209,4 +267,5 @@ class ReviewQueryService:
             error_code=job.error_code,
             user_error_message=job.user_error_message,
             error_retriable=job.error_retriable,
+            warnings=_public_warnings(job.raw_result),
         )

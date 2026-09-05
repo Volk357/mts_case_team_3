@@ -15,6 +15,7 @@ from docreview_api.api.schemas.reviews import (
     ReviewListResponse,
     ReviewPublicError,
     ReviewResponse,
+    ReviewWarningResponse,
 )
 from docreview_api.config import Settings, get_settings
 from docreview_api.db.dependencies import get_session_factory
@@ -70,6 +71,10 @@ def _public_review(snapshot: ReviewSnapshot, poll_after_ms: int) -> ReviewRespon
         finished_at=snapshot.finished_at,
         poll_after_ms=None if snapshot.status in TERMINAL_STATUSES else poll_after_ms,
         error=failure,
+        warnings=[
+            ReviewWarningResponse(code=w.code, message=w.message)
+            for w in snapshot.warnings
+        ],
     )
 
 

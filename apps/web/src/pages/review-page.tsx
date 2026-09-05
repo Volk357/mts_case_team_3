@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Check, LoaderCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, LoaderCircle } from "lucide-react";
 
 import { getReview, getReviewFindings, type ReviewFinding, type ReviewState } from "@/api/reviews";
 import { FindingCard } from "@/components/finding-card";
@@ -138,6 +138,20 @@ export function ReviewPage() {
           <ArrowLeft aria-hidden="true" className="size-4" />
           Проверить другой документ
         </Link>
+        {review.warnings?.length ? (
+          <div className="space-y-2" role="status">
+            {review.warnings.map((warning) => (
+              <p
+                className="flex gap-2.5 rounded-(--radius-sm) bg-amber-soft px-4 py-3 text-sm leading-6 text-amber"
+                key={warning.code}
+              >
+                <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+                <span>{warning.message}</span>
+              </p>
+            ))}
+          </div>
+        ) : null}
+
         <div>
           <h1 className="text-title font-semibold">
             {counts.all === 0 ? "Замечаний нет" : `Замечаний: ${counts.all}`}

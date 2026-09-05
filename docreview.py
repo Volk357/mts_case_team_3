@@ -600,6 +600,10 @@ class ModelUnavailable(Exception):
 def cmd_analyze(args):
     t0 = time.time()
     run_id = args.run_id
+    # Заполняются, как только детерминированный слой посчитан: обработчик
+    # отказа модели отдаёт их как частичный результат вместо пустого экрана.
+    partial_formal = []
+    partial_context = None
     try:
         text, doc_type, warnings, document_sha256 = _read_document(args.file)
     except UnsupportedBinary as e:
@@ -663,12 +667,26 @@ def cmd_analyze(args):
             raise ReviewPackInvalid("не удалось разобрать правила пакета: %s" % e)
         known = run_review.extract_known_objects(text)
         formal = _verified_formal(check_formal.run(text, cfg), text, warnings)
+        partial_formal = formal            # виден в except: см. ниже
+        partial_context = (cfg, doc_type, pack_id, pack_version, document_sha256)
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,
                                       label="full2")
         except requests.exceptions.RequestException as e:
             raise ModelUnavailable(str(e))
+        # Документ не поместился в окно модели целиком: кросс-фрагментные
+        # типы искались только по началу. Молчать об этом нельзя — снаружи
+        # неполный проход выглядел бы как полный.
+        if llm.get("truncated_chars"):
+            warnings.append({
+                "code": "DOCUMENT_TRUNCATED_FOR_GLOBAL_PASS",
+                "message": "Документ длиннее окна модели: кросс-фрагментный "
+                           "проход выполнен по первым %d символам, "
+                           "не поместилось %d. Замечания о противоречиях между "
+                           "удалёнными частями документа могут быть неполными."
+                           % (len(text) - llm["truncated_chars"],
+                              llm["truncated_chars"])})
         result = build_review_result(
             text, os.path.basename(args.file), doc_type, formal, llm["findings"],
             run_id, (pack_id, pack_version), run_review.MODEL,
@@ -678,6 +696,34 @@ def cmd_analyze(args):
             verified_candidates=llm["verified"] + len(formal), cfg=cfg,
             document_sha256=document_sha256)
     except ModelUnavailable as e:
+        # Детерминированный слой к этому моменту уже посчитан и от сети не
+        # зависит. Выбрасывать его вместе с ошибкой модели — терять готовый
+        # результат: на отказе модели пользователь видел бы пустой экран,
+        # хотя часть замечаний у нас на руках. Отдаём их с предупреждением,
+        # чтобы никто не принял неполную проверку за полную.
+        if partial_formal:
+            cfg, doc_type, pack_id, pack_version, document_sha256 = partial_context
+            # Текст исключения сюда НЕ подставляем: предупреждение уходит на
+            # экран пользователю, а в исключении сетевой библиотеки лежат
+            # внутренний адрес и порт модели. Диагностика — в поток ошибок.
+            print("[model] недоступна: %s" % e, file=sys.stderr)
+            warnings.append({
+                "code": "MODEL_UNAVAILABLE_PARTIAL",
+                "message": "Модель недоступна. Показаны только замечания "
+                           "детерминированного слоя — проверка НЕПОЛНАЯ, "
+                           "смысловые и кросс-фрагментные типы не искались. "
+                           "Повторите проверку, когда модель ответит."})
+            partial = build_review_result(
+                text, os.path.basename(args.file), doc_type, partial_formal, [],
+                run_id, (pack_id, pack_version), run_review.MODEL,
+                {"fragment": "dict2", "global": "global"},
+                (time.time() - t0) * 1000, warnings,
+                total_candidates=len(partial_formal),
+                verified_candidates=len(partial_formal), cfg=cfg,
+                document_sha256=document_sha256)
+            _write(args.output, partial)
+            return 0
+        # Правил тоже нет — показывать нечего, честный отказ.
         # retriable=True: сеть или эндпоинт модели, повтор осмыслен
         _write(args.output, failed_result(run_id, "MODEL_UNAVAILABLE", "analyze",
                                           "Модель недоступна: %s" % e, True))

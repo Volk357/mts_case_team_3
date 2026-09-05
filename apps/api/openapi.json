@@ -779,6 +779,13 @@
             ],
             "title": "Status",
             "type": "string"
+          },
+          "warnings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewWarningResponse"
+            },
+            "title": "Warnings",
+            "type": "array"
           }
         },
         "required": [
@@ -792,6 +799,26 @@
           "finished_at"
         ],
         "title": "ReviewResponse",
+        "type": "object"
+      },
+      "ReviewWarningResponse": {
+        "additionalProperties": false,
+        "description": "Предупреждение ядра, адресованное пользователю.\n\nНе диагностика: она живёт отдельно, в поле ошибки задачи, и сюда не\nпопадает. Перечень кодов НЕ закрыт — контракт ядра допускает любой код и\nвдобавок предупреждение простой строкой; строка приходит сюда под кодом\n`NOTICE`. Фильтровать по списку известных кодов нельзя: так молча пропали\nбы документированные предупреждения ядра.",
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "title": "ReviewWarningResponse",
         "type": "object"
       }
     }

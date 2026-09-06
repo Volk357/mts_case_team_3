@@ -738,6 +738,14 @@ def verify(findings, source, valid_ids):
     kept, dropped = [], []
 
     for f in findings:
+        # Модель вправе вернуть в массиве не-объекты (строку, число):
+        # это невалидный элемент, а не повод ронять весь прогон INTERNAL_ERROR
+        # (измерено на deepseek-v4-flash-0731: JSON-массив строк вместо
+        # объектов на synth_2). Отбрасываем с причиной, как прочий мусор.
+        if not isinstance(f, dict):
+            f = {"quote": "", "reject_reason": "not_an_object"}
+            dropped.append(f)
+            continue
         # Служебные поля, пришедшие ОТ МОДЕЛИ, снимаем здесь — на входе
         # в систему. Схема ответа лишние ключи не запрещает, поэтому модель
         # вправе вернуть собственный `_verdict`, и он выглядел бы как
@@ -783,22 +791,202 @@ def verify(findings, source, valid_ids):
     return kept, dropped
 
 
-def ask_model(prompt):
+# --- Доступ к модели и фолбек на OpenRouter --------------------------------
+#
+# Все обращения к LLM идут через chat(). Основной эндпоинт — Ollama
+# (OLLAMA_URL, формат /api/chat, жёсткая схема ответа format=SCHEMA).
+# Если основной недоступен или вернул невалидный JSON, а в model-config
+# задан блок `fallback`, делается вторая попытка на OpenAI-совместимом
+# эндпоинте (OpenRouter). Секрет — переменная окружения api_key_env,
+# читается ЛЕНИВО, в момент переключения: конфиг валиден и без неё,
+# а отсутствующий ключ лишь делает фолбек невозможным (лог + исходная
+# ошибка, никакого тихого прохода).
+#
+# Формат определяется по URL: путь, оканчивающийся на /chat/completions,
+# означает OpenAI-совместимый API. response_format=json_object туда
+# НЕ передаём: обе наши схемы — верхнеуровневые массивы, а этот режим
+# требует объект наверху и ломает ответ. Вместо него работает инструкция
+# «Верни только массив json» (она уже в промптах) плюс устойчивый парсер.
+#
+# Ограничения, которые надо произносить вслух:
+#   * фолбек спасает прогон, а не воспроизводит метрики: цифры 89%/65%
+#     зафиксированы за сборкой qwen3:30b-a3b Q4_K_M через Ollama, другая
+#     модель/хостинг — другое качество;
+#   * таймаут primary (900 с по умолчанию) бережёт длинные документы,
+#     поэтому зависшая, но живая Ollama отложит переключение на весь
+#     таймаут — фолбек рассчитан на отказы, а не на зависания;
+#   * при запуске через приложение ProcessRunner вычищает окружение
+#     дочернего процесса, и env-ключ до ядра не доедет: фолбек работает
+#     при локальном запуске CLI, пока приложение не научится передавать
+#     ключ иным каналом.
+FALLBACK = None
+
+# Принудительный фолбек: DOCREVIEW_FORCE_FALLBACK=1 пропускает primary
+# и сразу идёт на OpenRouter. Пригодится, чтобы прогнать весь пайплайн
+# через хостинг и увидеть обращения в его логах, не дожидаясь отказа Ollama.
+FORCE_FALLBACK = os.environ.get("DOCREVIEW_FORCE_FALLBACK") == "1"
+
+
+def _parse_model_json(content):
+    """Разбор ответа OpenAI-совместимого эндпоинта.
+
+    Хостинги не обязаны отдавать чистый JSON: Qwen3 с включённым мышлением
+    пишет блок ```thinking … ``` перед ответом (аналога think=False у них
+    нет), ответ могут обернуть в ```json … ```. Логика: выкинуть ВСЕ блоки
+    мышления (их содержимое — не JSON), затем взять содержимое блока
+    ```json … ```, если он есть, иначе искать первое полное JSON-значение
+    в остатке текста.
+    """
+    text = content.strip()
+    text = re.sub(r"```thinking\s*.*?```", "", text, flags=re.S)
+    m = re.search(r"```json\s*(.*?)```", text, flags=re.S)
+    if m:
+        text = m.group(1).strip()
+    for i, ch in enumerate(text):
+        if ch not in "[{":
+            continue
+        try:
+            value, _ = json.JSONDecoder().raw_decode(text[i:])
+            return value
+        except json.JSONDecodeError:
+            continue
+    raise json.JSONDecodeError("нет JSON-значения в ответе", content, 0)
+
+
+def _post_ollama(prompt, schema, max_tokens):
     payload = {
         "model": MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "stream": False,
         "think": False,
-        "format": SCHEMA,
+        "format": schema,
         "options": {"num_ctx": NUM_CTX, "temperature": 0,
-                    "num_predict": 4096},
+                    "num_predict": max_tokens},
         "keep_alive": "2h",
     }
     r = requests.post(OLLAMA_URL, json=payload, timeout=TIMEOUT)
     r.raise_for_status()
-    content = r.json()["message"]["content"]
+    return r.json()["message"]["content"]
+
+
+def _post_openrouter(prompt, max_tokens):
+    """Пост на OpenRouter с ретраем на 429/5xx.
+
+    429 (лимит/провайдер временно недоступен) и 5xx — временные состояния:
+    без ретрая они роняли весь прогон, хотя повтор через пару секунд
+    проходит (измерено на qwen/qwen3.8-flash: провайдер банил ключ,
+    после ретрая вызов шёл). Ошибки 4xx (кроме 429) и сетевые — наружу.
+    Всего 3 попытки с нарастающей паузой; для дешёвых fallback-моделей
+    это безвредно.
+    """
+    conf = FALLBACK
+    # Ключ: явное api_key в конфиге имеет приоритет над api_key_env.
+    # api_key в model-config.yaml нужен для пути через воркер: ProcessRunner
+    # вычищает окружение дочернего процесса, поэтому env-переменная до ядра
+    # не доезжает, а файл конфига — доезжает.
+    key = conf.get("api_key")
+    if not key:
+        key = os.environ.get(conf["api_key_env"])
+    if not key:
+        print("  !! фолбек настроен, но ключ не задан: нет api_key в конфиге "
+              "и нет переменной %s — фолбек невозможен"
+              % conf.get("api_key_env", "(не задан)"), file=sys.stderr)
+        raise KeyError(conf.get("api_key_env", "api_key"))
+    payload = {
+        "model": conf["model"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0,
+        # Reasoning-модели (deepseek, qwen3) думают вперёд и могут
+        # истратить весь лимит токенов на reasoning, оставив content пустым
+        # (измерено на deepseek-v4-flash-0731: 5660 reasoning-токенов при
+        # лимите 4096). Отключаем: схеме ответа это не мешает, ответы
+        # соответствуют полям таксономии и без «думания».
+        "reasoning": {"enabled": False},
+        "max_tokens": max_tokens,
+    }
+    headers = {"Authorization": "Bearer " + key}
+    timeout = conf.get("timeout", 120)
+    for attempt in range(3):
+        try:
+            r = requests.post(conf["url"], json=payload,
+                              headers=headers, timeout=timeout)
+            r.raise_for_status()
+            content = r.json()["choices"][0]["message"].get("content")
+            if not isinstance(content, str) or not content.strip():
+                # Qwen3 на OpenAI-совместимых хостингах думает вперёд: при малом
+                # бюджете токенов весь лимит уходит в reasoning, и content пуст.
+                # Это сбой эндпоинта: наружу идёт исходная ошибка primary,
+                # а не AttributeError из парсера.
+                raise ValueError("пустой content в ответе эндпоинта "
+                                 "(весь лимит мог уйти в reasoning)")
+            return content
+        except requests.exceptions.HTTPError as e:
+            if (e.response is not None
+                    and e.response.status_code in (429, 500, 502, 503)
+                    and attempt < 2):
+                wait = 2 ** attempt
+                print("  !! у %s статус %s, повтор через %d с"
+                      % (conf["model"], e.response.status_code, wait),
+                      file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise
+
+
+def chat(prompt, schema, max_tokens):
+    """Один вызов модели с фолбеком. Возвращает разобранный JSON.
+
+    Семантика ошибок сохранена в точности:
+      * транспорт/структура ответа — requests.exceptions.RequestException
+        (или KeyError/ValueError), как раньше: ловит или пропускает
+        вызывающий;
+      * невалидный JSON — json.JSONDecodeError.
+    Если сработал фолбек, факт переключения печатается в stderr.
+    """
+    if FORCE_FALLBACK:
+        if not FALLBACK:
+            raise RuntimeError(
+                "DOCREVIEW_FORCE_FALLBACK=1, но блок fallback не настроен")
+        print("  [model] принудительный фолбек (DOCREVIEW_FORCE_FALLBACK=1): "
+              "%s %s" % (FALLBACK["url"], FALLBACK["model"]), file=sys.stderr)
+        try:
+            return _parse_model_json(_post_openrouter(prompt, max_tokens))
+        except (requests.exceptions.RequestException, KeyError, ValueError,
+                json.JSONDecodeError) as e:
+            print("  !! фолбек не вышел (%s: %s)"
+                  % (e.__class__.__name__, e), file=sys.stderr)
+            raise
     try:
-        return json.loads(content)
+        return json.loads(_post_ollama(prompt, schema, max_tokens))
+    except json.JSONDecodeError as e:
+        if not FALLBACK:
+            raise
+        return _fallback(prompt, max_tokens, e)
+    except (requests.exceptions.RequestException, KeyError, ValueError) as e:
+        if not FALLBACK:
+            raise
+        return _fallback(prompt, max_tokens, e)
+
+
+def _fallback(prompt, max_tokens, primary_error):
+    """Вторая попытка на OpenRouter. При неудаче — ИСХОДНАЯ ошибка primary:
+    наружу поведение не меняется, контур обработки (ModelUnavailable,
+    partial-результат, retriable) остаётся прежним."""
+    print("  [model] Ollama недоступна (%s), фолбек: %s %s"
+          % (primary_error.__class__.__name__, FALLBACK["url"],
+             FALLBACK["model"]), file=sys.stderr)
+    try:
+        return _parse_model_json(_post_openrouter(prompt, max_tokens))
+    except (requests.exceptions.RequestException, KeyError, ValueError,
+            json.JSONDecodeError) as e:
+        print("  !! фолбек тоже не вышел (%s: %s)"
+              % (e.__class__.__name__, e), file=sys.stderr)
+        raise primary_error from e
+
+
+def ask_model(prompt):
+    try:
+        return chat(prompt, SCHEMA, 4096)
     except json.JSONDecodeError:
         print("  !! невалидный json, фрагмент пропущен", file=sys.stderr)
         return []
@@ -1296,15 +1484,6 @@ def ask_verifier(prompt):
     десятка кандидатов укладывается в этот бюджет, а лишний запас — это
     лишние секунды на демонстрации.
     """
-    payload = {
-        "model": MODEL,
-        "messages": [{"role": "user", "content": prompt}],
-        "stream": False,
-        "think": False,
-        "format": VERDICT_SCHEMA,
-        "options": {"num_ctx": NUM_CTX, "temperature": 0, "num_predict": 2048},
-        "keep_alive": "2h",
-    }
     # Сбой верификатора НЕ уносит уже найденные замечания.
     #
     # Это прямое требование: 05.09 отдельной правкой добивались, чтобы при
@@ -1312,15 +1491,14 @@ def ask_verifier(prompt):
     # как ModelUnavailable, отменял бы уже выполненные проходы поиска.
     # Замечания, оставшиеся без суждения, помечаются `not_verified`,
     # и в enforcing они НЕ отбрасываются: молчание верификатора — не приговор.
+    # Тот же принцип распространяется на фолбек: он лишь даёт вторую попытку,
+    # а если и она не вышла, поведение ровно такое, как без него.
     try:
-        r = requests.post(OLLAMA_URL, json=payload, timeout=TIMEOUT)
-        r.raise_for_status()
+        return chat(prompt, VERDICT_SCHEMA, 2048)
     except requests.exceptions.RequestException as e:
         print("  !! верификатор недоступен (%s), партия без вердикта" % e,
               file=sys.stderr)
         return []
-    try:
-        return json.loads(r.json()["message"]["content"])
     except (json.JSONDecodeError, KeyError, ValueError):
         print("  !! верификатор вернул невалидный json, партия пропущена",
               file=sys.stderr)

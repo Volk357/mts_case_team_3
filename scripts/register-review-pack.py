@@ -101,18 +101,21 @@ def main() -> int:
             conn.execute(
                 text("UPDATE review_pack_references "
                      "SET display_name = :n, document_type = :d, locator = :l, "
-                     "    is_active = true "
+                     "    is_active = true, updated_at = now() "
                      "WHERE id = :id"),
                 {"n": manifest["display_name"], "d": manifest["document_type"],
                  "l": locator, "id": existing},
             )
             action = "обновлён"
         else:
+            # created_at и updated_at заполняются приложением на стороне
+            # Python (TimestampMixin), server_default у них нет — сырой INSERT
+            # обязан задать их сам, иначе NOT NULL отвергает вставку.
             conn.execute(
                 text("INSERT INTO review_pack_references "
                      "(id, company_id, pack_key, version, display_name, "
-                     " document_type, locator, is_active) "
-                     "VALUES (:id, :c, :k, :v, :n, :d, :l, true)"),
+                     " document_type, locator, is_active, created_at, updated_at) "
+                     "VALUES (:id, :c, :k, :v, :n, :d, :l, true, now(), now())"),
                 {"id": uuid4(), "c": company_id, "k": manifest["pack_key"],
                  "v": manifest["version"], "n": manifest["display_name"],
                  "d": manifest["document_type"], "l": locator},

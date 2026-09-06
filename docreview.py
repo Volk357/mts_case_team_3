@@ -156,14 +156,21 @@ def build_review_result(text, filename, document_type, formal_findings,
                         llm_findings, run_id, pack, model_name,
                         prompt_versions, total_ms, warnings=None,
                         total_candidates=None, verified_candidates=None, cfg=None,
-                        document_sha256=None):
+                        document_sha256=None, policy=None):
     """Чистая сборка ReviewResult (completed). Тестируется без модели.
 
     cfg — уже загруженный шаблон (из Review Pack, если он его содержит). Если
     не передан, берём шаблон рядом с ядром: путь обязан быть абсолютным, потому
     что приложение запускает нас со своим рабочим каталогом.
+
+    policy — политика приёмки пакета (run_review.load_policy). Задаёт потолок
+    выдачи и уходит в результат как review_pack.policy: без следа в выдаче
+    «версионируемая политика» недоказуема — два прогона с одинаковыми id
+    и версией пакета выглядели бы одинаково при разной политике.
     """
     import check_formal
+    import run_review
+    policy = run_review.DEFAULT_POLICY if policy is None else policy
     # pack — либо (id, version), либо просто id (обратная совместимость тестов)
     pack_id, pack_version = pack if isinstance(pack, (tuple, list)) \
         else (pack, DEFAULT_PACK_VERSION)
@@ -173,7 +180,8 @@ def build_review_result(text, filename, document_type, formal_findings,
     lines = text.splitlines()
 
     findings = [_map_finding(f, i, det, lines, cfg, is_sh) for i, (f, det)
-                in enumerate(_rank_union(formal_findings, llm_findings))]
+                in enumerate(_rank_union(formal_findings, llm_findings,
+                                         ceiling=policy["ceiling"]))]
 
     counts = {"critical": 0, "high": 0, "medium": 0, "low": 0}
     for f in findings:
@@ -193,7 +201,12 @@ def build_review_result(text, filename, document_type, formal_findings,
             "sha256": document_sha256 or hashlib.sha256(text.encode("utf-8")).hexdigest(),
         },
         "engine": {"version": ENGINE_VERSION},
-        "review_pack": {"id": pack_id, "version": pack_version},
+        # policy — применённая политика приёмки. Схема контракта допускает
+        # дополнительные поля (additionalProperties: true), приложение хранит
+        # результат без потерь, поэтому поле безопасно и для старых версий.
+        "review_pack": {"id": pack_id, "version": pack_version,
+                        "policy": {"ceiling": policy["ceiling"],
+                                   "bias": policy["bias"]}},
         "model": {"name": model_name, "prompt_versions": prompt_versions},
         "findings": findings,
         "summary": {
@@ -396,6 +409,11 @@ def _read_document(path):
 DEFAULT_PACK_ID = "mts-net"
 DEFAULT_PACK_VERSION = "0.2"
 PACK_MANIFEST_NAMES = ("pack.yaml", "pack.yml", "manifest.yaml", "manifest.yml")
+
+# Часовой «ключа нет» — отличать отсутствие от объявленного null.
+# `contents.policy: null` это сломанное объявление, а не его отсутствие,
+# и молча применить умолчания в этом случае нельзя.
+_ABSENT = object()
 _VERSION_SEGMENT = re.compile(r"^v?\d+(?:\.\d+)*$")
 
 
@@ -433,7 +451,7 @@ def resolve_pack(pack):
     """Разбирает `--pack`: путь к каталогу пакета ИЛИ к его manifest-файлу
     (так это описано в INTEGRATION_CONTRACT.md), либо голый идентификатор.
 
-    Возвращает (id, version, template, defects, glossary, warnings).
+    Возвращает (id, version, template, defects, glossary, policy, warnings).
 
     Почему id и version важны: приложение сверяет `review_pack.id`
     и `review_pack.version` в результате с тем, что записано в задании,
@@ -450,10 +468,10 @@ def resolve_pack(pack):
     забракует результат, а причина будет неочевидна.
     """
     if not pack:
-        return DEFAULT_PACK_ID, DEFAULT_PACK_VERSION, None, None, None, []
+        return DEFAULT_PACK_ID, DEFAULT_PACK_VERSION, None, None, None, None, []
     looks_like_path = os.sep in pack or pack.endswith((".yaml", ".yml", ".json", "/"))
     if not looks_like_path:
-        return pack, DEFAULT_PACK_VERSION, None, None, None, []
+        return pack, DEFAULT_PACK_VERSION, None, None, None, None, []
     if not os.path.exists(pack):
         raise ReviewPackMissing(pack)
 
@@ -464,7 +482,7 @@ def resolve_pack(pack):
         manifest_path = next((os.path.join(base, n) for n in PACK_MANIFEST_NAMES
                               if os.path.isfile(os.path.join(base, n))), None)
 
-    warnings, pack_id, version = [], None, None
+    warnings, pack_id, version, man = [], None, None, {}
     if manifest_path:
         import yaml
         try:
@@ -504,8 +522,69 @@ def resolve_pack(pack):
         path = os.path.join(base, name)
         return path if os.path.isfile(path) else None
 
+    # Имя файла политики берётся из манифеста (contents.policy), а не только
+    # по соглашению. Иначе пакет мог объявить один файл, а ядро прочитать
+    # другой — или, при опечатке в имени, молча применить умолчания, хотя
+    # пакет заявляет собственную политику.
+    #
+    # Три состояния различаются намеренно, потому что молчание в любом из
+    # них означало бы прогон не по той политике, которую объявляет пакет:
+    #   contents вообще нет            → соглашение policy.yaml (совместимость);
+    #   contents есть, policy нет      → соглашение policy.yaml;
+    #   contents.policy объявлен       → файл обязан быть, и именно этот.
+    # Отдельно: сам contents, если он есть, обязан быть словарём, а
+    # объявленный policy: null — это не «не объявлен», а сломанное объявление.
+    contents = man.get("contents", _ABSENT) if manifest_path else _ABSENT
+    if contents is not _ABSENT and not isinstance(contents, dict):
+        raise ReviewPackInvalid(
+            "манифест %s: contents должен быть словарём, получено %s"
+            % (manifest_path, type(contents).__name__))
+
+    declared = contents.get("policy", _ABSENT) if isinstance(contents, dict) \
+        else _ABSENT
+    if declared is _ABSENT:
+        policy_path = in_pack("policy.yaml")
+    else:
+        if not isinstance(declared, str) or not declared.strip():
+            raise ReviewPackInvalid(
+                "манифест %s: contents.policy объявлен, но не является именем "
+                "файла (получено %r). Пустое объявление — это сломанный "
+                "манифест, а не отсутствие политики."
+                % (manifest_path, declared))
+        policy_name = declared.strip()
+        # Только имя внутри пакета: путь наружу означал бы, что политика
+        # живёт вне версионируемого артефакта.
+        if os.path.isabs(policy_name) or os.sep in policy_name \
+                or policy_name in (os.curdir, os.pardir) or "/" in policy_name:
+            raise ReviewPackInvalid(
+                "манифест %s: contents.policy должен быть именем файла внутри "
+                "пакета, получено «%s»" % (manifest_path, policy_name))
+        policy_path = in_pack(policy_name)
+        if policy_path is None:
+            raise ReviewPackInvalid(
+                "манифест %s объявляет contents.policy: %s, но файла в пакете "
+                "нет. Молча применить политику по умолчанию нельзя: пакет "
+                "заявляет собственную." % (manifest_path, policy_name))
+
+    # Проверка ПОСЛЕ обеих веток, а не внутри объявленной. Проверки имени
+    # мало: симлинк `policy.yaml -> ../outside.yaml` проходит и её, и
+    # os.path.isfile, после чего политика читается снаружи пакета — из
+    # неверсионируемого места, ровно того, от которого этот файл уводит.
+    # Первая версия правки закрывала только объявленный путь, и дыра
+    # оставалась там, где имени вообще нет: пакет без contents с подложенным
+    # симлинком применял чужую политику (найдено на ревью, воспроизведено).
+    if policy_path is not None:
+        real_base = os.path.realpath(base)
+        real_policy = os.path.realpath(policy_path)
+        if os.path.commonpath([real_base, real_policy]) != real_base \
+                or real_policy == real_base:
+            raise ReviewPackInvalid(
+                "политика пакета «%s» ведёт за пределы пакета (%s). Политика "
+                "обязана лежать внутри версионируемого артефакта."
+                % (os.path.basename(policy_path), real_policy))
+
     return (pack_id, version, in_pack("template.yaml"), in_pack("defects.yaml"),
-            in_pack("glossary.yaml"), warnings)
+            in_pack("glossary.yaml"), policy_path, warnings)
 
 
 MODEL_CONFIG_ENV = "DOCREVIEW_MODEL_CONFIG"
@@ -617,7 +696,7 @@ def cmd_analyze(args):
 
     try:
         (pack_id, pack_version, pack_template, pack_defects, pack_glossary,
-         pack_warnings) = resolve_pack(args.pack)
+         pack_policy, pack_warnings) = resolve_pack(args.pack)
         warnings = list(warnings) + pack_warnings
     except ReviewPackMissing as e:
         _write(args.output, failed_result(
@@ -665,14 +744,23 @@ def cmd_analyze(args):
             cfg = check_formal.load_config(pack_template or _core_path("template.yaml"))
         except Exception as e:                      # noqa: BLE001
             raise ReviewPackInvalid("не удалось разобрать правила пакета: %s" % e)
+        # Политика — отдельно от блока выше: её собственные сообщения об
+        # ошибке называют конкретную причину (потолок выше контрактного,
+        # неизвестный ключ prompt), и заворачивать их в общее «не удалось
+        # разобрать правила пакета» значило бы стереть диагностику.
+        try:
+            policy = run_review.load_policy(pack_policy)
+        except run_review.PolicyInvalid as e:
+            raise ReviewPackInvalid(str(e))
         known = run_review.extract_known_objects(text)
         formal = _verified_formal(check_formal.run(text, cfg), text, warnings)
         partial_formal = formal            # виден в except: см. ниже
-        partial_context = (cfg, doc_type, pack_id, pack_version, document_sha256)
+        partial_context = (cfg, doc_type, pack_id, pack_version, document_sha256,
+                           policy)
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,
-                                      label="full2")
+                                      label="full2", policy=policy)
         except requests.exceptions.RequestException as e:
             raise ModelUnavailable(str(e))
         # Документ не поместился в окно модели целиком: кросс-фрагментные
@@ -694,7 +782,7 @@ def cmd_analyze(args):
             (time.time() - t0) * 1000, warnings,
             total_candidates=llm["found_raw"] + len(formal),
             verified_candidates=llm["verified"] + len(formal), cfg=cfg,
-            document_sha256=document_sha256)
+            document_sha256=document_sha256, policy=policy)
     except ModelUnavailable as e:
         # Детерминированный слой к этому моменту уже посчитан и от сети не
         # зависит. Выбрасывать его вместе с ошибкой модели — терять готовый
@@ -702,7 +790,8 @@ def cmd_analyze(args):
         # хотя часть замечаний у нас на руках. Отдаём их с предупреждением,
         # чтобы никто не принял неполную проверку за полную.
         if partial_formal:
-            cfg, doc_type, pack_id, pack_version, document_sha256 = partial_context
+            (cfg, doc_type, pack_id, pack_version, document_sha256,
+             policy) = partial_context
             # Текст исключения сюда НЕ подставляем: предупреждение уходит на
             # экран пользователю, а в исключении сетевой библиотеки лежат
             # внутренний адрес и порт модели. Диагностика — в поток ошибок.
@@ -720,7 +809,7 @@ def cmd_analyze(args):
                 (time.time() - t0) * 1000, warnings,
                 total_candidates=len(partial_formal),
                 verified_candidates=len(partial_formal), cfg=cfg,
-                document_sha256=document_sha256)
+                document_sha256=document_sha256, policy=policy)
             _write(args.output, partial)
             return 0
         # Правил тоже нет — показывать нечего, честный отказ.

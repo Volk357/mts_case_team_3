@@ -463,13 +463,13 @@ def test_cli_accepts_flags_the_application_sends():
 def test_resolve_pack_reads_manifest_for_id_and_version():
     """Приложение бракует результат, если id/version не совпали с заданием,
     поэтому источник истины — манифест внутри пакета."""
-    pack_id, version, tpl, dfx, glo, warns = resolve_pack("review-packs/mts-net/0.2")
+    pack_id, version, tpl, dfx, glo, pol, warns = resolve_pack("review-packs/mts-net/0.2")
     assert (pack_id, version) == ("mts-net", "0.2"), (pack_id, version)
     assert tpl and dfx and glo and not warns, "правила пакета должны браться целиком"
 
 
 def test_resolve_pack_accepts_manifest_file_directly():
-    pack_id, version, tpl, dfx, glo, warns = resolve_pack("review-packs/mts-net/0.2/pack.yaml")
+    pack_id, version, tpl, dfx, glo, pol, warns = resolve_pack("review-packs/mts-net/0.2/pack.yaml")
     assert (pack_id, version) == ("mts-net", "0.2")
     assert tpl and dfx and not warns
 
@@ -479,7 +479,7 @@ def test_resolve_pack_falls_back_to_key_version_layout():
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                      "_tmp_docreview", "requirements", "1.0")
     os.makedirs(d, exist_ok=True)
-    pack_id, version, _, _, _, warns = resolve_pack(d)
+    pack_id, version, _, _, _, _, warns = resolve_pack(d)
     assert (pack_id, version) == ("requirements", "1.0"), (pack_id, version)
     assert not warns
 
@@ -488,13 +488,13 @@ def test_resolve_pack_warns_when_version_unknown():
     """Молча подставленная версия = забракованный результат с неочевидной причиной."""
     d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_tmp_docreview", "plain")
     os.makedirs(d, exist_ok=True)
-    pack_id, version, _, _, _, warns = resolve_pack(d)
+    pack_id, version, _, _, _, _, warns = resolve_pack(d)
     assert pack_id == "plain" and version
     assert warns and warns[0]["code"] == "REVIEW_PACK_VERSION_ASSUMED"
 
 
 def test_resolve_pack_identifier_without_path():
-    pack_id, version, tpl, dfx, glo, warns = resolve_pack("mts-net")
+    pack_id, version, tpl, dfx, glo, pol, warns = resolve_pack("mts-net")
     assert pack_id == "mts-net" and version and tpl is None and dfx is None
 
 

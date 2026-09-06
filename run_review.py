@@ -32,6 +32,7 @@
 """
 
 import argparse
+import copy
 import json
 import re
 import sys
@@ -208,7 +209,7 @@ PROMPT_GLOBAL = """Ты ревьюишь техническое задание �
 3. explanation обязан называть обе стороны проблемы: что и чему противоречит, какой объект и где используется без описания.
 4. Не выдумывай объекты, которых нет в документе.
 5. Не дублируй: одна проблема — одно замечание.
-6. Ориентир: от двух до шести замечаний на документ. Это дополнительный проход, основные дефекты уже найдены отдельно.
+6. {policy_quota}
 
 Верни только массив json, без пояснений.
 
@@ -343,9 +344,9 @@ PROMPT_DICT2 = """Ты ревьюишь техническое задание н
 1. quote — дословная копия из фрагмента, символ в символ.
 2. Цитируй содержательную строку, а не заголовок таблицы, не название раздела и не одно имя поля. Цитата должна показывать проблему, а не указывать на неё пальцем.
 3. defect_id — строго один из id списка типов. Свои идентификаторы не придумывай.
-4. Полнота важнее осторожности. Пропущенная проблема хуже лишней придирки. Сомневаешься — выдавай.
+4. {policy_bias}
 5. В suggestion не упоминай таблицы, поля, схемы и значения, которых нет в документе. Не выдумывай примеры вида CLUSTER_PROD, SCHEMA_CDM_NETS_PROD, region_id, UTC+3. Если конкретное значение неизвестно — так и напиши: указать конкретное значение.
-6. Ориентир: от пяти до десяти замечаний на фрагмент. Меньше пяти — скорее всего ты не дошёл до конца списка типов.
+6. {policy_quota}
 7. explanation — почему разработчик придёт с вопросом именно по этому месту.
 
 Верни только массив json, без пояснений.
@@ -624,8 +625,12 @@ def ask_model(prompt):
 
 
 def run(doc_text, mode, taxonomy_text, valid_ids, known_objects,
-        glossary_text=None, conventions_text=""):
+        glossary_text=None, conventions_text="", policy=None):
     fragments = split_document(doc_text)
+    # Политику применяет только dict2 — боевой режим. Режимы baseline,
+    # taxonomy и dict заморожены: их промпты воспроизводят измеренные
+    # прогоны, и параметризовать их значило бы потерять точку сравнения.
+    policy = DEFAULT_POLICY if policy is None else policy
     print(f"[{mode}] фрагментов: {len(fragments)}")
 
     # По умолчанию — замороженная константа: режимы dict, taxonomy
@@ -648,7 +653,9 @@ def run(doc_text, mode, taxonomy_text, valid_ids, known_objects,
             prompt = tpl.format(taxonomy=taxonomy_text, fragment=frag,
                                 known_objects=known_objects,
                                 glossary=glossary_text,
-                                conventions=conventions_text)
+                                conventions=conventions_text,
+                                policy_bias=policy["prompt"]["bias"],
+                                policy_quota=policy["prompt"]["fragment_quota"])
         else:
             prompt = tpl.format(taxonomy=taxonomy_text, fragment=frag,
                                 known_objects=known_objects,
@@ -702,7 +709,7 @@ def global_doc_char_budget():
     return int(NUM_CTX * GLOBAL_DOC_CHARS_PER_CTX)
 
 
-def run_global(doc_text, defects, glossary_text):
+def run_global(doc_text, defects, glossary_text, policy=None):
     """
     Один вызов на весь документ. Ищет только те типы дефектов,
     которые требуют сопоставления удалённых частей текста.
@@ -713,6 +720,7 @@ def run_global(doc_text, defects, glossary_text):
     ценны, что сопоставляют удалённые части, а на обрезанном документе
     половины сопоставлений просто нет.
     """
+    policy = DEFAULT_POLICY if policy is None else policy
     subset = GLOBAL_TYPES & {d["id"] for d in defects}
     taxonomy_text = render_taxonomy(defects, subset)
 
@@ -729,7 +737,8 @@ def run_global(doc_text, defects, glossary_text):
     t0 = time.time()
     prompt = PROMPT_GLOBAL.format(taxonomy=taxonomy_text,
                                   glossary=glossary_text,
-                                  document=doc_text)
+                                  document=doc_text,
+                                  policy_quota=policy["prompt"]["document_quota"])
     findings = ask_model(prompt)
     kept, dropped = verify(findings, doc_text, subset)
     dt = time.time() - t0
@@ -848,6 +857,156 @@ def dedupe(findings, doc_text, window=500):
 
 BUDGET_CEILING = 20  # потолок замечаний на документ (ориентир кейсодателя)
 
+# Жёсткая верхняя граница потолка. Задана НЕ здесь: contracts/
+# review-result.schema.json объявляет findings.maxItems = 20, и результат
+# сверх этого приложение бракует целиком. Политика пакета может потолок
+# только опустить; попытка поднять — ошибка пакета, а не тихое обрезание.
+CONTRACT_MAX_FINDINGS = 20
+
+# Политика приёмки замечаний по умолчанию.
+#
+# Применяется, когда Review Pack не содержит policy.yaml — то есть для
+# пакетов, выпущенных до 06.09.2026, и при запуске ядра с голым
+# идентификатором пакета вместо каталога.
+#
+# Значения ДОСЛОВНО повторяют текст промпта, на котором сняты метрики
+# (полнота 88% по месту / 77% по типу). Менять их здесь нельзя: политика —
+# это версионируемый артефакт пакета, а не константа кода. Ради этого
+# правила файл review-packs/mts-net/0.2/policy.yaml и существует.
+DEFAULT_POLICY = {
+    "ceiling": BUDGET_CEILING,
+    "bias": "recall",
+    "prompt": {
+        "bias": "Полнота важнее осторожности. Пропущенная проблема хуже "
+                "лишней придирки. Сомневаешься — выдавай.",
+        "fragment_quota": "Ориентир: от пяти до десяти замечаний на фрагмент. "
+                          "Меньше пяти — скорее всего ты не дошёл до конца "
+                          "списка типов.",
+        "document_quota": "Ориентир: от двух до шести замечаний на документ. "
+                          "Это дополнительный проход, основные дефекты уже "
+                          "найдены отдельно.",
+    },
+}
+
+POLICY_PROMPT_KEYS = ("bias", "fragment_quota", "document_quota")
+POLICY_BIAS_VALUES = ("recall", "precision", "balanced")
+
+
+class PolicyInvalid(Exception):
+    """Политика пакета не пригодна к применению.
+
+    Отдельный тип, а не общий ValueError: docreview превращает его
+    в REVIEW_PACK_INVALID с retriable=false — повторять запуск бессмысленно,
+    чинить надо пакет.
+    """
+
+
+POLICY_TOP_KEYS = ("ceiling", "bias", "prompt")
+
+
+def _names(keys):
+    """Имена ключей для сообщения об ошибке, устойчиво к их типу.
+
+    YAML разрешает нестроковые ключи (`1:`, `true:`, `[a]:`), и прямой
+    `sorted(...)` на смешанном множестве падает TypeError. Падение здесь —
+    не косметика: PolicyInvalid превращается в REVIEW_PACK_INVALID (exit 4),
+    а TypeError уходит в общий обработчик и становится INTERNAL_ERROR,
+    то есть ошибка ПАКЕТА выглядела бы как поломка ядра.
+    """
+    return ", ".join(sorted(repr(k) for k in keys))
+
+
+def load_policy(path=None):
+    """Политика приёмки из policy.yaml пакета; без файла — DEFAULT_POLICY.
+
+    ЛИБО ФАЙЛА НЕТ, ЛИБО ОН ПОЛНЫЙ. Частичная политика не поддерживается,
+    и это не строгость ради строгости. Наследование недостающих полей из
+    DEFAULT_POLICY возвращало ровно ту проблему, ради которой файл заведён:
+
+      - `ceilling: 5` (опечатка) молча давал потолок 20 — пакет объявляет
+        одно, ядро делает другое;
+      - `bias: precision` без `prompt.bias` публиковал в результате
+        «precision», отправляя модели recall-текст «сомневаешься — выдавай».
+        Метка политики и применённая политика расходились, и наружу уходила
+        первая.
+
+    Поэтому: файла нет — работают умолчания (так живут пакеты, выпущенные
+    до 06.09.2026). Файл есть — он объявляет политику целиком, иначе это
+    ошибка пакета. Умолчания при наличии файла не подмешиваются никогда.
+    """
+    if not path:
+        return copy.deepcopy(DEFAULT_POLICY)
+    try:
+        raw = yaml.safe_load(open(path, encoding="utf-8"))
+    except Exception as e:                          # noqa: BLE001
+        raise PolicyInvalid("политика %s не читается: %s" % (path, e))
+    # Ни `or {}`, ни мягкой проверки: пустой файл, null, список и false
+    # иначе становились бы пустым словарём и тихо откатывались на умолчания.
+    if not isinstance(raw, dict):
+        raise PolicyInvalid(
+            "политика %s: ожидался словарь с ключами %s, получено %s. "
+            "Пустой или сломанный файл политики — ошибка пакета: молчаливый "
+            "откат на умолчания означал бы прогон не по той политике, "
+            "которая записана в пакете."
+            % (path, ", ".join(POLICY_TOP_KEYS), type(raw).__name__))
+
+    unknown = set(raw) - set(POLICY_TOP_KEYS)
+    if unknown:
+        raise PolicyInvalid("политика %s: неизвестные ключи верхнего уровня: %s "
+                            "(допустимы: %s)"
+                            % (path, _names(unknown),
+                               ", ".join(POLICY_TOP_KEYS)))
+    missing = [k for k in POLICY_TOP_KEYS if k not in raw]
+    if missing:
+        raise PolicyInvalid(
+            "политика %s не объявляет: %s. Политика задаётся целиком: "
+            "недостающие поля НЕ достраиваются умолчаниями, иначе пакет "
+            "объявлял бы одно, а ядро применяло другое."
+            % (path, ", ".join(missing)))
+
+    ceiling = raw["ceiling"]
+    # bool — подкласс int: True прошёл бы как потолок 1.
+    if isinstance(ceiling, bool) or not isinstance(ceiling, int):
+        raise PolicyInvalid("политика %s: ceiling должен быть целым числом" % path)
+    if ceiling < 1:
+        raise PolicyInvalid("политика %s: ceiling должен быть не меньше 1, "
+                            "получено %d" % (path, ceiling))
+    if ceiling > CONTRACT_MAX_FINDINGS:
+        raise PolicyInvalid(
+            "политика %s: ceiling %d превышает потолок контракта %d "
+            "(contracts/review-result.schema.json, findings.maxItems). "
+            "Результат с таким числом замечаний приложение забракует, "
+            "поэтому пакет отвергается здесь, а не молча обрезается."
+            % (path, ceiling, CONTRACT_MAX_FINDINGS))
+
+    bias = raw["bias"]
+    if bias not in POLICY_BIAS_VALUES:
+        raise PolicyInvalid("политика %s: bias должен быть одним из %s, "
+                            "получено %r"
+                            % (path, ", ".join(POLICY_BIAS_VALUES), bias))
+
+    prompt = raw["prompt"]
+    if not isinstance(prompt, dict):
+        raise PolicyInvalid("политика %s: prompt должен быть словарём" % path)
+    unknown = set(prompt) - set(POLICY_PROMPT_KEYS)
+    if unknown:
+        # Опечатка в ключе иначе означала бы, что в промпт молча ушёл текст
+        # по умолчанию, а автор пакета уверен, что применил свой.
+        raise PolicyInvalid("политика %s: неизвестные ключи prompt: %s"
+                            % (path, _names(unknown)))
+    missing = [k for k in POLICY_PROMPT_KEYS if k not in prompt]
+    if missing:
+        raise PolicyInvalid("политика %s: prompt не объявляет: %s"
+                            % (path, ", ".join(missing)))
+    texts = {}
+    for key in POLICY_PROMPT_KEYS:
+        value = prompt[key]
+        if not isinstance(value, str) or not value.strip():
+            raise PolicyInvalid("политика %s: prompt.%s должен быть непустой "
+                                "строкой" % (path, key))
+        texts[key] = value.strip()
+    return {"ceiling": ceiling, "bias": bias, "prompt": texts}
+
 
 def _sev_rank(f):
     """Класс защиты от бюджета: 0 — не режем (critical и high), дальше по убыванию.
@@ -903,7 +1062,7 @@ def apply_budget(kept, ceiling=BUDGET_CEILING):
 
 def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
              frag_mode="dict", glossary_text=None, conventions_text="",
-             label="full"):
+             label="full", policy=None):
     """
     Продуктовый режим: проход по фрагментам плюс проход по документу
     целиком, затем дедупликация.
@@ -912,10 +1071,17 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
     намеренно НЕ параметризован и всегда идёт на замороженной константе
     GLOSSARY: тогда разница между full и full2 объясняется только
     изменением промпта фрагментов, а не двумя правками сразу.
+
+    policy — политика приёмки из Review Pack (run_review.load_policy).
+    Она задаёт и ориентиры объёма в промптах, и потолок выдачи, поэтому
+    протягивается в оба прохода и в apply_budget: разъехавшись, эти три
+    места дали бы промпт, просящий у модели больше, чем потолок пропустит.
     """
+    policy = DEFAULT_POLICY if policy is None else policy
     frag = run(doc_text, frag_mode, taxonomy_text, valid_ids, known_objects,
-               glossary_text=glossary_text, conventions_text=conventions_text)
-    glob = run_global(doc_text, defects, GLOSSARY)
+               glossary_text=glossary_text, conventions_text=conventions_text,
+               policy=policy)
+    glob = run_global(doc_text, defects, GLOSSARY, policy=policy)
 
     # Детерминированные типы принадлежат формальному слою (check_formal): он их
     # ловит точнее и без галлюцинаций. Находки этих типов из модели отбрасываем,
@@ -925,7 +1091,7 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
     combined = [f for f in (frag["findings"] + glob["findings"])
                 if f.get("defect_id") not in det_ids]
     kept, merged = dedupe(combined, doc_text)
-    kept, capped = apply_budget(kept)
+    kept, capped = apply_budget(kept, ceiling=policy["ceiling"])
 
     print(f"[{label}] до дедупликации {len(combined)}, после дедупа "
           f"{len(kept) + len(capped)}, склеено {len(merged)}, "

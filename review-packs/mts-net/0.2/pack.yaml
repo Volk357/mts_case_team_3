@@ -14,3 +14,4 @@ contents:
   template: template.yaml      # структура шаблона и детерминированные правила
   defects: defects.yaml        # таксономия дефектов и конвенции
   glossary: glossary.yaml      # термины, которые в компании не расшифровывают
+  policy: policy.yaml          # политика приёмки: потолок выдачи и склонность

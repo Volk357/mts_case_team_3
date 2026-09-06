@@ -40,6 +40,8 @@ submission/
 .env.*.local
 nikita_ollama.conf
 *.conf
+# Локальный адрес модели (VPN-хост не коммитим)
+model-config.yaml
 # Локальные VPN-профили (могут содержать приватные ключи)
 /cfg/
 
@@ -57,6 +59,7 @@ coverage/
 .mypy_cache/
 .ruff_cache/
 *.egg-info/
+.venv-core/
 
 # Runtime-артефакты приложения (НЕ трогаем data/synth — это эталон, он в трекинге)
 runs/
@@ -75,3 +78,5 @@ __pycache__/
 .idea/
 .DS_Store
 Thumbs.db
+
+worker-heartbeat

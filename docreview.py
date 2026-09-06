@@ -760,6 +760,54 @@ def load_model_config(path):
             raise ModelConfigInvalid(
                 "%s: параметр %s должен быть положительным, получено %r"
                 % (path, key, raw))
+    # Опциональный блок `fallback`: вторая попытка на OpenAI-совместимом
+    # эндпоинте (OpenRouter), когда основной недоступен. Формат определяется
+    # по URL, поэтому отдельный provider не нужен; секрет — переменная
+    # окружения, она читается лениво, в момент переключения (см. run_review).
+    # Числовые поля валидируем теми же правилами, что и основные.
+    fb = conf.get("fallback")
+    if fb is not None:
+        if not isinstance(fb, dict):
+            raise ModelConfigInvalid("%s: fallback должен быть словарём" % path)
+        fb_url = (fb.get("base_url") or fb.get("url")
+                  or fb.get("endpoint") or "")
+        if "/chat/completions" not in fb_url:
+            raise ModelConfigInvalid(
+                "%s: fallback.base_url должен указывать на "
+                "OpenAI-совместимый /chat/completions" % path)
+        fb_model = fb.get("model") or fb.get("name")
+        fb_env = fb.get("api_key_env")
+        if not fb_model:
+            raise ModelConfigInvalid("%s: fallback требует model" % path)
+        if not fb_env and "api_key" not in fb:
+            raise ModelConfigInvalid(
+                "%s: fallback требует api_key_env (или api_key)" % path)
+        # Имена ключей НОРМАЛИЗУЕМ здесь: base_url → url, name → model.
+        # Клиент и логи (run_review._post_openrouter, _fallback) работают
+        # только с url/model/api_key(_env), и рассинхрон имён дорого ловится
+        # в проде, а не на юнит-тестах с прямо заданным словарём.
+        fb_out = {"url": fb_url, "model": fb_model}
+        if fb_env:
+            fb_out["api_key_env"] = fb_env
+        if fb.get("api_key"):
+            fb_out["api_key"] = fb["api_key"]
+        raw = fb.get("timeout")
+        if raw is not None:
+            if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+                raise ModelConfigInvalid(
+                    "%s: fallback.timeout должен быть целым числом, "
+                    "получено %r" % (path, raw))
+            try:
+                fb_out["timeout"] = int(str(raw).strip())
+            except (TypeError, ValueError):
+                raise ModelConfigInvalid(
+                    "%s: fallback.timeout должен быть целым числом, "
+                    "получено %r" % (path, raw))
+            if fb_out["timeout"] <= 0:
+                raise ModelConfigInvalid(
+                    "%s: fallback.timeout должен быть положительным, "
+                    "получено %r" % (path, raw))
+        out["fallback"] = fb_out
     return out
 
 
@@ -832,6 +880,9 @@ def cmd_analyze(args):
             run_review.NUM_CTX = model_conf["num_ctx"]
         if model_conf.get("timeout"):
             run_review.TIMEOUT = model_conf["timeout"]
+        # Фолбек на OpenRouter — опционально: если задан, переживает отказ
+        # основного эндпоинта, не меняя наружного поведения при двойном сбое.
+        run_review.FALLBACK = model_conf.get("fallback")
         try:
             taxonomy_text, valid_ids, defects = run_review.load_taxonomy(
                 pack_defects or _core_path(args.defects))

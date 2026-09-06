@@ -30,6 +30,7 @@ import run_review                                              # noqa: E402
 ROOT = os.path.dirname(os.path.abspath(__file__))
 GENERIC = os.path.join(ROOT, "review-packs", "generic", "1.0")
 MTS = os.path.join(ROOT, "review-packs", "mts-net", "0.2")
+MTS_STRICT = os.path.join(ROOT, "review-packs", "mts-net", "0.3")
 DOC = os.path.join(ROOT, "data", "generic", "service_spec.txt")
 
 
@@ -173,6 +174,49 @@ def test_hdfs_check_never_fires_in_generic_profile():
     assert "HDFS_PATH_INCOMPLETE" not in ids, ids
     # При этом остальные проверки профиля работают.
     assert "PLACEHOLDER_LEFT" in ids, ids
+
+
+def test_quality_modes_differ_only_in_verification():
+    """Режим точности — та же таксономия и ТОТ ЖЕ промпт, другое отсечение.
+
+    Версии 0.2 и 0.3 — это переключатель «полнота / точность» для одного
+    профиля. Критично, что промпт у них идентичен: замер 65% полноты
+    и 79% точности снят при ШИРОКОМ поиске с отсечением на выходе.
+    Если бы 0.3 сужала промпт, замер стал бы недействительным, а цифры
+    в презентации — неверными.
+    """
+    wide = run_review.load_policy(os.path.join(MTS, "policy.yaml"))
+    strict = run_review.load_policy(os.path.join(MTS_STRICT, "policy.yaml"))
+
+    # Промпт побитово тот же — иначе замеренные цифры не относятся к 0.3.
+    assert wide["prompt"] == strict["prompt"]
+    # Отличие ровно одно содержательное: режим верификации.
+    assert wide["verification"]["mode"] == "advisory"
+    assert strict["verification"]["mode"] == "enforcing"
+    # Метка склонности отражает ИТОГ выдачи, по ней человек выбирает режим.
+    assert wide["bias"] == "recall" and strict["bias"] == "precision"
+    # Потолок одинаковый: режим меняет не объём, а строгость отбора.
+    assert wide["ceiling"] == strict["ceiling"]
+
+
+def test_quality_modes_share_taxonomy_and_template():
+    """Профиль тот же — меняется политика, а не правила проверки."""
+    import hashlib
+
+    def digest(path: str) -> str:
+        return hashlib.sha256(open(path, "rb").read()).hexdigest()
+
+    for name in ("defects.yaml", "template.yaml", "glossary.yaml"):
+        assert digest(os.path.join(MTS, name)) == digest(
+            os.path.join(MTS_STRICT, name)
+        ), name
+
+
+def test_strict_mode_pack_resolves():
+    pack_id, version, tpl, dfx, glo, pol, warnings = docreview.resolve_pack(MTS_STRICT)
+    assert (pack_id, version) == ("mts-net", "0.3")
+    assert warnings == []
+    assert all(path for path in (tpl, dfx, glo, pol))
 
 
 TESTS = [v for k, v in sorted(globals().items()) if k.startswith("test_")]

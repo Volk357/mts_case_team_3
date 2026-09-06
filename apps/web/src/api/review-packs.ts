@@ -14,6 +14,8 @@ export interface ReviewPack {
   document_type: string;
   version: string;
   contents: ReviewPackContent[];
+  /** Склонность приёмки профиля; null — пакет её не объявляет. */
+  policy_bias: "recall" | "precision" | "balanced" | null;
 }
 
 export interface ReviewPackCatalog {

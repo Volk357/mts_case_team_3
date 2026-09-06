@@ -18,13 +18,15 @@ import { getReviewPacks, type ReviewPack } from "@/api/review-packs";
  * а не думать, что политика задана.
  */
 export function ReviewPackContents() {
-  const [pack, setPack] = useState<ReviewPack | null>(null);
+  const [packs, setPacks] = useState<ReviewPack[]>([]);
+  const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState(false);
+  const pack = packs[index] ?? null;
 
   useEffect(() => {
     const controller = new AbortController();
     getReviewPacks(controller.signal)
-      .then((catalog) => setPack(catalog.items[0] ?? null))
+      .then((catalog) => setPacks(catalog.items))
       .catch((error: unknown) => {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           setFailed(true);
@@ -47,10 +49,38 @@ export function ReviewPackContents() {
           Что меняется под другую организацию
         </h2>
         <p className="mt-1.5 text-sm leading-6 text-text-secondary">
-          Правила проверки лежат в версионируемом наборе файлов, а не в коде. Сейчас применяется{" "}
-          <span className="font-medium text-text">{pack.display_name}</span>, версия{" "}
-          <span className="font-mono text-[0.9em]">{pack.version}</span>.
+          Правила проверки лежат в версионируемом наборе файлов, а не в коде.
+          {packs.length > 1 ? " Профиль выбирается при запуске проверки." : ""}
         </p>
+
+        {/* Профилей несколько — показываем состав любого, а не только первого.
+            Раньше блок жёстко брал items[0] и писал «сейчас применяется»,
+            и после выбора второго профиля соседний блок противоречил выбору. */}
+        {packs.length > 1 ? (
+          <div className="mt-4 flex flex-wrap gap-2" role="tablist">
+            {packs.map((item, position) => (
+              <button
+                aria-selected={position === index}
+                className={
+                  position === index
+                    ? "rounded-(--radius-sm) border border-accent bg-accent/10 px-3 py-1.5 text-sm font-medium text-accent"
+                    : "rounded-(--radius-sm) border border-border px-3 py-1.5 text-sm text-text-secondary"
+                }
+                key={item.review_pack_id}
+                onClick={() => setIndex(position)}
+                role="tab"
+                type="button"
+              >
+                {item.display_name}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-1.5 text-sm leading-6 text-text-secondary">
+            Сейчас применяется <span className="font-medium text-text">{pack.display_name}</span>,
+            версия <span className="font-mono text-[0.9em]">{pack.version}</span>.
+          </p>
+        )}
 
         <ul className="mt-5 grid gap-px overflow-hidden rounded-(--radius-card) border border-border bg-border">
           {pack.contents.map((part) => (

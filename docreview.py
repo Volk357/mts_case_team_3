@@ -842,7 +842,14 @@ def cmd_analyze(args):
                 # поэтому разбираем его сами и только потом отдаём загрузчику.
                 import yaml as _yaml
                 _yaml.safe_load(open(pack_glossary, encoding="utf-8"))
-            glossary_text = run_review.load_glossary(
+            # РАСПАКОВКА обязательна: load_glossary возвращает ДВА блока —
+            # термины и конвенции компании. Без неё в промпт уходило строковое
+            # представление кортежа целиком («('IMEI — ...', 'конвенции...')»)
+            # со скобками и кавычками, а конвенции не применялись вовсе.
+            # Найдено на ревью 06.09; баг жил с внесения конвенций 4 сентября,
+            # то есть ровно те правила, которые убирали ложные срабатывания
+            # на «дыры, закрытые снаружи», в боевом пути не работали.
+            glossary_text, conventions_text = run_review.load_glossary(
                 pack_glossary or _core_path(args.glossary))
             cfg = check_formal.load_config(pack_template or _core_path("template.yaml"))
         except Exception as e:                      # noqa: BLE001
@@ -871,6 +878,7 @@ def cmd_analyze(args):
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,
+                                      conventions_text=conventions_text,
                                       label="full2", policy=policy)
         except requests.exceptions.RequestException as e:
             raise ModelUnavailable(str(e))

@@ -158,6 +158,8 @@ async def test_catalog_returns_only_active_valid_tenant_packs_without_locator(
                         "present": False,
                     },
                 ],
+                # policy.yaml в этом пакете отсутствует, склонность неизвестна.
+                "policy_bias": None,
             }
         ],
         "total": 1,
@@ -188,6 +190,7 @@ async def test_catalog_is_declared_in_openapi(
         "document_type",
         "version",
         "contents",
+        "policy_bias",
     }
 
 
@@ -653,3 +656,40 @@ async def test_conventional_policy_absence_is_normal(tmp_path: Path, database_ur
     by_key = {part["key"]: part for part in contents}
     assert by_key["policy"]["present"] is False
     assert by_key["template"]["present"] is True
+
+
+@pytest.mark.anyio
+async def test_policy_bias_is_exposed_from_the_pack(tmp_path: Path, database_url: str) -> None:
+    """Склонность приёмки уходит в каталог: по ней человек выбирает профиль."""
+    packs_root = tmp_path / "review-packs"
+    pack = packs_root / "probe"
+    pack.mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: probe\nversion: '1.0'\n", encoding="utf-8")
+    (pack / "policy.yaml").write_text("bias: precision\nceiling: 12\n", encoding="utf-8")
+
+    app = create_app(_single_pack_settings(packs_root, database_url, "probe"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/review-packs")
+
+    assert response.json()["items"][0]["policy_bias"] == "precision"
+
+
+@pytest.mark.anyio
+async def test_unknown_policy_bias_is_not_exposed(tmp_path: Path, database_url: str) -> None:
+    """Незнакомая склонность не показывается вовсе.
+
+    policy.yaml лежит на диске и мог быть собран как угодно; показать
+    непонятную метку в выборе профиля хуже, чем не показать ничего.
+    """
+    packs_root = tmp_path / "review-packs"
+    pack = packs_root / "probe"
+    pack.mkdir(parents=True)
+    (pack / "pack.yaml").write_text("id: probe\nversion: '1.0'\n", encoding="utf-8")
+    (pack / "policy.yaml").write_text("bias: whatever\n", encoding="utf-8")
+
+    app = create_app(_single_pack_settings(packs_root, database_url, "probe"))
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/api/review-packs")
+
+    assert response.json()["items"][0]["policy_bias"] is None
+    assert "whatever" not in response.text

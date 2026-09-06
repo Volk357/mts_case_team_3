@@ -74,6 +74,12 @@ class ReviewPackContent:
     present: bool
 
 
+# Склонность приёмки, которую пакет объявляет в policy.yaml. Наружу
+# выпускается закрытый перечень: значение из файла на диске — не то, что
+# стоит показывать пользователю без проверки.
+PACK_BIASES: frozenset[str] = frozenset({"recall", "precision", "balanced"})
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewPackSnapshot:
     id: UUID
@@ -81,6 +87,9 @@ class ReviewPackSnapshot:
     document_type: str
     version: str
     contents: tuple[ReviewPackContent, ...] = ()
+    # Склонность приёмки профиля: по ней человек выбирает между «покажи
+    # больше» и «покажи только уверенное». None — пакет её не объявляет.
+    policy_bias: str | None = None
 
 
 class ReviewPackCatalogService:
@@ -124,13 +133,36 @@ class ReviewPackCatalogService:
         resolved = self._resolve_locator(record.locator)
         if resolved is None:
             return None
+        contents = self._contents(resolved)
         return ReviewPackSnapshot(
             id=record.id,
             display_name=display_name,
             document_type=document_type,
             version=version,
-            contents=self._contents(resolved),
+            contents=contents,
+            policy_bias=self._policy_bias(resolved, contents),
         )
+
+    def _policy_bias(self, resolved: Path, contents: tuple[ReviewPackContent, ...]) -> str | None:
+        """Склонность приёмки из policy.yaml пакета.
+
+        Имя файла берётся из уже вычисленного состава, чтобы не резолвить
+        манифест второй раз и не разъехаться с ним. Файла нет или он не
+        объявляет склонность — None, интерфейс тогда ничего не подписывает.
+        """
+        policy = next((part for part in contents if part.key == "policy"), None)
+        if policy is None or not policy.present:
+            return None
+        base = resolved.parent if resolved.is_file() else resolved
+        try:
+            with (base / policy.filename).open(encoding="utf-8") as handle:
+                document = yaml.safe_load(handle)
+        except (OSError, ValueError, yaml.YAMLError):
+            return None
+        if not isinstance(document, dict):
+            return None
+        bias = document.get("bias")
+        return bias if isinstance(bias, str) and bias in PACK_BIASES else None
 
     def _contents(self, resolved: Path) -> tuple[ReviewPackContent, ...]:
         """Файлы настройки пакета: как они названы и лежат ли в нём на самом деле.

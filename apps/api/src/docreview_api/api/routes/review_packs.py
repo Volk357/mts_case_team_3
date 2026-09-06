@@ -43,6 +43,7 @@ def list_review_packs(
                 )
                 for part in item.contents
             ],
+            policy_bias=item.policy_bias,
         )
         for item in snapshots
     ]

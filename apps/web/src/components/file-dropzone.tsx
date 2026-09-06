@@ -10,7 +10,7 @@ import { useNavigate } from "react-router-dom";
 
 import { ApiError } from "@/api/client";
 import { uploadDocument, type DocumentUploadResponse } from "@/api/documents";
-import { getReviewPacks } from "@/api/review-packs";
+import { getReviewPacks, type ReviewPack } from "@/api/review-packs";
 import { createReview } from "@/api/reviews";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -38,6 +38,22 @@ const ACCEPTED_TYPES: Record<string, readonly string[]> = {
 };
 
 type UploadPhase = "idle" | "ready" | "uploading" | "success" | "starting" | "error";
+
+/*
+  Как читать политику профиля человеку, который не открывал YAML.
+
+  Потолок и склонность лежат в policy.yaml пакета и уходят в результат;
+  здесь они переводятся в одну фразу, чтобы выбор профиля был осмысленным,
+  а не выбором из двух незнакомых слов. Незнакомая склонность не подписывается
+  никак — лучше не сказать ничего, чем сказать неверно.
+*/
+function policyHint(pack: ReviewPack): string | null {
+  const bias = pack.policy_bias;
+  if (bias === "recall") return "показывает больше, включая спорное";
+  if (bias === "precision") return "показывает только уверенное";
+  if (bias === "balanced") return "сбалансированный отбор";
+  return null;
+}
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} Б`;
@@ -74,6 +90,8 @@ export function FileDropzone() {
   const abortRef = useRef<AbortController | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [phase, setPhase] = useState<UploadPhase>("idle");
+  const [packs, setPacks] = useState<ReviewPack[]>([]);
+  const [packId, setPackId] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<DocumentUploadResponse | null>(null);
@@ -125,15 +143,17 @@ export function FileDropzone() {
   };
 
   // Загрузка и проверка — один шаг для человека: документ загружают, чтобы
-  // его проверили, а не чтобы он лежал. Пакет правил берём первый доступный:
-  // выбор профиля появится, когда пакетов станет больше одного.
+  // его проверили, а не чтобы он лежал.
   const startReview = async () => {
     if (!receipt || phase === "starting") return;
     setPhase("starting");
     setMessage(null);
     try {
-      const packs = await getReviewPacks();
-      const pack = packs.items[0];
+      // Список уже загружен при открытии экрана; здесь запрашиваем его
+      // снова только если он не пришёл — например, когда контур ответил
+      // с задержкой и человек успел выбрать файл.
+      const available = packs.length > 0 ? packs : (await getReviewPacks()).items;
+      const pack = available.find((item) => item.review_pack_id === packId) ?? available[0];
       if (!pack) {
         setPhase("error");
         setMessage("В контуре не настроен ни один профиль проверки. Обратитесь к администратору.");
@@ -150,6 +170,21 @@ export function FileDropzone() {
       setMessage(uploadErrorMessage(error));
     }
   };
+
+  // Профили загружаются при открытии экрана, а не в момент запуска проверки:
+  // человек должен видеть выбор до того, как нажмёт кнопку. Ошибка запроса
+  // не показывается — выбор пропадает, и проверка идёт первым доступным
+  // профилем, как было раньше.
+  useEffect(() => {
+    const controller = new AbortController();
+    getReviewPacks(controller.signal)
+      .then((catalog) => {
+        setPacks(catalog.items);
+        setPackId((current) => current ?? catalog.items[0]?.review_pack_id ?? null);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
 
   const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -265,6 +300,41 @@ export function FileDropzone() {
           >
             <CheckCircle2 aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
             <span>Документ загружен. Проверка занимает около минуты.</span>
+          </div>
+        )}
+
+        {/* Выбор профиля появляется, только когда пакетов больше одного:
+            один профиль выбирать не из чего, и лишний элемент управления
+            на главном экране был бы шумом. */}
+        {packs.length > 1 && phase !== "uploading" && (
+          <div className="mt-5">
+            <label
+              className="block text-sm font-medium"
+              htmlFor="review-pack"
+            >
+              Профиль проверки
+            </label>
+            <select
+              className="mt-1.5 w-full rounded-(--radius-sm) border border-border bg-card px-3 py-2 text-sm"
+              disabled={phase === "starting"}
+              id="review-pack"
+              onChange={(event) => setPackId(event.target.value)}
+              value={packId ?? packs[0].review_pack_id}
+            >
+              {packs.map((pack) => {
+                const hint = policyHint(pack);
+                return (
+                  <option key={pack.review_pack_id} value={pack.review_pack_id}>
+                    {pack.display_name} · {pack.version}
+                    {hint ? ` — ${hint}` : ""}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="mt-1.5 text-sm leading-6 text-text-secondary">
+              Профиль задаёт правила проверки и то, сколько замечаний показывать.
+              Он меняется набором файлов, без изменения приложения.
+            </p>
           </div>
         )}
 

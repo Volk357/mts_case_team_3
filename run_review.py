@@ -480,9 +480,26 @@ def load_glossary(path):
         print(f"     {e}", file=sys.stderr)
         return GLOSSARY, ""
 
-    terms = "\n".join(str(t) for t in data.get("terms", []))
-    conventions = "\n".join(f"- {c}" for c in data.get("conventions", []))
+    terms = "\n".join(_as_line(t) for t in data.get("terms", []))
+    conventions = "\n".join(f"- {_as_line(c)}"
+                            for c in data.get("conventions", []))
     return terms, conventions
+
+
+def _as_line(item):
+    """Одна строка глоссария для промпта.
+
+    Запись может быть строкой или объектом с полями. Без этого объект
+    уходил в промпт как Python-repr — «{'name': ..., 'rule': ...}»
+    со скобками и кавычками. Тот же класс дефекта уже был найден в
+    docreview (нераспакованный кортеж глоссария); здесь он повторился
+    бы на любом пакете, где конвенции записаны объектами.
+    """
+    if isinstance(item, dict):
+        parts = [str(item[k]).strip() for k in ("name", "rule", "term", "meaning")
+                 if item.get(k)]
+        return " — ".join(parts) if parts else ""
+    return str(item).strip()
 
 
 # Жизненный цикл правила. Пункт 7 внешнего аудита: «not_tested и даже

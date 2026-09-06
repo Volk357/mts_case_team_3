@@ -1,5 +1,7 @@
 """Public transport schemas for the Review Packs catalog."""
 
+from typing import Literal
+
 from pydantic import Field
 
 from docreview_api.api.schemas.common import ApiModel, OpaqueId
@@ -24,6 +26,9 @@ class ReviewPackResponse(ApiModel):
     # Состав пакета — чем он перенастраивается под другую компанию.
     # Пустой список допустим: у пакета может не быть манифеста.
     contents: list[ReviewPackContentResponse] = Field(default_factory=list)
+    # Склонность приёмки: по ней человек выбирает профиль. `null` — пакет
+    # её не объявляет, интерфейс тогда ничего не подписывает.
+    policy_bias: Literal["recall", "precision", "balanced"] | None = None
 
 
 class ReviewPackListResponse(ApiModel):

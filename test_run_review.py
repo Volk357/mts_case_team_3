@@ -32,20 +32,21 @@ def test_cap_to_ceiling_high_priority():
     assert len(dropped) == 15 and all(f["severity"] == "medium" for f in dropped)
 
 
-def test_confident_low_beats_weak_medium():
-    # severity × confidence: low с согласием 5 проходов обгоняет medium с 1.
+def test_low_with_more_agreement_beats_weak_medium():
+    # важность × согласие проходов: low с согласием 5 обгоняет medium с 1.
+    # Это НЕ поле `confidence` из выдачи — оно в ранжировании не участвует.
     findings = ([_f("high") for _ in range(19)]
                 + [_f("medium", mc=1), _f("low", mc=5)])
     keep, dropped = apply_budget(findings, ceiling=20)
     assert len(keep) == 20
     kept_rest = [f for f in keep if f["severity"] != "high"]
     assert len(kept_rest) == 1 and kept_rest[0]["severity"] == "low", \
-        "уверенный low (5) должен обойти едва замеченный medium (1)"
+        "low с согласием 5 проходов должен обойти medium с одним"
     assert dropped[0]["severity"] == "medium"
 
 
 def test_content_score_tiebreak():
-    # равный severity×confidence (оба medium, mc=1) → решает содержательность.
+    # равный вес важность × согласие (оба medium, mc=1) → решает содержательность.
     findings = ([_f("high") for _ in range(19)]
                 + [_f("medium", mc=1, quote="кратко"),
                    _f("medium", mc=1, quote="развёрнутая содержательная цитата дефекта")])
@@ -83,7 +84,7 @@ def test_run_full_applies_budget_and_reports_capped(monkeypatch=None):
 
 
 def test_retained_order_follows_priority():
-    # Оба остаются в выводе: уверенный low(mc=5) должен идти РАНЬШЕ medium(mc=1),
+    # Оба остаются в выводе: low с согласием 5 проходов должен идти РАНЬШЕ medium(mc=1),
     # финальная пересортировка по severity этого не отменяет.
     findings = [_f("medium", mc=1), _f("low", mc=5), _f("low", mc=1)]
     keep, dropped = apply_budget(findings, ceiling=2)
@@ -247,7 +248,7 @@ if __name__ == "__main__":
     test_under_budget_returns_input_unchanged()
     test_high_never_cut_even_over_ceiling()
     test_cap_to_ceiling_high_priority()
-    test_confident_low_beats_weak_medium()
+    test_low_with_more_agreement_beats_weak_medium()
     test_content_score_tiebreak()
     test_retained_order_follows_priority()
     test_high_stay_first_in_output()

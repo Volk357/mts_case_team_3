@@ -43,7 +43,7 @@ class ReviewWarning:
     message: str
 
 
-def _public_warnings(raw_result):
+def _public_warnings(raw_result: object) -> tuple[ReviewWarning, ...]:
     """Достаёт предупреждения ядра из сохранённого результата.
 
     Они лежат только в raw_result и до этого наружу не выходили вовсе —
@@ -59,8 +59,14 @@ def _public_warnings(raw_result):
     if not isinstance(items, list):
         return ()
 
-    public = []
+    public: list[ReviewWarning] = []
     for item in items[:MAX_WARNINGS]:
+        # message приходит из нетипизированного raw_result: у строковой формы
+        # это сам item, у объектной — произвольное значение ключа. Объявляем
+        # object, иначе тип выводится по первой ветке и вторая не проходит
+        # проверку; настоящая проверка на str стоит ниже и остаётся.
+        code: str
+        message: object
         if isinstance(item, str):
             code, message = GENERIC_WARNING_CODE, item
         elif isinstance(item, dict):

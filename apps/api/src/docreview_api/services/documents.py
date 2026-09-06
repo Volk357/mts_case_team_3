@@ -5,9 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.db.models import DocumentModel, ReviewJobModel
@@ -155,15 +157,21 @@ class DocumentCleanupService:
             )
             # Проверка и пометка одним оператором: между ними не может
             # вклиниться постановка новой проверки.
-            marked = session.execute(
-                update(DocumentModel)
-                .where(
-                    DocumentModel.id == document_id,
-                    DocumentModel.company_id == company_id,
-                    DocumentModel.deleted_at.is_(None),
-                    ~has_active_review,
-                )
-                .values(deleted_at=datetime.now(UTC))
+            # cast, а не type: ignore: UPDATE всегда возвращает CursorResult,
+            # и так это уже записано в repositories/database.py. ignore сделал
+            # бы всё выражение Any и снял проверку с самого rowcount.
+            marked = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(DocumentModel)
+                    .where(
+                        DocumentModel.id == document_id,
+                        DocumentModel.company_id == company_id,
+                        DocumentModel.deleted_at.is_(None),
+                        ~has_active_review,
+                    )
+                    .values(deleted_at=datetime.now(UTC))
+                ),
             ).rowcount
 
             if not marked:

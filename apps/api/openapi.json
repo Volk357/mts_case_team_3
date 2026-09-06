@@ -624,6 +624,39 @@
         "title": "ReviewListResponse",
         "type": "object"
       },
+      "ReviewPackContentResponse": {
+        "additionalProperties": false,
+        "description": "Один файл настройки пакета: что он задаёт и лежит ли он в пакете.",
+        "properties": {
+          "description": {
+            "minLength": 1,
+            "title": "Description",
+            "type": "string"
+          },
+          "filename": {
+            "minLength": 1,
+            "title": "Filename",
+            "type": "string"
+          },
+          "key": {
+            "minLength": 1,
+            "title": "Key",
+            "type": "string"
+          },
+          "present": {
+            "title": "Present",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "key",
+          "filename",
+          "description",
+          "present"
+        ],
+        "title": "ReviewPackContentResponse",
+        "type": "object"
+      },
       "ReviewPackListResponse": {
         "additionalProperties": false,
         "description": "Stable envelope for the tenant-visible Review Pack catalog.",
@@ -652,6 +685,13 @@
         "additionalProperties": false,
         "description": "Public metadata for one server-approved Review Pack version.",
         "properties": {
+          "contents": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewPackContentResponse"
+            },
+            "title": "Contents",
+            "type": "array"
+          },
           "display_name": {
             "minLength": 1,
             "title": "Display Name",

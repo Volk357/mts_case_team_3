@@ -5,6 +5,15 @@ from pydantic import Field
 from docreview_api.api.schemas.common import ApiModel, OpaqueId
 
 
+class ReviewPackContentResponse(ApiModel):
+    """Один файл настройки пакета: что он задаёт и лежит ли он в пакете."""
+
+    key: str = Field(min_length=1)
+    filename: str = Field(min_length=1)
+    description: str = Field(min_length=1)
+    present: bool
+
+
 class ReviewPackResponse(ApiModel):
     """Public metadata for one server-approved Review Pack version."""
 
@@ -12,6 +21,9 @@ class ReviewPackResponse(ApiModel):
     display_name: str = Field(min_length=1)
     document_type: str = Field(min_length=1)
     version: str = Field(min_length=1)
+    # Состав пакета — чем он перенастраивается под другую компанию.
+    # Пустой список допустим: у пакета может не быть манифеста.
+    contents: list[ReviewPackContentResponse] = Field(default_factory=list)
 
 
 class ReviewPackListResponse(ApiModel):

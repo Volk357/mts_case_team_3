@@ -1,6 +1,7 @@
 import { ArrowDown, Building2, FileSearch, ShieldCheck } from "lucide-react";
 
 import { FileDropzone } from "@/components/file-dropzone";
+import { ReviewPackContents } from "@/components/review-pack-contents";
 import { Button } from "@/components/ui/button";
 
 const benefits = [
@@ -58,6 +59,8 @@ export function HomePage() {
           ))}
         </dl>
       </section>
+
+      <ReviewPackContents />
     </div>
   );
 }

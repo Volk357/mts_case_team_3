@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.api.schemas.review_packs import (
+    ReviewPackContentResponse,
     ReviewPackListResponse,
     ReviewPackResponse,
 )
@@ -33,6 +34,15 @@ def list_review_packs(
             display_name=item.display_name,
             document_type=item.document_type,
             version=item.version,
+            contents=[
+                ReviewPackContentResponse(
+                    key=part.key,
+                    filename=part.filename,
+                    description=part.description,
+                    present=part.present,
+                )
+                for part in item.contents
+            ],
         )
         for item in snapshots
     ]

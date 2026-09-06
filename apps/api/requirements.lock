@@ -120,6 +120,8 @@ starlette==1.6.0
     # via fastapi
 types-jsonschema==4.26.0.20260518
     # via -r requirements-dev.in
+types-pyyaml==6.0.12.20260906
+    # via -r requirements-dev.in
 typing-extensions==4.16.0
     # via
     #   alembic

@@ -485,10 +485,91 @@ def load_glossary(path):
     return terms, conventions
 
 
-def load_taxonomy(path):
-    """Возвращает (текст для промпта, множество id, список определений)."""
+# Жизненный цикл правила. Пункт 7 внешнего аудита: «not_tested и даже
+# rejected правила продолжают работать».
+#
+# Претензия подтвердилась буквально: в defects.yaml было поле `validated`
+# со значениями not_tested (18 типов из 29) и rejected (3), и код его
+# НЕ ЧИТАЛ нигде — ни промпт, ни детерминированный слой.
+#
+# Но `validated` — не жизненный цикл, и подменять одно другим нельзя:
+# это отметка внешней валидации на ОДНОМ документе кейсодателя (n=12).
+# Три типа с `rejected` дают настоящие находки на эталоне, и отключить
+# их по этой отметке значило бы потерять полноту из-за наблюдения,
+# сделанного на двенадцати замечаниях. Поэтому `validated` остаётся
+# наблюдением, а управление — это отдельное поле `status`.
+#
+#   draft       — правило пишется. Не идёт ни в промпт, ни в проверки.
+#   calibrating — работает, но помечено: наблюдений мало или нет вовсе.
+#                 Находки уходят с пометкой, чтобы человек знал, что
+#                 полнота и точность по этому типу не измерены.
+#   active      — работает как обычно.
+#   deprecated  — не применяется. Определение остаётся, чтобы читались
+#                 старые результаты, где этот тип встречается.
+RULE_STATUSES = ("draft", "calibrating", "active", "deprecated")
+RULE_STATUS_DEFAULT = "active"
+# Статусы, при которых правило вообще не применяется.
+RULE_STATUSES_INACTIVE = ("draft", "deprecated")
+
+
+class TaxonomyInvalid(Exception):
+    """Таксономия непригодна: неизвестный статус правила."""
+
+
+def rule_status(defect):
+    """Статус правила; отсутствие поля — `active`.
+
+    Умолчание, а не обязательное поле: таксономии, выпущенные до 06.09.2026,
+    поля не содержат, и требовать его значило бы сломать их все разом ради
+    механизма, который для них ничего не меняет. Зато НЕИЗВЕСТНОЕ значение
+    — ошибка: опечатка в статусе иначе молча включала бы правило.
+    """
+    value = defect.get("status", RULE_STATUS_DEFAULT)
+    if value not in RULE_STATUSES:
+        raise TaxonomyInvalid(
+            "тип %s: неизвестный status %r (допустимы: %s)"
+            % (defect.get("id", "?"), value, ", ".join(RULE_STATUSES)))
+    return value
+
+
+def active_defects(defects):
+    """Правила, которые применяются: всё, кроме draft и deprecated."""
+    return [d for d in defects if rule_status(d) not in RULE_STATUSES_INACTIVE]
+
+
+def rule_status_map(path):
+    """Словарь id → status по ПОЛНОМУ списку правил таксономии.
+
+    Нужен там, где типы приходят не из таксономии: детерминированный слой
+    работает по template.yaml, и его находки надо отсеивать по тому же
+    статусу, иначе выключённое правило продолжало бы срабатывать в одном
+    из двух слоёв — ровно та половинчатость, на которую указывал аудит.
+    """
     data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
-    defects = data["defects"]
+    return {d["id"]: rule_status(d) for d in data["defects"]}
+
+
+def load_taxonomy(path):
+    """Возвращает (текст для промпта, множество id, список определений).
+
+    Правила в статусе draft и deprecated исключаются ЗДЕСЬ, на входе:
+    и из текста для промпта, и из множества допустимых id (`verify`
+    отбрасывает находки с неизвестным идентификатором), и из списка,
+    по которому работает межслойный фильтр. Один источник отсечения,
+    а не три расходящихся.
+
+    Полный список остаётся доступен через ключ `all`: он нужен для
+    диагностики и для чтения старых результатов.
+    """
+    data = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    all_defects = data["defects"]
+    for d in all_defects:                    # ранняя проверка всех статусов
+        rule_status(d)
+    defects = active_defects(all_defects)
+    dropped = len(all_defects) - len(defects)
+    if dropped:
+        print(f"[taxonomy] правил всего {len(all_defects)}, применяется "
+              f"{len(defects)}, отключено по статусу {dropped}")
     ids = {d["id"] for d in defects}
     return render_taxonomy(defects), ids, defects
 

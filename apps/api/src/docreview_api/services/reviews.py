@@ -130,6 +130,35 @@ def _detection_layer(detected_by: list[str]) -> DetectionLayer | None:
     return "rule" if rule else "model"
 
 
+# Статус правила из сохранённого результата ядра.
+#
+# Читается из raw_result, а не из колонки: заводить поле в БД ради пометки,
+# которая нужна только для показа, значит тянуть миграцию. Тот же приём уже
+# применён для предупреждений (_public_warnings).
+#
+# Наружу выпускается ЗАКРЫТЫЙ перечень. Ядро пишет поле только когда статус
+# не `active`, но полагаться на это нельзя: незнакомое значение лучше не
+# показать вовсе, чем показать аналитику непонятную метку.
+_PUBLIC_RULE_STATUSES = frozenset({"calibrating", "draft", "deprecated"})
+
+
+def _rule_statuses(raw_result: object) -> dict[int, str]:
+    """ordinal → статус правила, только для непустых и известных значений."""
+    if not isinstance(raw_result, dict):
+        return {}
+    findings = raw_result.get("findings")
+    if not isinstance(findings, list):
+        return {}
+    statuses: dict[int, str] = {}
+    for ordinal, item in enumerate(findings):
+        if not isinstance(item, dict):
+            continue
+        value = item.get("rule_status")
+        if isinstance(value, str) and value in _PUBLIC_RULE_STATUSES:
+            statuses[ordinal] = value
+    return statuses
+
+
 @dataclass(frozen=True, slots=True)
 class ReviewListItem:
     """Одна строка истории проверок.
@@ -160,6 +189,9 @@ class FindingSnapshot:
     problem: str
     clarification: str
     detection_layer: DetectionLayer | None
+    # Статус правила: `calibrating` означает, что полнота и точность
+    # по этому типу не измерены. None — правило действующее (`active`).
+    rule_status: str | None
 
 
 class ReviewQueryService:
@@ -224,14 +256,15 @@ class ReviewQueryService:
 
     def list_findings(self, review_id: UUID, *, company_id: UUID) -> tuple[FindingSnapshot, ...]:
         with self._session_factory() as session:
-            exists = session.scalar(
-                select(ReviewJobModel.id).where(
+            job = session.scalar(
+                select(ReviewJobModel).where(
                     ReviewJobModel.id == review_id,
                     ReviewJobModel.company_id == company_id,
                 )
             )
-            if exists is None:
+            if job is None:
                 raise ReviewUnavailableError
+            statuses = _rule_statuses(job.raw_result)
             findings = session.scalars(
                 select(FindingModel)
                 .where(
@@ -252,6 +285,7 @@ class ReviewQueryService:
                     problem=item.problem,
                     clarification=item.clarification,
                     detection_layer=_detection_layer(item.detected_by),
+                    rule_status=statuses.get(item.ordinal),
                 )
                 for item in findings
             )

@@ -83,6 +83,28 @@ def _section_path(quote, lines, cfg, is_section_header):
     return []
 
 
+def _split_by_rule_status(findings, statuses):
+    """Делит находки на применяемые и отброшенные по статусу правила.
+
+    Тип, которого нет в таксономии, СЧИТАЕТСЯ ПРИМЕНЯЕМЫМ. Детерминированный
+    слой выдаёт типы, определённые шаблоном (например TEMPLATE_SECTION_MISSING),
+    и молча гасить их из-за отсутствия в defects.yaml значило бы выключить
+    проверку, которую никто не выключал.
+    """
+    import run_review
+    off = [f for f in findings
+           if statuses.get(f.get("defect_id")) in run_review.RULE_STATUSES_INACTIVE]
+    if not off:
+        return findings, []
+    # Отсев по тождеству объекта, а не по равенству словарей. На корректность
+    # это не влияет — равные находки несут один defect_id и потому один
+    # статус, — но `f not in off` сравнивало бы словари попарно на каждом
+    # шаге. Проверено подсадкой: тест на равные находки обе реализации
+    # проходят одинаково, поэтому выдавать это за защиту от путаницы нельзя.
+    dropped = {id(f) for f in off}
+    return [f for f in findings if id(f) not in dropped], off
+
+
 def _verification(f, deterministic):
     """Состояние семантической проверки для выдачи.
 
@@ -106,12 +128,20 @@ def _verification(f, deterministic):
             "reason": verdict.get("reason", "")}
 
 
-def _map_finding(f, i, deterministic, lines, cfg, is_section_header):
+def _map_finding(f, i, deterministic, lines, cfg, is_section_header,
+                 statuses=None):
     quote = f.get("quote", "") or ""
     did = f.get("defect_id", "UNKNOWN")
     if not re.match(r"^[A-Z][A-Z0-9_]*$", did):
         did = "UNKNOWN"
+    # Статус правила уходит наружу только когда он НЕ active: иначе поле
+    # было бы шумом на каждом замечании. `calibrating` означает, что
+    # полнота и точность по этому типу не измерены, и человек вправе
+    # знать это, а не узнавать постфактум.
+    status = (statuses or {}).get(did, "active")
+    extra = {"rule_status": status} if status != "active" else {}
     return {
+        **extra,
         "id": "f-%03d" % i,
         "defect_id": did,
         "severity": _SEV_MAP.get(f.get("severity", "medium"), "medium"),
@@ -184,7 +214,7 @@ def build_review_result(text, filename, document_type, formal_findings,
                         llm_findings, run_id, pack, model_name,
                         prompt_versions, total_ms, warnings=None,
                         total_candidates=None, verified_candidates=None, cfg=None,
-                        document_sha256=None, policy=None):
+                        document_sha256=None, policy=None, rule_statuses=None):
     """Чистая сборка ReviewResult (completed). Тестируется без модели.
 
     cfg — уже загруженный шаблон (из Review Pack, если он его содержит). Если
@@ -207,7 +237,8 @@ def build_review_result(text, filename, document_type, formal_findings,
     is_sh = check_formal.is_section_header
     lines = text.splitlines()
 
-    findings = [_map_finding(f, i, det, lines, cfg, is_sh) for i, (f, det)
+    findings = [_map_finding(f, i, det, lines, cfg, is_sh, rule_statuses)
+                for i, (f, det)
                 in enumerate(_rank_union(formal_findings, llm_findings,
                                          ceiling=policy["ceiling"]))]
 
@@ -781,10 +812,18 @@ def cmd_analyze(args):
         except run_review.PolicyInvalid as e:
             raise ReviewPackInvalid(str(e))
         known = run_review.extract_known_objects(text)
+        # Статусы правил — по ПОЛНОМУ списку таксономии: детерминированный
+        # слой работает по template.yaml и о статусах не знает, поэтому
+        # выключенное правило иначе продолжало бы срабатывать в нём.
+        statuses = run_review.rule_status_map(pack_defects or _core_path(args.defects))
         formal = _verified_formal(check_formal.run(text, cfg), text, warnings)
+        formal, formal_off = _split_by_rule_status(formal, statuses)
+        if formal_off:
+            print("[taxonomy] отброшено находок выключенных правил: %d"
+                  % len(formal_off), file=sys.stderr)
         partial_formal = formal            # виден в except: см. ниже
         partial_context = (cfg, doc_type, pack_id, pack_version, document_sha256,
-                           policy)
+                           policy, statuses)
         try:
             llm = run_review.run_full(text, defects, taxonomy_text, valid_ids, known,
                                       frag_mode="dict2", glossary_text=glossary_text,
@@ -810,7 +849,8 @@ def cmd_analyze(args):
             (time.time() - t0) * 1000, warnings,
             total_candidates=llm["found_raw"] + len(formal),
             verified_candidates=llm["verified"] + len(formal), cfg=cfg,
-            document_sha256=document_sha256, policy=policy)
+            document_sha256=document_sha256, policy=policy,
+            rule_statuses=statuses)
     except ModelUnavailable as e:
         # Детерминированный слой к этому моменту уже посчитан и от сети не
         # зависит. Выбрасывать его вместе с ошибкой модели — терять готовый
@@ -819,7 +859,7 @@ def cmd_analyze(args):
         # чтобы никто не принял неполную проверку за полную.
         if partial_formal:
             (cfg, doc_type, pack_id, pack_version, document_sha256,
-             policy) = partial_context
+             policy, statuses) = partial_context
             # Текст исключения сюда НЕ подставляем: предупреждение уходит на
             # экран пользователю, а в исключении сетевой библиотеки лежат
             # внутренний адрес и порт модели. Диагностика — в поток ошибок.
@@ -837,7 +877,8 @@ def cmd_analyze(args):
                 (time.time() - t0) * 1000, warnings,
                 total_candidates=len(partial_formal),
                 verified_candidates=len(partial_formal), cfg=cfg,
-                document_sha256=document_sha256, policy=policy)
+                document_sha256=document_sha256, policy=policy,
+                rule_statuses=statuses)
             _write(args.output, partial)
             return 0
         # Правил тоже нет — показывать нечего, честный отказ.

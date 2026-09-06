@@ -383,6 +383,22 @@
             "title": "Quote",
             "type": "string"
           },
+          "rule_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "calibrating",
+                  "draft",
+                  "deprecated"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rule Status"
+          },
           "severity": {
             "enum": [
               "critical",

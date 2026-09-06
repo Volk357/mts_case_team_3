@@ -75,6 +75,10 @@ class FindingResponse(ApiModel):
     # внутренние имена проверок, и наружу они не выходят. Здесь закрытый
     # перечень, `null` — слой неизвестен, интерфейс тогда ничего не пишет.
     detection_layer: Literal["rule", "model", "mixed"] | None = None
+    # Статус правила, по которому найдено замечание. `calibrating` значит,
+    # что полнота и точность по этому типу не измерены — аналитик вправе
+    # знать это до того, как поверит замечанию. `null` — правило действующее.
+    rule_status: Literal["calibrating", "draft", "deprecated"] | None = None
 
 
 class FindingsResponse(ApiModel):

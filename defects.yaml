@@ -86,6 +86,7 @@ conventions:
 defects:
 
   - id: DANGLING_REFERENCE
+    status: calibrating  # наблюдений в эталоне нет — полнота по типу не измерена
     name: Ссылка на несуществующий объект
     focus_area: fields
     severity: high
@@ -126,6 +127,7 @@ defects:
       Требуется добавить перечень или ссылку.
 
   - id: DANGLING_SECTION_REFERENCE
+    status: active
     name: Ссылка на отсутствующий раздел документа
     focus_area: fields
     severity: high
@@ -145,6 +147,7 @@ defects:
       Требуется исправить ссылку или добавить раздел.
 
   - id: INTERNAL_CONTRADICTION
+    status: active
     name: Внутреннее противоречие
     focus_area: common
     severity: high
@@ -191,6 +194,7 @@ defects:
       из двух наугад. Требуется зафиксировать целевое поведение.
 
   - id: INCOMPLETE_SCHEMA
+    status: active
     name: Структура данных описана не полностью
     focus_area: fields
     severity: high
@@ -226,6 +230,7 @@ defects:
       полей с типами либо ссылку на описание.
 
   - id: UNDEFINED_EDGE_CASE
+    status: active
     name: Не описана обработка граничного случая
     focus_area: fields
     severity: high
@@ -261,6 +266,7 @@ defects:
       От выбора зависят итоговые цифры витрины. Требуется уточнить.
 
   - id: AMBIGUOUS_LOGIC
+    status: active
     name: Неоднозначная формулировка логики
     focus_area: fields
     severity: high
@@ -292,6 +298,7 @@ defects:
       Требуется однозначная формулировка.
 
   - id: UNSPECIFIED_FORMAT
+    status: active
     name: Не задана единица измерения или перечень допустимых значений
     focus_area: fields
     severity: medium
@@ -328,6 +335,7 @@ defects:
       Для поля {field} не указан{a} {what}. Требуется дополнить описание.
 
   - id: DUPLICATE_SEMANTICS
+    status: active
     name: Дублирование смысла между полями
     focus_area: fields
     severity: medium
@@ -345,6 +353,7 @@ defects:
       или объединить.
 
   - id: SCHEMA_INCONSISTENCY
+    status: calibrating  # наблюдений в эталоне нет — полнота по типу не измерена
     name: Несогласованность схем между объектами
     focus_area: fields
     severity: medium
@@ -378,6 +387,7 @@ defects:
       Требуется пояснить, намеренное ли это расхождение.
 
   - id: SCHEMA_TYPE_MISMATCH
+    status: active
     name: Тип одноимённого поля различается между таблицами
     focus_area: fields
     severity: medium
@@ -396,6 +406,7 @@ defects:
       Требуется привести типы к одному или описать приведение при загрузке.
 
   - id: MISSING_SOURCE_LOCATION
+    status: active
     name: Не указано расположение источника или кластера
     focus_area: sources
     severity: high
@@ -430,6 +441,7 @@ defects:
       подключиться к источнику. Требуется дополнить.
 
   - id: PLACEHOLDER_LEFT
+    status: active
     name: Незаполненный плейсхолдер
     focus_area: common
     severity: medium
@@ -454,6 +466,7 @@ defects:
       Требуется заменить на реальное значение.
 
   - id: FILTER_RESULT_UNDEFINED
+    status: active
     name: Не описана судьба отфильтрованных записей
     focus_area: filter
     severity: high
@@ -473,6 +486,7 @@ defects:
       с отсеянными записями. Требуется уточнить.
 
   - id: NO_FILTER_DESCRIPTION
+    status: active
     name: Фильтрация не описана вовсе
     focus_area: filter
     severity: high
@@ -502,6 +516,7 @@ defects:
       Требуется указать поле и условие фильтрации.
 
   - id: NO_DEDUP_OR_KEY
+    status: active
     name: Не задан ключ, гранулярность или правило дедупликации
     focus_area: fields
     severity: high
@@ -533,6 +548,7 @@ defects:
       Для {table} не зафиксирован{a} {what}. Требуется указать явно.
 
   - id: NO_VOLUME_ESTIMATE
+    status: active
     name: Не указан объём данных
     focus_area: volume
     severity: medium
@@ -553,6 +569,7 @@ defects:
       Требуется для планирования ресурсов.
 
   - id: NO_SCHEDULE
+    status: active
     name: Не указан регламент обновления
     focus_area: volume
     severity: clarification
@@ -578,6 +595,7 @@ defects:
       Стоит зафиксировать в документе.
 
   - id: RETENTION_GAP
+    status: active
     name: Срок хранения указан не для всех слоёв
     focus_area: volume
     severity: low
@@ -591,6 +609,7 @@ defects:
       Срок хранения указан для {covered}, но не для {missing}.
 
   - id: TIMEZONE_UNDEFINED
+    status: active
     name: Часовой пояс не назван
     focus_area: fields
     severity: high
@@ -604,6 +623,7 @@ defects:
       Проверять значение поля «Часовой пояс»: должно быть конкретное
       обозначение (UTC, смещение, зона IANA).
   - id: TIMEZONE_INCONSISTENT
+    status: calibrating  # наблюдений в эталоне нет — полнота по типу не измерена
     name: Трактовка часового пояса расходится между разделами
     focus_area: fields
     severity: high
@@ -630,6 +650,7 @@ defects:
       смещения. Требуется зафиксировать.
 
   - id: PII_NO_PROTECTION
+    status: active
     name: Персональные данные без требований к защите
     focus_area: common
     severity: medium
@@ -649,6 +670,7 @@ defects:
       Требования к защите не описаны.
 
   - id: TEXT_STRUCTURE_ERROR
+    status: active
     name: Ошибка изложения в алгоритме
     focus_area: fields
     severity: low
@@ -673,6 +695,7 @@ defects:
   # -------------------------------------------------------------
 
   - id: SERIALIZATION_UNSPECIFIED
+    status: active
     name: Не указана модель сериализации потока
     focus_area: sources
     severity: high
@@ -696,6 +719,7 @@ defects:
       Требование кейсодателя №1. Требуется дополнить.
 
   - id: REFERENCE_LIST_MISSING
+    status: active
     name: Нет перечня используемых справочников
     focus_area: fields
     severity: medium
@@ -724,6 +748,7 @@ defects:
   # -------------------------------------------------------------
 
   - id: TEMPLATE_SECTION_MISSING
+    status: active
     name: Раздел шаблона удалён, а не помечен «не применимо»
     focus_area: common
     severity: medium
@@ -746,6 +771,7 @@ defects:
       разделы сохраняются, неприменимые помечаются «не применимо».
 
   - id: NULLABILITY_UNSPECIFIED
+    status: active
     name: Не указан признак обязательности поля
     focus_area: fields
     severity: medium
@@ -766,6 +792,7 @@ defects:
       (NOT NULL / NULLABLE). Требование кейсодателя №3.
 
   - id: DATA_CATALOG_MISSING
+    status: active
     name: Нет прямой ссылки на Дата-каталог
     focus_area: sources
     severity: high
@@ -784,6 +811,7 @@ defects:
       Требование кейсодателя №2.
 
   - id: HDFS_PATH_INCOMPLETE
+    status: active
     name: Путь HDFS без указания формата
     focus_area: sources
     severity: medium
@@ -803,6 +831,7 @@ defects:
       Требование кейсодателя №7.
 
   - id: VAGUE_WORDING
+    status: calibrating  # наблюдений в эталоне нет — полнота по типу не измерена
     name: Расплывчатая формулировка (лазейка / незакрытый перечень)
     focus_area: text
     severity: low

@@ -103,6 +103,26 @@ SCHEMA = {
     },
 }
 
+# Схема ответа верификатора. Отдельная от SCHEMA: верификатор не порождает
+# замечаний, он выносит суждение по уже готовым, и позволять ему возвращать
+# форму находки значило бы дать ему дописывать выдачу.
+VERDICT_SCHEMA = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            # Номер кандидата в поданном списке. Строкой модель промахивается
+            # реже, чем числом, но принимаем и то и другое — см. _verdict_index.
+            "id": {"type": ["integer", "string"]},
+            "verdict": {"type": "string", "enum": ["accept", "reject"]},
+            # Причина короткая: она не показывается пользователю, а нужна
+            # для разбора, почему верификатор отверг находку.
+            "reason": {"type": "string", "maxLength": 200},
+        },
+        "required": ["id", "verdict", "reason"],
+    },
+}
+
 # Термины, которые в документации МТС не расшифровывают.
 # Кейсодатель подтвердил: часть вещей опускается намеренно,
 # потому что они общеизвестны внутри команды.
@@ -354,6 +374,60 @@ PROMPT_DICT2 = """Ты ревьюишь техническое задание н
 ФРАГМЕНТ ТЕХНИЧЕСКОГО ЗАДАНИЯ:
 {fragment}"""
 
+# Промпт слоя верификации. Отдельный проход, а не часть поиска.
+#
+# Зачем он существует. Аудит 06.09.2026: «Один и тот же подход сначала
+# придумывает замечание, затем фактически подтверждает его. Это
+# коррелированная проверка, а не независимая верификация» и «Candidate
+# автоматически становится finding: должны существовать отдельные состояния
+# Candidate → Evidence check → Semantic verdict → Accepted finding».
+#
+# Evidence check (цитата есть в документе побуквенно) у нас стоял в боевом
+# пути и раньше. Не хватало ровно semantic verdict: между «цитата настоящая»
+# и «замечание показано» стояли только дедупликация и бюджет, то есть отбор
+# по важности, а не суждение о справедливости.
+#
+# Три решения, делающие проверку менее коррелированной с генерацией:
+#
+# 1. Верификатору НЕ показывается `suggestion` — собственная рекомендация
+#    генератора. Иначе он оценивал бы связку «проблема + её решение»,
+#    которая выглядит убедительно просто потому, что написана согласованно.
+# 2. Задача поставлена обратной: не «подтверди», а «найди основание
+#    отвергнуть». Модель, которую просят проверить своё же утверждение,
+#    соглашается почти всегда.
+# 3. Верификатор не видит таксономию целиком — только тип разбираемого
+#    замечания. Полный список типов подсказывает, что «что-нибудь да
+#    подходит», и это возвращает ту же склонность к выдаче.
+#
+# Чего этот слой НЕ делает: он не становится независимым источником истины.
+# Это та же модель, и на семантических типах её согласие с самой собой
+# остаётся коррелированным. Честная формулировка — «второе мнение с иной
+# постановкой задачи», а не «независимая верификация».
+PROMPT_VERIFY = """Ты проверяешь чужие замечания к техническому заданию на витрину данных. Ты не ищешь новые проблемы — ты решаешь, обоснованы ли уже выданные.
+
+Твоя задача — отвергнуть замечание, если для этого есть основание. Согласие по умолчанию бесполезно: замечание, которое не выдержит вопроса аналитика, лучше убрать сейчас.
+
+ОТВЕРГАЙ (verdict: reject), если верно хотя бы одно:
+1. То, чего замечание требует, в процитированном месте УЖЕ ЕСТЬ — явно или очевидным следствием.
+2. Замечание не соответствует своему типу: описанная проблема относится к другому виду дефекта.
+3. Претензия не к документу, а к решению его авторов: выбрана одна из допустимых альтернатив, и документ вправе её зафиксировать.
+4. Замечание требует того, что этот документ описывать не обязан: настройки инфраструктуры, содержание чужого регламента, детали реализации.
+5. Объяснение не опирается на процитированный текст: говорит о том, чего в цитате нет.
+
+ПРИНИМАЙ (verdict: accept), если в процитированном месте действительно не хватает названного, и разработчик придёт с вопросом.
+
+Работай по каждому замечанию отдельно. Одинаковые формулировки объяснения — не повод для одинакового вердикта: смотри на конкретную цитату.
+
+В reason назови основание одной фразой: при reject — номер сработавшего правила и что именно уже есть или чему не соответствует; при accept — чего конкретно не хватает.
+
+ЗАМЕЧАНИЯ НА ПРОВЕРКУ:
+{candidates}
+
+ФРАГМЕНТ ДОКУМЕНТА, ИЗ КОТОРОГО ОНИ ВЗЯТЫ:
+{fragment}
+
+Верни массив json: по объекту на каждое замечание, поле id — номер замечания из списка. Без пояснений."""
+
 PROMPTS = {
     "baseline": PROMPT_BASELINE,
     "taxonomy": PROMPT_TAXONOMY,
@@ -566,6 +640,14 @@ def verify(findings, source, valid_ids):
     kept, dropped = [], []
 
     for f in findings:
+        # Служебные поля, пришедшие ОТ МОДЕЛИ, снимаем здесь — на входе
+        # в систему. Схема ответа лишние ключи не запрещает, поэтому модель
+        # вправе вернуть собственный `_verdict`, и он выглядел бы как
+        # суждение верификатора: находка ушла бы в выдачу с состоянием
+        # `accepted`, не пройдя никакой проверки, — в том числе при
+        # verification.mode = off.
+        if isinstance(f, dict):
+            f.pop("_verdict", None)
         raw_quote = f.get("quote", "")
         q = normalize(raw_quote)
 
@@ -873,9 +955,22 @@ CONTRACT_MAX_FINDINGS = 20
 # (полнота 88% по месту / 77% по типу). Менять их здесь нельзя: политика —
 # это версионируемый артефакт пакета, а не константа кода. Ради этого
 # правила файл review-packs/mts-net/0.2/policy.yaml и существует.
+# Слой семантической верификации по умолчанию.
+#
+# mode=advisory намеренно: слой ВЫНОСИТ суждение и кладёт его в результат,
+# но выдачу не меняет. Причина в порядке действий, а не в осторожности —
+# цену независимой проверки нельзя измерить, если она сразу же начинает
+# менять то, что измеряют. Сначала замер (сколько отвергнуто и справедливо
+# ли), потом решение о включении enforcing, и это решение — версия пакета.
+DEFAULT_VERIFICATION = {
+    "mode": "advisory",     # off | advisory | enforcing
+    "batch_size": 8,        # замечаний в одном вызове верификатора
+}
+
 DEFAULT_POLICY = {
     "ceiling": BUDGET_CEILING,
     "bias": "recall",
+    "verification": dict(DEFAULT_VERIFICATION),
     "prompt": {
         "bias": "Полнота важнее осторожности. Пропущенная проблема хуже "
                 "лишней придирки. Сомневаешься — выдавай.",
@@ -901,7 +996,9 @@ class PolicyInvalid(Exception):
     """
 
 
-POLICY_TOP_KEYS = ("ceiling", "bias", "prompt")
+POLICY_TOP_KEYS = ("ceiling", "bias", "prompt", "verification")
+POLICY_VERIFICATION_KEYS = ("mode", "batch_size")
+POLICY_VERIFICATION_MODES = ("off", "advisory", "enforcing")
 
 
 def _names(keys):
@@ -1005,7 +1102,30 @@ def load_policy(path=None):
             raise PolicyInvalid("политика %s: prompt.%s должен быть непустой "
                                 "строкой" % (path, key))
         texts[key] = value.strip()
-    return {"ceiling": ceiling, "bias": bias, "prompt": texts}
+
+    verification = raw["verification"]
+    if not isinstance(verification, dict):
+        raise PolicyInvalid("политика %s: verification должен быть словарём" % path)
+    unknown = set(verification) - set(POLICY_VERIFICATION_KEYS)
+    if unknown:
+        raise PolicyInvalid("политика %s: неизвестные ключи verification: %s"
+                            % (path, _names(unknown)))
+    missing = [k for k in POLICY_VERIFICATION_KEYS if k not in verification]
+    if missing:
+        raise PolicyInvalid("политика %s: verification не объявляет: %s"
+                            % (path, ", ".join(missing)))
+    mode = verification["mode"]
+    if mode not in POLICY_VERIFICATION_MODES:
+        raise PolicyInvalid("политика %s: verification.mode должен быть одним "
+                            "из %s, получено %r"
+                            % (path, ", ".join(POLICY_VERIFICATION_MODES), mode))
+    batch = verification["batch_size"]
+    if isinstance(batch, bool) or not isinstance(batch, int) or batch < 1:
+        raise PolicyInvalid("политика %s: verification.batch_size должен быть "
+                            "целым числом не меньше 1" % path)
+
+    return {"ceiling": ceiling, "bias": bias, "prompt": texts,
+            "verification": {"mode": mode, "batch_size": batch}}
 
 
 def _sev_rank(f):
@@ -1060,6 +1180,148 @@ def apply_budget(kept, ceiling=BUDGET_CEILING):
     return keep, dropped
 
 
+def ask_verifier(prompt):
+    """Вызов модели для верификации. Отдельно от ask_model: своя схема ответа.
+
+    num_predict меньше, чем у поиска: вердикт с короткой причиной на два
+    десятка кандидатов укладывается в этот бюджет, а лишний запас — это
+    лишние секунды на демонстрации.
+    """
+    payload = {
+        "model": MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": False,
+        "think": False,
+        "format": VERDICT_SCHEMA,
+        "options": {"num_ctx": NUM_CTX, "temperature": 0, "num_predict": 2048},
+        "keep_alive": "2h",
+    }
+    # Сбой верификатора НЕ уносит уже найденные замечания.
+    #
+    # Это прямое требование: 05.09 отдельной правкой добивались, чтобы при
+    # отказе модели результат не терялся, — а верификатор, брошенный наружу
+    # как ModelUnavailable, отменял бы уже выполненные проходы поиска.
+    # Замечания, оставшиеся без суждения, помечаются `not_verified`,
+    # и в enforcing они НЕ отбрасываются: молчание верификатора — не приговор.
+    try:
+        r = requests.post(OLLAMA_URL, json=payload, timeout=TIMEOUT)
+        r.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print("  !! верификатор недоступен (%s), партия без вердикта" % e,
+              file=sys.stderr)
+        return []
+    try:
+        return json.loads(r.json()["message"]["content"])
+    except (json.JSONDecodeError, KeyError, ValueError):
+        print("  !! верификатор вернул невалидный json, партия пропущена",
+              file=sys.stderr)
+        return []
+
+
+def _verdict_index(raw, size):
+    """Номер кандидата из ответа верификатора, или None.
+
+    Модель возвращает id то числом, то строкой, изредка с точкой («3.»).
+    Разбирать это здесь дешевле, чем терять вердикт: потерянный вердикт
+    в enforcing-режиме означает, что замечание останется непроверенным
+    и тихо пройдёт как принятое.
+    """
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, int):
+        idx = raw
+    elif isinstance(raw, str):
+        # Строго число, допустима одна завершающая точка («3.»). Прежний
+        # вариант вычищал все нецифровые символы, и тогда "-1" становилось
+        # первым кандидатом, а "1e2" — двенадцатым: вердикт привязывался
+        # к чужому замечанию и в enforcing удалял именно его.
+        m = re.fullmatch(r"\s*(\d+)\.?\s*", raw)
+        if not m:
+            return None
+        idx = int(m.group(1))
+    else:
+        return None
+    return idx - 1 if 1 <= idx <= size else None
+
+
+def verify_semantics(findings, doc_text, policy=None, batch_size=None):
+    """Semantic verdict: второе мнение по каждому замечанию.
+
+    Возвращает те же находки с полем `_verdict` = {"verdict", "reason"}.
+    НИЧЕГО не отбрасывает: решение об отсечении принимает вызывающий по
+    политике пакета. Разделено намеренно — слой, который сам решает, что
+    показать, невозможно замерить отдельно от того, что он меняет.
+
+    Замечания группируются по фрагменту документа: верификатору нужен
+    контекст цитаты, а подавать документ целиком на каждое замечание —
+    это и окно модели, и время. На двадцати замечаниях выходит две-три
+    партии вместо двадцати вызовов.
+    """
+    policy = DEFAULT_POLICY if policy is None else policy
+    if not findings:
+        return findings
+    size = batch_size or policy.get("verification", {}).get(
+        "batch_size", DEFAULT_VERIFICATION["batch_size"])
+
+    fragments = split_document(doc_text)
+    # Каждой находке — фрагмент, в котором лежит её цитата. Не нашлось
+    # (цитата собрана кросс-фрагментным проходом) — весь документ.
+    by_fragment = {}
+    for f in findings:
+        quote = (f.get("quote") or "").strip()
+        head = quote.split("\n", 1)[0]
+        idx = next((i for i, fr in enumerate(fragments) if head and head in fr),
+                   None)
+        by_fragment.setdefault(idx, []).append(f)
+
+    checked, conflicts = 0, 0
+    for idx, group in by_fragment.items():
+        context = fragments[idx] if idx is not None else doc_text
+        for start in range(0, len(group), size):
+            batch = group[start:start + size]
+            listing = "\n\n".join(
+                "%d. Тип: %s\n   Цитата: «%s»\n   Объяснение: %s"
+                % (i + 1, f.get("defect_id", "?"), (f.get("quote") or "").strip(),
+                   (f.get("explanation") or "").strip())
+                for i, f in enumerate(batch))
+            verdicts = ask_verifier(PROMPT_VERIFY.format(
+                candidates=listing, fragment=context))
+            seen = set()
+            for item in verdicts if isinstance(verdicts, list) else []:
+                if not isinstance(item, dict):
+                    continue
+                pos = _verdict_index(item.get("id"), len(batch))
+                if pos is None:
+                    continue
+                verdict = item.get("verdict")
+                if verdict not in ("accept", "reject"):
+                    continue
+                if pos in seen:
+                    # Повторный id в одной партии: раньше выигрывал последний,
+                    # а счётчик рос дважды — противоречивый дубликат мог
+                    # перевернуть решение, статистика показывала больше
+                    # проверенных, чем есть замечаний, а кандидат, чей id
+                    # модель пропустила, оставался незамеченным.
+                    # Оставляем первый вердикт и говорим о конфликте вслух.
+                    conflicts += 1
+                    continue
+                seen.add(pos)
+                batch[pos]["_verdict"] = {
+                    "verdict": verdict,
+                    "reason": (item.get("reason") or "").strip()[:200],
+                }
+                checked += 1
+
+    rejected = sum(1 for f in findings
+                   if (f.get("_verdict") or {}).get("verdict") == "reject")
+    # Непроверенные считаем и печатаем: молчаливый пропуск означал бы, что
+    # в enforcing-режиме часть замечаний проходит вообще без суждения.
+    print(f"[verify] проверено {checked} из {len(findings)}, "
+          f"отклонено {rejected}, без вердикта {len(findings) - checked}"
+          + (f", повторных id отброшено {conflicts}" if conflicts else ""))
+    return findings
+
+
 def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
              frag_mode="dict", glossary_text=None, conventions_text="",
              label="full", policy=None):
@@ -1091,10 +1353,28 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
     combined = [f for f in (frag["findings"] + glob["findings"])
                 if f.get("defect_id") not in det_ids]
     kept, merged = dedupe(combined, doc_text)
+
+    # Semantic verdict — ДО бюджета, а не после. Бюджет отбирает по важности
+    # среди принятых, и проверять уже отобранное значило бы оставить срезанное
+    # непроверенным, а освободившиеся места — незанятыми: отвергнутое
+    # замечание должно уступить место следующему, а не просто исчезнуть.
+    verification = policy.get("verification", DEFAULT_VERIFICATION)
+    vmode = verification.get("mode", "advisory")
+    rejected_by_verifier = []
+    if vmode != "off" and kept:
+        kept = verify_semantics(kept, doc_text, policy=policy)
+        if vmode == "enforcing":
+            rejected_by_verifier = [
+                f for f in kept
+                if (f.get("_verdict") or {}).get("verdict") == "reject"]
+            kept = [f for f in kept if f not in rejected_by_verifier]
+
     kept, capped = apply_budget(kept, ceiling=policy["ceiling"])
 
     print(f"[{label}] до дедупликации {len(combined)}, после дедупа "
-          f"{len(kept) + len(capped)}, склеено {len(merged)}, "
+          f"{len(kept) + len(capped) + len(rejected_by_verifier)}, "
+          f"склеено {len(merged)}, "
+          f"отклонено верификатором {len(rejected_by_verifier)}, "
           f"отсечено бюджетом {len(capped)}, итог {len(kept)}")
 
     return {
@@ -1112,9 +1392,18 @@ def run_full(doc_text, defects, taxonomy_text, valid_ids, known_objects,
         # Ноль — документ прошёл целиком.
         "truncated_chars": glob.get("truncated_chars", 0),
         "severity_fixed": sum(1 for f in kept if "severity_raw" in f),
+        # Замер слоя верификации: сколько получило вердикт и сколько отвергнуто.
+        # Считается и в advisory, где выдача не меняется, — иначе цену
+        # включения enforcing не на чем оценить.
+        "verified_count": sum(1 for f in kept + rejected_by_verifier
+                              if f.get("_verdict")),
+        "verifier_rejected": len(rejected_by_verifier),
+        "verifier_would_reject": sum(
+            1 for f in kept if (f.get("_verdict") or {}).get("verdict") == "reject"),
         "findings": kept,
         "merged": merged,
         "capped": capped,
+        "verifier_dropped": rejected_by_verifier,
         "rejected": frag["rejected"] + glob["rejected"],
     }
 

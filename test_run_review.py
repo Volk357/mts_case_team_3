@@ -55,6 +55,14 @@ def test_content_score_tiebreak():
     assert "развёрнутая" in kept_rest[0]["quote"], "при равном приоритете — цитата содержательнее"
 
 
+# Верификация выключена явно: эти тесты про бюджет и межслойный фильтр,
+# а слой semantic verdict по умолчанию (advisory) пошёл бы в сеть.
+# Молчаливо полагаться на то, что модель недоступна, нельзя — на машине
+# с поднятой Ollama тест начал бы дёргать её по-настоящему.
+NO_VERIFY = dict(run_review.DEFAULT_POLICY,
+                 verification={"mode": "off", "batch_size": 8})
+
+
 def test_run_full_applies_budget_and_reports_capped(monkeypatch=None):
     # Подменяем проходы модели: 25 medium с разными defect_id (не склеятся).
     fake = [{"quote": f"цитата дефекта номер {i} в документе", "defect_id": f"T{i}",
@@ -67,7 +75,8 @@ def test_run_full_applies_budget_and_reports_capped(monkeypatch=None):
         "findings": [], "total_seconds": 0.0, "found_raw": 0,
         "rejected_count": 0, "reject_reasons": {}, "rejected": []}
     doc = " ".join(f["quote"] for f in fake)
-    res = run_review.run_full(doc, [], "", set(), "", label="full2")
+    res = run_review.run_full(doc, [], "", set(), "", label="full2",
+                              policy=NO_VERIFY)
     assert res["verified"] == 20, "потолок применён"
     assert res["capped_away"] == 5 and len(res["capped"]) == 5
     assert len(res["findings"]) == 20
@@ -107,7 +116,7 @@ def test_run_full_drops_deterministic_type_findings():
     defects = [{"id": "NO_FILTER_DESCRIPTION", "detectable_by": "deterministic"},
                {"id": "AMBIGUOUS_LOGIC", "detectable_by": "llm"}]
     res = run_review.run_full("детерм ложный настоящий llm", defects, "", set(), "",
-                              label="full2")
+                              label="full2", policy=NO_VERIFY)
     ids = [f["defect_id"] for f in res["findings"]]
     assert "NO_FILTER_DESCRIPTION" not in ids, "детерм. тип из модели должен отброситься"
     assert "AMBIGUOUS_LOGIC" in ids, "llm-тип остаётся"

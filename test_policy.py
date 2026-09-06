@@ -46,6 +46,9 @@ prompt:
   bias: '%s'
   fragment_quota: '%s'
   document_quota: '%s'
+verification:
+  mode: advisory
+  batch_size: 8
 """
 
 
@@ -302,7 +305,10 @@ def test_run_full_applies_policy_ceiling_not_the_constant():
     run_review.run_global = lambda *a, **k: dict(empty)
     try:
         doc = "\n".join(quotes)
-        policy = dict(run_review.DEFAULT_POLICY, ceiling=4)
+        # verification off: тест про потолок, а слой semantic verdict
+        # по умолчанию (advisory) пошёл бы в сеть.
+        policy = dict(run_review.DEFAULT_POLICY, ceiling=4,
+                      verification={"mode": "off", "batch_size": 8})
         result = run_review.run_full(doc, [], "<T>", set(), "<K>",
                                      frag_mode="dict2", policy=policy)
         assert len(result["findings"]) == 4, len(result["findings"])

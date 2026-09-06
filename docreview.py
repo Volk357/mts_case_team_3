@@ -83,6 +83,29 @@ def _section_path(quote, lines, cfg, is_section_header):
     return []
 
 
+def _verification(f, deterministic):
+    """Состояние семантической проверки для выдачи.
+
+    Детерминированные находки верификатором не разбираются: слой правил
+    и есть независимая проверка, и отдавать его находки на суд той же
+    модели значило бы вернуть корреляцию, от которой слой уводит.
+    Поэтому у них честное `not_applicable`, а не выдуманное «принято».
+
+    Модельная находка без вердикта — `not_verified` (верификатор выключен
+    политикой или не вернул суждение по этому кандидату). Молчаливо
+    выдавать её за проверенную нельзя.
+    """
+    if deterministic:
+        return {"state": "not_applicable",
+                "reason": "детерминированный слой не проходит верификацию модели"}
+    verdict = f.get("_verdict") or {}
+    state = verdict.get("verdict")
+    if state not in ("accept", "reject"):
+        return {"state": "not_verified", "reason": ""}
+    return {"state": "accepted" if state == "accept" else "rejected",
+            "reason": verdict.get("reason", "")}
+
+
 def _map_finding(f, i, deterministic, lines, cfg, is_section_header):
     quote = f.get("quote", "") or ""
     did = f.get("defect_id", "UNKNOWN")
@@ -102,6 +125,11 @@ def _map_finding(f, i, deterministic, lines, cfg, is_section_header):
         "problem": (f.get("explanation") or "Место требует уточнения.").strip() or "—",
         "clarification": (f.get("suggestion") or "Уточнить у аналитика.").strip() or "—",
         "detected_by": ["deterministic"] if deterministic else ["model"],
+        # Semantic verdict как отдельное состояние жизненного цикла замечания:
+        # Candidate → Evidence check → Semantic verdict → Accepted finding.
+        # Схема контракта допускает дополнительные поля, старые версии
+        # приложения его игнорируют.
+        "verification": _verification(f, deterministic),
     }
 
 

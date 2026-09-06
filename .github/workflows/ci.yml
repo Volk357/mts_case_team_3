@@ -98,9 +98,16 @@ jobs:
         with:
           python-version: "3.13"
           cache: pip
-          cache-dependency-path: requirements-core.txt
+          cache-dependency-path: |
+            requirements-core.txt
+            contracts/requirements.lock
       - name: Install core dependencies
-        run: python -m pip install -r requirements-core.txt
+        # Плюс зависимости контракта: тесты ядра проверяют, что результат
+        # проходит JSON-схему приложения (contracts/validate_contract.py),
+        # и без jsonschema эта проверка просто не выполнилась бы.
+        run: |
+          python -m pip install -r requirements-core.txt
+          python -m pip install -r contracts/requirements.lock
       - name: Test analysis core
         # Наборы ищутся маской, а не перечисляются: перечень пришлось бы
         # править при каждом новом тесте, и забытая строка сделала бы гейт

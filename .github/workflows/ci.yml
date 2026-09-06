@@ -12,6 +12,39 @@ jobs:
   backend-and-contracts:
     name: Backend and contracts
     runs-on: ubuntu-latest
+    # Тесты API идут на настоящем PostgreSQL, а не на подменной СУБД:
+    # SQLite из проекта убран 05.09, и подменять базу в тестах значило бы
+    # проверять другую модель параллелизма, чем та, что поставляется
+    # (блокировки строк, FOR UPDATE, конкурентное удаление документа).
+    # Без этого сервиса шаг «Test backend» падал с Connection refused,
+    # и main был красным начиная с перевода на PostgreSQL.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          # Роль обязана иметь CREATEDB: conftest создаёт отдельную базу
+          # на каждый тест. postgres — суперпользователь, этого достаточно.
+          POSTGRES_USER: docreview
+          POSTGRES_PASSWORD: docreview
+          POSTGRES_DB: docreview
+        ports:
+          - 5432:5432
+        # Без health-check шаги стартуют раньше, чем СУБД примет соединение,
+        # и падение выглядит как ошибка тестов, а не как гонка запуска.
+        options: >-
+          --health-cmd "pg_isready -U docreview"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DOCREVIEW_TEST_DATABASE_URL: postgresql+psycopg://docreview:docreview@127.0.0.1:5432/docreview
+      # Приложение требует ровно UTC: ReviewJobLifecycle отвергает метку
+      # времени с ненулевым смещением (`_require_utc`). PostgreSQL отдаёт
+      # timestamptz в часовом поясе сессии, поэтому база в любом другом
+      # поясе роняет 29 тестов жизненного цикла. Проверено: на машине
+      # в Europe/Moscow падают, с PGTZ=UTC — 260 passed. Образ postgres:16
+      # по умолчанию в UTC, но полагаться на умолчание образа не будем.
+      PGTZ: UTC
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

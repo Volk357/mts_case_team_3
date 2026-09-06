@@ -81,6 +81,56 @@ jobs:
           python -m mypy
           python -m pytest --cov
 
+  analysis-core:
+    name: Analysis core
+    runs-on: ubuntu-latest
+    # Ядро анализа (run_review.py, docreview.py, check_formal.py и их тесты
+    # в корне репозитория) до 06.09.2026 не запускалось в CI ни одним шагом:
+    # из двух половин проекта автоматическим гейтом была закрыта одна.
+    # Пункт 12 внешнего архитектурного аудита.
+    #
+    # Модель здесь не вызывается и сеть не нужна: тесты ядра либо чистые
+    # (сборка результата, ранжирование, разбор политики), либо подменяют
+    # проходы заглушками. Проверено прогоном в чистом venv без OLLAMA_URL.
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements-core.txt
+      - name: Install core dependencies
+        run: python -m pip install -r requirements-core.txt
+      - name: Test analysis core
+        # Наборы ищутся маской, а не перечисляются: перечень пришлось бы
+        # править при каждом новом тесте, и забытая строка сделала бы гейт
+        # дырявым молча. Обратная сторона — новый тест, которому нужна сеть
+        # или БД, уронит джобу; это правильное поведение для гейта, а не
+        # повод вернуться к списку.
+        #
+        # Каждый файл запускается отдельно: тесты ядра — самостоятельные
+        # скрипты (`python3 <file>`), а не pytest-набор, и один общий вызов
+        # прятал бы, какой именно упал.
+        run: |
+          set -eu
+          # nullglob и массив, а не `suites=$(ls test_*.py)`: при set -e
+          # неудачный ls завершал бы скрипт ДО проверки, и сообщение ниже
+          # было недостижимо (найдено на ревью). Джоба падала бы всё равно,
+          # но с невнятной ошибкой ls вместо названной причины.
+          shopt -s nullglob
+          suites=(test_*.py)
+          # Пустой список означал бы зелёную джобу, не проверившую ничего:
+          # достаточно переименовать файлы, чтобы гейт замолчал.
+          if (( ${#suites[@]} == 0 )); then
+            echo "Не найдено ни одного test_*.py — гейт ядра ничего не проверил"
+            exit 1
+          fi
+          for suite in "${suites[@]}"; do
+            echo "::group::$suite"
+            python "$suite"
+            echo "::endgroup::"
+          done
+
   frontend:
     name: Frontend and generated types
     runs-on: ubuntu-latest

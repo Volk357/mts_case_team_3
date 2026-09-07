@@ -136,12 +136,20 @@ it("выпускает новую версию с правкой и предло
   await userEvent.clear(editor);
   await userEvent.type(editor, "ceiling: 12");
 
-  // Номер предлагается следующим за текущим, но остаётся полем ввода:
-  // человек создаёт то, на что будут ссылаться результаты.
-  expect(screen.getByLabelText("Номер версии")).toHaveValue("0.3");
+  // Номер предлагается СВОБОДНЫЙ, а не просто следующий: наивный инкремент
+  // давал 0.3, а такая версия у профиля уже есть — человек нажимал
+  // «Выпустить» и получал конфликт на ровном месте.
+  expect(screen.getByLabelText("Номер версии")).toHaveValue("0.2.1");
 
   await userEvent.click(screen.getByRole("button", { name: "Выпустить версию" }));
   await waitFor(() => expect(created).toHaveBeenCalled());
+
+  // После выпуска экран показывает уже новую версию. Меняется только параметр
+  // адреса, поэтому без ключа по packId страница не пересоздавалась и состояние
+  // «выпускаем» висело на кнопке навсегда. Поймано на живом стенде.
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Выпустить версию" })).toBeInTheDocument(),
+  );
 });
 
 it("показывает причину отказа от ядра дословно", async () => {
@@ -196,4 +204,25 @@ it("не роняет экран, когда каталог профилей н�
   // Название берётся из самих исходников, каталог нужен лишь для украшения.
   expect(await screen.findByRole("tab", { name: /policy\.yaml/ })).toBeInTheDocument();
   expect(screen.queryByText(/boom/)).not.toBeInTheDocument();
+});
+
+it("предлагает свободный номер, а не занятый", async () => {
+  stubApi({
+    "/source": () => json(SOURCE),
+    "/api/review-packs": () =>
+      json({
+        items: [
+          { review_pack_id: PACK_ID, display_name: "A", document_type: "t", version: "0.2", contents: [], policy_bias: null },
+          { review_pack_id: "x", display_name: "B", document_type: "t", version: "0.2.1", contents: [], policy_bias: null },
+        ],
+        total: 2,
+      }),
+  });
+
+  renderEditor();
+
+  // 0.2.1 занят — предлагается следующий свободный.
+  await waitFor(() =>
+    expect(screen.getByLabelText("Номер версии")).toHaveValue("0.2.2"),
+  );
 });

@@ -59,18 +59,33 @@ const FILE_LABELS: Record<string, { title: string; hint: string }> = {
 
 const FILE_ORDER = ["template", "defects", "glossary", "policy"];
 
-/** Номер версии по умолчанию: следующий за текущим, но менять его человеку. */
-function suggestVersion(current: string): string {
-  const parts = current.split(".");
-  const last = Number(parts[parts.length - 1]);
-  if (parts.length > 1 && Number.isInteger(last)) {
-    return [...parts.slice(0, -1), String(last + 1)].join(".");
+/** Номер версии по умолчанию: свободный, а не просто следующий.
+
+    Наивный инкремент последней части давал занятый номер: у профиля 0.2
+    уже существует 0.3 — другой режим того же профиля. Человек нажимал
+    «Выпустить» и получал конфликт на ровном месте.
+
+    Поэтому предлагаем уточняющую версию (0.2 → 0.2.1) и проверяем её
+    по каталогу. Номер остаётся полем ввода: последнее слово за человеком. */
+function suggestVersion(current: string, taken: readonly string[]): string {
+  const occupied = new Set(taken);
+  for (let n = 1; n <= 50; n += 1) {
+    const candidate = `${current}.${n}`;
+    if (!occupied.has(candidate)) return candidate;
   }
-  return `${current}.1`;
+  return `${current}.new`;
 }
 
+/** Выпуск версии меняет параметр адреса, а не маршрут, поэтому React оставил бы
+    прежний экран со всем его состоянием: кнопка навсегда читалась бы
+    «Проверяем и выпускаем». Ключ по packId делает переход на новую версию
+    честным открытием новой страницы. Поймано на живом стенде. */
 export function ReviewPackEditorPage() {
   const { packId = "" } = useParams();
+  return <PackEditor key={packId} packId={packId} />;
+}
+
+function PackEditor({ packId }: { packId: string }) {
   const navigate = useNavigate();
 
   const [source, setSource] = useState<ReviewPackSource | null>(null);
@@ -91,7 +106,9 @@ export function ReviewPackEditorPage() {
       .then(([loaded, catalog]) => {
         setSource(loaded);
         setDrafts(loaded.files);
-        setVersion(suggestVersion(loaded.version));
+        setVersion(
+          suggestVersion(loaded.version, (catalog?.items ?? []).map((item) => item.version)),
+        );
         const keys = FILE_ORDER.filter((key) => key in loaded.files);
         setActive(keys.includes("policy") ? "policy" : (keys[0] ?? ""));
         setPack(catalog?.items.find((item) => item.review_pack_id === packId) ?? null);

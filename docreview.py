@@ -49,6 +49,18 @@ EXIT_REVIEW_PACK = 4       # REVIEW_PACK_NOT_FOUND, REVIEW_PACK_INVALID
 EXIT_MODEL = 5             # MODEL_UNAVAILABLE, MODEL_TIMEOUT
 EXIT_INTERNAL = 7          # INTERNAL_ERROR
 
+# Сколько слой правил вправе потратить на пробный текст при проверке пакета.
+# Здоровый пакет укладывается в миллисекунды; секунды означают регулярку
+# с катастрофическим возвратом, которая повесит проверку боевого документа.
+PROBE_BUDGET_SECONDS = 5.0
+
+# Длина враждебных серий в пробном тексте. Стоимость катастрофического
+# возврата растёт вдвое с каждым символом: на 28 символах выражение вида
+# (a+)+$ считается около десяти секунд и упирается в бюджет, на 24 —
+# меньше секунды и проскочило бы. Вынесено константой, чтобы тест мог
+# проверить само свойство, не ожидая десять секунд.
+PROBE_ADVERSARIAL_LEN = 28
+
 # Наш severity → enum контракта (critical/high/medium/low). clarification → low.
 _SEV_MAP = {"high": "high", "medium": "medium", "low": "low",
             "clarification": "low", "critical": "critical"}
@@ -1041,6 +1053,141 @@ def _write(path, obj):
         json.dump(obj, sys.stdout, ensure_ascii=False, indent=2)
 
 
+def cmd_validate_pack(args):
+    """Проверить Review Pack целиком и описать его состав.
+
+    Зачем отдельная команда. Правку пакета через интерфейс нельзя выпускать
+    без проверки: сломанная регулярка или неизвестный статус правила
+    обнаружились бы только на живом прогоне, уже после публикации версии.
+    Проверять надо ТЕМИ ЖЕ загрузчиками, которыми пакет читает боевой путь,
+    иначе появится вторая валидация, и она разъедется с первой — этой ценой
+    мы уже платили за состав пакета в интерфейсе.
+
+    Поэтому здесь нет ни одной собственной проверки: команда вызывает
+    resolve_pack, check_formal.load_config, run_review.load_taxonomy,
+    load_glossary и load_policy — и переводит их типизированные исключения
+    в коды выхода контракта.
+
+    Выход: JSON с составом пакета (разделы, типы дефектов по статусам,
+    термины, политика) — приложению он нужен, чтобы показать разницу
+    между версиями, не разбирая YAML у себя.
+    """
+    import check_formal
+    import run_review
+
+    def fail(code, message):
+        _write(args.output, {
+            "ok": False,
+            "error": {"code": code, "message": str(message)},
+        })
+        return EXIT_REVIEW_PACK
+
+    try:
+        (pack_id, version, template_path, defects_path,
+         glossary_path, policy_path, warnings) = resolve_pack(args.pack)
+    except ReviewPackMissing as e:
+        return fail("REVIEW_PACK_NOT_FOUND", e)
+    except ReviewPackInvalid as e:
+        return fail("REVIEW_PACK_INVALID", e)
+
+    try:
+        cfg = check_formal.load_config(template_path)
+    except Exception as e:                                   # noqa: BLE001
+        return fail("TEMPLATE_INVALID", e)
+
+    # Шаблон не проверить чтением: регулярки в нём компилируются внутри самих
+    # проверок, а не при загрузке конфига. Пакет с выражением `[unclosed`
+    # грузится без единой жалобы и падает уже на боевом прогоне. Поэтому
+    # шаблон проверяется ЗАПУСКОМ слоя правил на пробном тексте: так
+    # компилируется всё, что реально используется, и не появляется второго
+    # списка полей, который разъедется с кодом проверок.
+    # Пробный текст делает две работы. Первые строки похожи на настоящий
+    # документ, чтобы проверки дошли до своих регулярок. Последние две —
+    # намеренно враждебные: длинные однородные серии без совпадения в конце
+    # — на них выражения с вложенными квантификаторами вида (a+)+$ уходят
+    # в катастрофический возврат и упираются в бюджет ниже. На безобидном
+    # тексте они отработали бы мгновенно, и проверка их пропустила бы.
+    probe = ("Общие сведения\nИсточники данных\nСтруктура данных\n"
+             "поле id | int | описание | NOT NULL\n"
+             "HDFS путь: /data/raw\nОбновление: ежедневно\n"
+             + "a" * PROBE_ADVERSARIAL_LEN + "!\n"
+             + "ab" * (PROBE_ADVERSARIAL_LEN // 2) + "!\n")
+    started = time.time()
+    try:
+        check_formal.run(probe, cfg)
+    except re.error as e:
+        return fail("TEMPLATE_INVALID",
+                    "регулярное выражение не компилируется: %s" % e)
+    except Exception as e:                                   # noqa: BLE001
+        return fail("TEMPLATE_INVALID",
+                    "слой правил не отработал на пробном тексте: %s: %s"
+                    % (e.__class__.__name__, e))
+    spent = time.time() - started
+    # Бюджет ловит выражения, которые медленны НА ЭТОМ тексте, включая
+    # враждебные строки выше. Это не доказательство отсутствия ReDoS:
+    # выражение может быть быстрым здесь и катастрофическим на конкретном
+    # документе заказчика. Проверка снимает типовой случай, а не класс задач,
+    # и обещать большее было бы неправдой.
+    if spent > PROBE_BUDGET_SECONDS:
+        return fail("TEMPLATE_TOO_SLOW",
+                    "слой правил обрабатывал пробный текст %.1f с при "
+                    "пределе %.1f с — вероятно, регулярное выражение с "
+                    "катастрофическим возвратом"
+                    % (spent, PROBE_BUDGET_SECONDS))
+
+    try:
+        _text, valid_ids, defects = run_review.load_taxonomy(defects_path)
+        statuses = run_review.rule_status_map(defects_path)
+    except run_review.TaxonomyInvalid as e:
+        return fail("TAXONOMY_INVALID", e)
+    except Exception as e:                                   # noqa: BLE001
+        return fail("TAXONOMY_INVALID", e)
+
+    try:
+        terms, conventions = run_review.load_glossary(glossary_path)
+    except Exception as e:                                   # noqa: BLE001
+        return fail("GLOSSARY_INVALID", e)
+
+    policy_summary = None
+    if policy_path:
+        try:
+            policy = run_review.load_policy(policy_path)
+        except run_review.PolicyInvalid as e:
+            return fail("POLICY_INVALID", e)
+        policy_summary = {
+            "ceiling": policy["ceiling"],
+            "bias": policy["bias"],
+            "verification_mode": policy["verification"]["mode"],
+        }
+
+    by_status = {}
+    for status in run_review.RULE_STATUSES:
+        by_status[status] = sorted(i for i, s in statuses.items() if s == status)
+
+    _write(args.output, {
+        "ok": True,
+        "pack": {"id": pack_id, "version": version},
+        "contents": {
+            "template": {
+                "sections": [s["name"] for s in cfg.get("sections", [])],
+            },
+            "defects": {
+                "total": len(statuses),
+                "applied": len(valid_ids),
+                "by_status": by_status,
+            },
+            "glossary": {
+                "terms": len([ln for ln in terms.splitlines() if ln.strip()]),
+                "conventions": len(
+                    [ln for ln in conventions.splitlines() if ln.strip()]),
+            },
+            "policy": policy_summary,
+        },
+        "warnings": warnings,
+    })
+    return 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="docreview")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -1063,9 +1210,16 @@ def main(argv=None):
     a.add_argument("--include-rejected", action="store_true",
                    help="принимается для совместимости с контрактом; отклонённые "
                         "кандидаты в ReviewResult не входят (схема их не содержит)")
+    v = sub.add_parser("validate-pack",
+                       help="проверить Review Pack и описать его состав")
+    v.add_argument("--pack", required=True,
+                   help="каталог пакета или путь к его манифесту")
+    v.add_argument("--output", default=None)
     args = ap.parse_args(argv)
     if args.cmd == "analyze":
         return cmd_analyze(args)
+    if args.cmd == "validate-pack":
+        return cmd_validate_pack(args)
     return EXIT_INVALID_ARGUMENTS
 
 

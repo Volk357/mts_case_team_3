@@ -41,7 +41,40 @@ from pathlib import Path
 
 import os
 
-import requests
+try:
+    import requests
+except ImportError:                                          # pragma: no cover
+    # Библиотека нужна ТОЛЬКО для обращения к модели. Проверка Review Pack
+    # (`docreview validate-pack`) грузит этот модуль ради таксономии, политики
+    # и статусов правил — и падала бы на импорте там, где сеть не нужна вовсе:
+    # например, когда пакет проверяет приложение своим окружением.
+    #
+    # Заглушка сохраняет ИМЕНА исключений: по всему модулю стоят
+    # `except requests.exceptions.RequestException`, и без них обработка
+    # ошибок сломалась бы в момент отказа, а не при импорте.
+    class _RequestsUnavailable:
+        """Заглушка: даёт внятный отказ вместо ImportError на импорте."""
+
+        class exceptions:                                    # noqa: N801
+            class RequestException(Exception):
+                pass
+
+            class HTTPError(RequestException):
+                pass
+
+            class Timeout(RequestException):
+                pass
+
+            class ConnectionError(RequestException):         # noqa: A001
+                pass
+
+        @staticmethod
+        def post(*_args, **_kwargs):
+            raise RuntimeError(
+                "обращение к модели невозможно: библиотека requests "
+                "не установлена в этом окружении")
+
+    requests = _RequestsUnavailable()
 import yaml
 
 # Эндпоинт модели берётся из окружения (в репозиторий адрес не коммитим).

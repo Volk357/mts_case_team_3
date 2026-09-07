@@ -1,8 +1,14 @@
 """Tenant-scoped and filesystem-safe Review Pack catalog."""
 
+import json
+import re
+import shutil
+import subprocess
+import tempfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import yaml
 from sqlalchemy import select
@@ -92,6 +98,37 @@ class ReviewPackSnapshot:
     policy_bias: str | None = None
 
 
+# Версия пакета — часть контракта: приложение сверяет id и version
+# из результата ядра с заданием и бракует результат при расхождении.
+# Поэтому в имени версии допускаем только то, что безопасно и как имя
+# каталога, и как значение в манифесте.
+VERSION_PATTERN = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,49}$")
+
+# Сколько ждём проверку пакета ядром. Здоровый пакет проверяется за
+# ~150 мс; секунды означают регулярку с катастрофическим возвратом,
+# и ядро само отвергнет такой пакет по своему бюджету.
+VALIDATION_TIMEOUT_SECONDS = 60.0
+
+
+class ReviewPackEditError(ValueError):
+    """Правка пакета отклонена. Несёт код для ответа API."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+
+
+@dataclass(frozen=True)
+class PackSource:
+    """Тексты файлов пакета для правки."""
+
+    pack_key: str
+    version: str
+    display_name: str
+    files: dict[str, str]
+
+
 class ReviewPackCatalogService:
     """Expose only active pack references resolvable inside the configured root."""
 
@@ -100,9 +137,15 @@ class ReviewPackCatalogService:
         session_factory: sessionmaker[Session],
         *,
         review_packs_root: Path,
+        analysis_executable: str = "docreview",
     ) -> None:
         self._session_factory = session_factory
         self._review_packs_root = review_packs_root.resolve()
+        # Проверку правки делает ЯДРО той же командой, что доступна воркеру.
+        # Своей валидации у приложения нет и быть не должно: второй валидатор
+        # разъедется с первым, и пакет, принятый интерфейсом, будет отвергнут
+        # анализом. Ровно этой ценой уже платили за состав пакета в UI.
+        self._analysis_executable = analysis_executable
 
     def list_available(self, *, company_id: UUID) -> tuple[ReviewPackSnapshot, ...]:
         with self._session_factory() as session:
@@ -298,6 +341,259 @@ class ReviewPackCatalogService:
         ):
             return INVALID_DECLARATION
         return filename
+
+    def read_source(self, *, company_id: UUID, pack_id: UUID) -> PackSource:
+        """Тексты настраиваемых файлов пакета — то, что правит человек.
+
+        Возвращаются только файлы, которые ЯДРО действительно применяет:
+        имена берутся из той же таблицы ролей, что и блок состава пакета.
+        Показать здесь файл, который ядро проигнорирует, значило бы дать
+        править то, что ни на что не влияет.
+        """
+        record, resolved = self._editable_record(company_id, pack_id)
+        files: dict[str, str] = {}
+        for content in self._contents(resolved):
+            if not content.present:
+                continue
+            path = resolved / content.filename
+            try:
+                files[content.key] = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as error:
+                raise ReviewPackEditError(
+                    "REVIEW_PACK_FILE_UNREADABLE",
+                    f"файл {content.filename} не читается: {error}",
+                ) from error
+        return PackSource(
+            pack_key=record.pack_key,
+            version=record.version,
+            display_name=record.display_name,
+            files=files,
+        )
+
+    def create_version(
+        self,
+        *,
+        company_id: UUID,
+        pack_id: UUID,
+        version: str,
+        files: dict[str, str],
+    ) -> UUID:
+        """Выпустить НОВУЮ версию пакета с изменёнными файлами.
+
+        Опубликованная версия неизменяема. Иначе рассыпается всё, на чём
+        держится доказательность: прошлые проверки ссылаются на версию,
+        замеры полноты сняты на конкретной версии, а результат ядра
+        сверяется с заданием по id и version.
+
+        Порядок намеренно такой: собрать во временном каталоге → отдать
+        ядру на проверку → и только потом перенести в каталог пакетов и
+        зарегистрировать. При отказе на диске не остаётся ни каталога,
+        ни записи, на которую сослались бы задания.
+        """
+        if not VERSION_PATTERN.match(version or ""):
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VERSION_INVALID",
+                "версия может содержать буквы, цифры, точку, дефис "
+                "и подчёркивание, до 50 символов",
+            )
+
+        record, source_dir = self._editable_record(company_id, pack_id)
+        known = {key for key, _filename, _description in PACK_CONTENT_ROLES}
+        unknown = sorted(set(files) - known)
+        if unknown:
+            raise ReviewPackEditError(
+                "REVIEW_PACK_FILE_UNKNOWN",
+                "неизвестные файлы: {}".format(", ".join(unknown)),
+            )
+
+        target = (self._review_packs_root / record.pack_key / version).resolve()
+        if not self._is_inside_root(target):
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VERSION_INVALID",
+                "версия уводит за пределы каталога пакетов",
+            )
+        if target.exists():
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VERSION_EXISTS",
+                f"версия {version} уже существует и не может быть изменена",
+            )
+        if self._version_registered(company_id, record.pack_key, version):
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VERSION_EXISTS",
+                f"версия {version} уже зарегистрирована",
+            )
+
+        staging = Path(tempfile.mkdtemp(prefix="pack-"))
+        try:
+            draft = staging / "pack"
+            shutil.copytree(source_dir, draft)
+            self._write_files(draft, files)
+            # Манифест — источник истины по версии для ядра. Если оставить
+            # в нём прежнее значение, ядро вернёт старую версию, приложение
+            # сверит её с заданием и забракует результат целиком.
+            self._rewrite_manifest_version(draft, version)
+            self._validate_with_core(draft)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(draft), str(target))
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+
+        locator = f"{record.pack_key}/{version}"
+        new_id = uuid4()
+        now = datetime.now(UTC)
+        with self._session_factory.begin() as session:
+            session.add(
+                ReviewPackReferenceModel(
+                    id=new_id,
+                    company_id=company_id,
+                    pack_key=record.pack_key,
+                    version=version,
+                    display_name=record.display_name,
+                    document_type=record.document_type,
+                    locator=locator,
+                    is_active=True,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+        return new_id
+
+    def _editable_record(
+        self, company_id: UUID, pack_id: UUID
+    ) -> tuple[ReviewPackReferenceModel, Path]:
+        with self._session_factory() as session:
+            record = session.scalars(
+                select(ReviewPackReferenceModel).where(
+                    ReviewPackReferenceModel.id == pack_id,
+                    ReviewPackReferenceModel.company_id == company_id,
+                    ReviewPackReferenceModel.is_active.is_(True),
+                )
+            ).one_or_none()
+            if record is None:
+                raise ReviewPackEditError(
+                    "REVIEW_PACK_NOT_FOUND", "профиль проверки не найден"
+                )
+            resolved = self._resolve_locator(record.locator)
+            if resolved is None:
+                raise ReviewPackEditError(
+                    "REVIEW_PACK_NOT_FOUND",
+                    "каталог профиля недоступен",
+                )
+            session.expunge(record)
+            return record, resolved
+
+    def _version_registered(
+        self, company_id: UUID, pack_key: str, version: str
+    ) -> bool:
+        with self._session_factory() as session:
+            return session.scalars(
+                select(ReviewPackReferenceModel).where(
+                    ReviewPackReferenceModel.company_id == company_id,
+                    ReviewPackReferenceModel.pack_key == pack_key,
+                    ReviewPackReferenceModel.version == version,
+                )
+            ).first() is not None
+
+    def _write_files(self, draft: Path, files: dict[str, str]) -> None:
+        by_key = {
+            key: filename for key, filename, _description in PACK_CONTENT_ROLES
+        }
+        # Имя policy может быть переопределено манифестом — берём то же
+        # имя, что резолвит ядро, иначе правка легла бы в файл, который
+        # никто не читает.
+        declared = self._declared_policy_name(self._manifest_path(draft))
+        if isinstance(declared, str):
+            by_key["policy"] = declared
+        for key, text in files.items():
+            filename = by_key[key]
+            if not self._inside_pack(draft, filename):
+                raise ReviewPackEditError(
+                    "REVIEW_PACK_FILE_UNKNOWN",
+                    f"имя файла {filename} уводит за пределы пакета",
+                )
+            (draft / filename).write_text(text, encoding="utf-8")
+
+    @staticmethod
+    def _manifest_path(pack_dir: Path) -> Path | None:
+        for name in ("pack.yaml", "pack.yml", "manifest.yaml", "manifest.yml"):
+            candidate = pack_dir / name
+            if candidate.is_file():
+                return candidate
+        return None
+
+    def _rewrite_manifest_version(self, draft: Path, version: str) -> None:
+        manifest = self._manifest_path(draft)
+        if manifest is None:
+            return
+        try:
+            data = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as error:
+            raise ReviewPackEditError(
+                "REVIEW_PACK_INVALID", f"манифест не читается: {error}"
+            ) from error
+        if not isinstance(data, dict):
+            raise ReviewPackEditError(
+                "REVIEW_PACK_INVALID", "манифест не является словарём"
+            )
+        data["version"] = version
+        manifest.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+
+    def _validate_with_core(self, draft: Path) -> None:
+        """Проверка ядром. Своей валидации приложение не имеет намеренно."""
+        report = draft.parent / "validation.json"
+        try:
+            completed = subprocess.run(
+                [
+                    self._analysis_executable,
+                    "validate-pack",
+                    "--pack",
+                    str(draft),
+                    "--output",
+                    str(report),
+                ],
+                capture_output=True,
+                timeout=VALIDATION_TIMEOUT_SECONDS,
+                check=False,
+                # Окружение не наследуем: конфигурация модели и секреты
+                # проверке пакета не нужны.
+                env={"PATH": "/usr/local/bin:/usr/bin:/bin", "LANG": "C.UTF-8"},
+            )
+        except FileNotFoundError as error:
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VALIDATOR_UNAVAILABLE",
+                "проверяющая команда ядра недоступна",
+            ) from error
+        except subprocess.TimeoutExpired as error:
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VALIDATION_TIMEOUT",
+                "проверка пакета не уложилась в отведённое время",
+            ) from error
+
+        try:
+            payload = json.loads(report.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VALIDATOR_UNAVAILABLE",
+                "проверяющая команда ядра не вернула отчёт "
+                f"(код {completed.returncode})",
+            ) from error
+
+        if not payload.get("ok"):
+            error_payload = payload.get("error") or {}
+            raise ReviewPackEditError(
+                str(error_payload.get("code") or "REVIEW_PACK_INVALID"),
+                str(error_payload.get("message") or "пакет не прошёл проверку"),
+            )
+
+    def _is_inside_root(self, candidate: Path) -> bool:
+        try:
+            candidate.relative_to(self._review_packs_root)
+        except ValueError:
+            return False
+        return True
 
     def _resolve_locator(self, locator: str) -> Path | None:
         posix = PurePosixPath(locator)

@@ -739,6 +739,103 @@
         "title": "ReviewPackResponse",
         "type": "object"
       },
+      "ReviewPackSourceResponse": {
+        "additionalProperties": false,
+        "description": "Тексты настраиваемых файлов пакета — то, что открывается в редакторе.\n\nОтдаются только файлы, которые ядро действительно применяет: показать\nздесь файл, который ядро проигнорирует, значило бы дать править то,\nчто ни на что не влияет.",
+        "properties": {
+          "display_name": {
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "object"
+          },
+          "pack_key": {
+            "minLength": 1,
+            "title": "Pack Key",
+            "type": "string"
+          },
+          "review_pack_id": {
+            "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+            "format": "uuid",
+            "title": "Review Pack Id",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_pack_id",
+          "pack_key",
+          "version",
+          "display_name",
+          "files"
+        ],
+        "title": "ReviewPackSourceResponse",
+        "type": "object"
+      },
+      "ReviewPackVersionRequest": {
+        "additionalProperties": false,
+        "description": "Запрос на выпуск новой версии пакета.\n\nВерсия обязательна и не выводится автоматически: человек должен\nосознанно назвать то, на что будут ссылаться результаты проверок.\nОпубликованная версия неизменяема, поэтому правка всегда порождает\nновую, а не переписывает существующую.",
+        "properties": {
+          "files": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "minProperties": 1,
+            "title": "Files",
+            "type": "object"
+          },
+          "version": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "files"
+        ],
+        "title": "ReviewPackVersionRequest",
+        "type": "object"
+      },
+      "ReviewPackVersionResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "pack_key": {
+            "minLength": 1,
+            "title": "Pack Key",
+            "type": "string"
+          },
+          "review_pack_id": {
+            "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+            "format": "uuid",
+            "title": "Review Pack Id",
+            "type": "string"
+          },
+          "version": {
+            "minLength": 1,
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "review_pack_id",
+          "pack_key",
+          "version"
+        ],
+        "title": "ReviewPackVersionResponse",
+        "type": "object"
+      },
       "ReviewPublicError": {
         "additionalProperties": false,
         "properties": {
@@ -1583,6 +1680,246 @@
           }
         },
         "summary": "List Review Packs",
+        "tags": [
+          "review-packs"
+        ]
+      }
+    },
+    "/api/review-packs/{review_pack_id}/source": {
+      "get": {
+        "description": "Отдать тексты настраиваемых файлов пакета для правки.",
+        "operationId": "read_review_pack_source_api_review_packs__review_pack_id__source_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_pack_id",
+            "required": true,
+            "schema": {
+              "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+              "format": "uuid",
+              "title": "Review Pack Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPackSourceResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource state conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Read Review Pack Source",
+        "tags": [
+          "review-packs"
+        ]
+      }
+    },
+    "/api/review-packs/{review_pack_id}/versions": {
+      "post": {
+        "description": "Выпустить новую версию пакета с изменёнными файлами.\n\nСуществующая версия не меняется никогда: на неё ссылаются прошлые\nпроверки, и её версия — часть контракта результата. Пакет попадает\nв каталог только после того, как ядро подтвердило, что он валиден.",
+        "operationId": "create_review_pack_version_api_review_packs__review_pack_id__versions_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "review_pack_id",
+            "required": true,
+            "schema": {
+              "description": "Opaque resource identifier. Clients must not infer meaning from it.",
+              "format": "uuid",
+              "title": "Review Pack Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewPackVersionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewPackVersionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource not found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Resource state conflict"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request payload is too large"
+          },
+          "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Unsupported media type"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Request validation failed"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Rate limit exceeded"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description": "Internal server error"
+          }
+        },
+        "summary": "Create Review Pack Version",
         "tags": [
           "review-packs"
         ]

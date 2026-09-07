@@ -1,5 +1,6 @@
-import { Check, Minus } from "lucide-react";
+import { Check, Minus, PencilLine } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { getReviewPacks, type ReviewPack } from "@/api/review-packs";
 
@@ -112,6 +113,17 @@ export function ReviewPackContents() {
           Чтобы применить инструмент в другой организации, заменяются эти файлы. Код приложения
           и модель при этом не меняются.
         </p>
+
+        {/* Вход в редактор. Пока файлы можно было только посмотреть,
+            утверждение «настраивается конфигурацией» оставалось словами:
+            поменять правила без ssh было нельзя. */}
+        <Link
+          className="mt-4 inline-flex items-center gap-2 text-sm text-accent"
+          to={`/review-packs/${pack.review_pack_id}/edit`}
+        >
+          <PencilLine aria-hidden="true" className="size-4" />
+          Изменить правила профиля
+        </Link>
       </div>
     </section>
   );

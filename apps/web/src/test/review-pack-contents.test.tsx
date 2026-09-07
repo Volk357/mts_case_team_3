@@ -1,8 +1,20 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, vi } from "vitest";
 
 import { ReviewPackContents } from "@/components/review-pack-contents";
 import { setToken } from "@/auth/session";
+
+// Блок ведёт в редактор правил, поэтому ему нужен роутер. Без обёртки
+// компонент падает на <Link>, и тест видит пустой DOM — ровно та поломка,
+// которую в этом проекте уже ловили с useNavigate в FileDropzone.
+function renderContents() {
+  return render(
+    <MemoryRouter>
+      <ReviewPackContents />
+    </MemoryRouter>,
+  );
+}
 
 // Мок глобального fetch, а не частичный мок модуля: частичный мок через
 // importOriginal уже давал в этом проекте ложное падение на ветке ошибки
@@ -51,7 +63,7 @@ describe("Состав Review Pack", () => {
   it("показывает файлы настройки и версию применяемого набора", async () => {
     stubCatalog({ items: [PACK], total: 1 });
 
-    render(<ReviewPackContents />);
+    renderContents();
 
     expect(await screen.findByText("template.yaml")).toBeInTheDocument();
     expect(screen.getByText("policy.yaml")).toBeInTheDocument();
@@ -62,7 +74,7 @@ describe("Состав Review Pack", () => {
   it("говорит про умолчания, если файл в наборе не задан", async () => {
     stubCatalog({ items: [PACK], total: 1 });
 
-    render(<ReviewPackContents />);
+    renderContents();
 
     // Отсутствующий файл не прячется: иначе человек решил бы, что политика
     // приёмки задана, хотя работают умолчания ядра.
@@ -74,7 +86,7 @@ describe("Состав Review Pack", () => {
   it("ничего не показывает, если каталог недоступен", async () => {
     stubCatalog({ error: "boom" }, 500);
 
-    const { container } = render(<ReviewPackContents />);
+    const { container } = renderContents();
 
     // Блок пояснительный, человек его не запрашивал: сообщение об ошибке
     // здесь было бы шумом на главном экране.
@@ -84,7 +96,7 @@ describe("Состав Review Pack", () => {
   it("ничего не показывает, если пакет не объявляет состав", async () => {
     stubCatalog({ items: [{ ...PACK, contents: [] }], total: 1 });
 
-    const { container } = render(<ReviewPackContents />);
+    const { container } = renderContents();
 
     await vi.waitFor(() => expect(container).toBeEmptyDOMElement());
   });

@@ -15,6 +15,7 @@ import { createReview } from "@/api/reviews";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { appConfig } from "@/config";
+import { newRequestId } from "@/lib/request-id";
 import { cn } from "@/lib/utils";
 
 /*
@@ -162,7 +163,7 @@ export function FileDropzone() {
       const review = await createReview(
         receipt.document_id,
         pack.review_pack_id,
-        crypto.randomUUID(),
+        newRequestId(),
       );
       void navigate(`/reviews/${review.review_id}`);
     } catch (error) {

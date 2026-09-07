@@ -133,6 +133,57 @@ def test_broken_policy_is_caught():
     assert data["error"]["code"] == "POLICY_INVALID"
 
 
+def test_broken_glossary_is_caught():
+    """Битый глоссарий обязан отвергаться ИМЕННО валидатором.
+
+    Боевой загрузчик `run_review.load_glossary` намеренно снисходителен:
+    на сломанном yaml он пишет в stderr и возвращает константу GLOSSARY
+    с пустыми конвенциями. Для прогона это правильно, для выпуска версии —
+    нет: пакет с `[[[` в глоссарии получал ok, версия публиковалась
+    неизменяемой, а конвенции компании молча переставали применяться.
+    Отказ было видно только в stderr, которого никто не читает.
+
+    Подсадка регрессии: если убрать строгий разбор из cmd_validate_pack
+    и вернуться к одной load_glossary, тест краснеет — команда даёт ok.
+    """
+    pack = copy_pack()
+    with open(os.path.join(pack, "glossary.yaml"), "w", encoding="utf-8") as handle:
+        handle.write("terms: [[[\n")
+    code, data = run_cli(pack)
+    assert code == docreview.EXIT_REVIEW_PACK, data
+    assert data["ok"] is False
+    assert data["error"]["code"] == "GLOSSARY_INVALID"
+
+
+def test_empty_glossary_is_caught():
+    """Пустой файл — не «глоссарий без терминов», а подмена глоссария.
+
+    load_glossary на нём вернёт захардкоженную константу: пакет будет
+    прогоняться с ЧУЖИМ глоссарием, а его состав в интерфейсе покажет
+    термины, которых в файле нет.
+    """
+    pack = copy_pack()
+    open(os.path.join(pack, "glossary.yaml"), "w", encoding="utf-8").close()
+    code, data = run_cli(pack)
+    assert code == docreview.EXIT_REVIEW_PACK, data
+    assert data["error"]["code"] == "GLOSSARY_INVALID"
+
+
+def test_glossary_error_names_the_file_not_its_path():
+    """Сообщение уходит в браузер, поэтому в нём имя файла, а не путь.
+
+    Валидация идёт во временном каталоге приложения; абсолютный путь
+    оттуда для человека бессмыслен — файла по нему не существует.
+    """
+    pack = copy_pack()
+    with open(os.path.join(pack, "glossary.yaml"), "w", encoding="utf-8") as handle:
+        handle.write("terms: [[[\n")
+    _code, data = run_cli(pack)
+    message = data["error"]["message"]
+    assert "glossary.yaml" in message
+    assert pack not in message
+
+
 def test_probe_text_actually_provokes_catastrophic_backtracking():
     """Проба обязана быть враждебной, иначе бюджет бесполезен.
 

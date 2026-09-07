@@ -1074,6 +1074,7 @@ def cmd_validate_pack(args):
     """
     import check_formal
     import run_review
+    import yaml
 
     def fail(code, message):
         _write(args.output, {
@@ -1142,6 +1143,39 @@ def cmd_validate_pack(args):
         return fail("TAXONOMY_INVALID", e)
     except Exception as e:                                   # noqa: BLE001
         return fail("TAXONOMY_INVALID", e)
+
+    # Единственное место, где валидатор НЕ полагается на боевой загрузчик,
+    # и на то есть причина. `load_glossary` намеренно снисходительна: битый
+    # yaml она ловит, пишет в stderr и работает на константе GLOSSARY —
+    # для прогона это правильно, аналитик не должен ронять анализ опечаткой.
+    # Но для выпуска версии та же снисходительность означает `ok: true`
+    # на пакете, где конвенции компании перестали применяться. Выпуск —
+    # необратим, на версию ссылаются прошлые проверки, а отказ виден только
+    # в stderr боевого прогона, которого никто не читает.
+    #
+    # Поэтому разбор здесь строгий и свой, а `load_glossary` не трогаем:
+    # менять её значило бы ронять боевой анализ на опечатке в глоссарии.
+    if glossary_path:
+        try:
+            raw_glossary = yaml.safe_load(
+                open(glossary_path, encoding="utf-8").read())
+        except yaml.YAMLError as e:
+            return fail("GLOSSARY_INVALID",
+                        "глоссарий %s не разбирается: %s"
+                        % (os.path.basename(glossary_path), e))
+        except Exception as e:                               # noqa: BLE001
+            return fail("GLOSSARY_INVALID",
+                        "глоссарий %s не читается: %s"
+                        % (os.path.basename(glossary_path), e))
+        if not isinstance(raw_glossary, dict):
+            # Пустой файл (None) сюда тоже попадает. Он не «глоссарий без
+            # терминов»: load_glossary на нём вернёт константу, то есть
+            # пакет будет прогоняться с чужим глоссарием, а не со своим.
+            return fail("GLOSSARY_INVALID",
+                        "глоссарий %s: ожидался словарь с ключами terms/"
+                        "conventions, получено %s"
+                        % (os.path.basename(glossary_path),
+                           type(raw_glossary).__name__))
 
     try:
         terms, conventions = run_review.load_glossary(glossary_path)

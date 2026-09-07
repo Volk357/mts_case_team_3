@@ -83,6 +83,24 @@ describe("Состав Review Pack", () => {
     ).toBeInTheDocument();
   });
 
+  it("различает версии одного профиля в переключателе", async () => {
+    // Выпуск версии из редактора порождает профиль с ТЕМ ЖЕ именем.
+    // Без номера в подписи в списке появлялись две одинаковые кнопки,
+    // и человек не мог понять, между чем он переключается.
+    stubCatalog({
+      items: [PACK, { ...PACK, review_pack_id: "22222222-2222-2222-2222-222222222222", version: "0.2.1" }],
+      total: 2,
+    });
+
+    renderContents();
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]).toHaveTextContent("0.2");
+    expect(tabs[1]).toHaveTextContent("0.2.1");
+    expect(tabs[0].textContent).not.toEqual(tabs[1].textContent);
+  });
+
   it("ничего не показывает, если каталог недоступен", async () => {
     stubCatalog({ error: "boom" }, 500);
 

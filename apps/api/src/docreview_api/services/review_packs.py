@@ -12,6 +12,7 @@ from uuid import UUID, uuid4
 
 import yaml
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from docreview_api.db.models import ReviewPackReferenceModel
@@ -433,29 +434,70 @@ class ReviewPackCatalogService:
             self._rewrite_manifest_version(draft, version)
             self._validate_with_core(draft)
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(draft), str(target))
+            try:
+                # НЕ shutil.move: в существующий каталог он кладёт источник
+                # ВНУТРЬ него. Между проверкой `target.exists()` и переносом
+                # проходит до минуты валидации, и вторая публикация того же
+                # номера дописывала подкаталог в версию, объявленную
+                # неизменяемой. copytree на занятой цели падает на самом
+                # mkdir — проигравший гонку узнаёт об этом, а не портит
+                # чужую версию.
+                #
+                # os.rename был бы атомарнее, но сборка лежит в системном
+                # временном каталоге: на отдельном разделе (/tmp как tmpfs)
+                # он падал бы с EXDEV на КАЖДОЙ публикации. Гонка редка,
+                # разные разделы — нет.
+                shutil.copytree(draft, target)
+            except FileExistsError as error:
+                raise ReviewPackEditError(
+                    "REVIEW_PACK_VERSION_EXISTS",
+                    f"версия {version} уже существует и не может быть изменена",
+                ) from error
         finally:
             shutil.rmtree(staging, ignore_errors=True)
 
         locator = f"{record.pack_key}/{version}"
         new_id = uuid4()
         now = datetime.now(UTC)
-        with self._session_factory.begin() as session:
-            session.add(
-                ReviewPackReferenceModel(
-                    id=new_id,
-                    company_id=company_id,
-                    pack_key=record.pack_key,
-                    version=version,
-                    display_name=record.display_name,
-                    document_type=record.document_type,
-                    locator=locator,
-                    is_active=True,
-                    created_at=now,
-                    updated_at=now,
+        try:
+            with self._session_factory.begin() as session:
+                session.add(
+                    ReviewPackReferenceModel(
+                        id=new_id,
+                        company_id=company_id,
+                        pack_key=record.pack_key,
+                        version=version,
+                        display_name=record.display_name,
+                        document_type=record.document_type,
+                        locator=locator,
+                        is_active=True,
+                        created_at=now,
+                        updated_at=now,
+                    )
                 )
-            )
+        except IntegrityError as error:
+            # Уникальный индекс (company, pack_key, version) — последний
+            # рубеж: проверка выше могла пройти, а запись появиться после
+            # неё. Без этого наружу уходила пятисотка INTERNAL_ERROR вместо
+            # того же 409, что человек получает при обычной проверке.
+            self._discard_published(target)
+            raise ReviewPackEditError(
+                "REVIEW_PACK_VERSION_EXISTS",
+                f"версия {version} уже зарегистрирована",
+            ) from error
+        except Exception:
+            # Каталог уже в боевом корне, а записи нет — и номер версии
+            # выжжен навсегда: `target.exists()` истинно, каждая следующая
+            # попытка получает 409 на профиль, которого нет ни в каталоге,
+            # ни в базе. Откатываем перенос, раз транзакция не состоялась.
+            self._discard_published(target)
+            raise
         return new_id
+
+    @staticmethod
+    def _discard_published(target: Path) -> None:
+        """Убрать перенесённую версию, за которой не встала запись в БД."""
+        shutil.rmtree(target, ignore_errors=True)
 
     def _editable_record(
         self, company_id: UUID, pack_id: UUID
@@ -578,8 +620,38 @@ class ReviewPackCatalogService:
             error_payload = payload.get("error") or {}
             raise ReviewPackEditError(
                 str(error_payload.get("code") or "REVIEW_PACK_INVALID"),
-                str(error_payload.get("message") or "пакет не прошёл проверку"),
+                self._without_staging_path(
+                    str(error_payload.get("message") or "пакет не прошёл проверку"),
+                    draft,
+                ),
             )
+
+    @staticmethod
+    def _without_staging_path(message: str, draft: Path) -> str:
+        """Убрать из сообщения ядра путь каталога сборки.
+
+        Ядро называет файл абсолютным путём, а проверяем мы копию пакета
+        во временном каталоге. В браузер уходило «политика
+        /tmp/pack-tnxjped_/pack/policy.yaml не читается» — путь, которого
+        к моменту показа уже не существует; человеку он ничего не говорит,
+        а наружу отдаёт схему именования и сам факт сборки в /tmp.
+        Остаётся имя файла — правит человек именно его.
+
+        Путь встречается в сообщении несколько раз и в двух формах: сам
+        каталог сборки и его родитель. Вырезаются оба, длинные первыми,
+        иначе от `<staging>/pack/policy.yaml` осталось бы `/pack/policy.yaml`.
+        Разрешённые формы тоже: временный каталог может лежать за симлинком
+        (macOS: /var → /private/var), и тогда ядро вернёт другую строку.
+        """
+        prefixes = {str(draft), str(draft.parent)}
+        try:
+            resolved = draft.resolve()
+            prefixes |= {str(resolved), str(resolved.parent)}
+        except OSError:
+            pass
+        for prefix in sorted(prefixes, key=len, reverse=True):
+            message = message.replace(prefix + "/", "").replace(prefix, "")
+        return message
 
     def _is_inside_root(self, candidate: Path) -> bool:
         try:

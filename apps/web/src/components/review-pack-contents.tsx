@@ -72,7 +72,11 @@ export function ReviewPackContents() {
                 role="tab"
                 type="button"
               >
-                {item.display_name}
+                {/* Версия в подписи обязательна: имя у версий одного профиля
+                    общее, и после выпуска новой версии из редактора в списке
+                    оказывались две кнопки с одинаковым текстом. */}
+                {item.display_name}{" "}
+                <span className="font-mono text-[0.9em] opacity-70">{item.version}</span>
               </button>
             ))}
           </div>

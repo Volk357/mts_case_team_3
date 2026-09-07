@@ -33,6 +33,7 @@ from docreview_api.db.base import Base
 from docreview_api.db.models import CompanyModel, ReviewPackReferenceModel
 from docreview_api.db.session import create_database_engine, create_session_factory
 from docreview_api.main import create_app
+from docreview_api.services.review_packs import ReviewPackCatalogService
 
 REPOSITORY = Path(__file__).resolve().parents[3]
 REAL_PACK = REPOSITORY / "review-packs" / "mts-net" / "0.2"
@@ -225,6 +226,139 @@ async def test_broken_yaml_is_rejected_with_the_core_reason(authoring):
     assert body["code"] == "POLICY_INVALID"
     # Причина от ядра доходит дословно: иначе человек не поймёт, что чинить.
     assert body["message"]
+
+
+@pytest.mark.anyio
+async def test_core_message_does_not_leak_the_staging_path(authoring):
+    """Путь временного каталога не уходит в браузер.
+
+    Ядро называет файл абсолютным путём, а проверяем мы копию пакета
+    в системном временном каталоге. Человек видел «политика
+    /tmp/pack-tnxjped_/pack/policy.yaml не читается» — путь, которого
+    к моменту показа уже нет: чинить по нему нечего, а наружу уходит
+    схема именования и сам факт сборки в /tmp.
+    """
+    settings, pack_id = authoring
+    async with client(settings) as http:
+        response = await http.post(
+            f"/api/review-packs/{pack_id}/versions",
+            json={"version": "0.4.2", "files": {"policy": "ceiling: [\n"}},
+        )
+    message = response.json()["error"]["message"]
+    assert "/tmp" not in message and "/var/folders" not in message, message
+    assert "pack-" not in message, message
+    # И при этом остаётся сказанным, ЧТО чинить.
+    assert "policy.yaml" in message, message
+
+
+@pytest.mark.anyio
+async def test_version_taken_during_validation_does_not_corrupt_it(authoring, monkeypatch):
+    """Гонка по одному номеру версии не портит опубликованную версию.
+
+    Между проверкой `target.exists()` и переносом идёт валидация ядром —
+    до минуты. Если за это время номер занял другой выпускающий,
+    `shutil.move` клал каталог сборки ВНУТРЬ занятой версии: в артефакт,
+    объявленный неизменяемым, дописывался подкаталог `pack`, и запрос
+    при этом завершался успехом.
+    """
+    settings, pack_id = authoring
+    target = settings.review_packs_dir / "mts-net" / "0.9"
+    original = ReviewPackCatalogService._validate_with_core
+
+    def validate_then_squat(self, draft: Path) -> None:
+        original(self, draft)
+        target.mkdir(parents=True)
+        (target / "policy.yaml").write_text("ceiling: 20\n", encoding="utf-8")
+
+    monkeypatch.setattr(ReviewPackCatalogService, "_validate_with_core", validate_then_squat)
+
+    async with client(settings) as http:
+        source = (await http.get(f"/api/review-packs/{pack_id}/source")).json()
+        response = await http.post(
+            f"/api/review-packs/{pack_id}/versions",
+            json={"version": "0.9", "files": {"policy": source["files"]["policy"]}},
+        )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "REVIEW_PACK_VERSION_EXISTS"
+    # Чужая версия осталась ровно тем, чем была.
+    assert sorted(p.name for p in target.iterdir()) == ["policy.yaml"]
+
+
+@pytest.mark.anyio
+async def test_version_registered_during_validation_gives_409_not_500(authoring, monkeypatch):
+    """Уникальный индекс — последний рубеж, и он обязан звучать как 409.
+
+    Запись могла появиться уже после `_version_registered`. Неперехваченный
+    IntegrityError уходил наружу пятисоткой INTERNAL_ERROR: человек видел
+    «внутренняя ошибка» там, где на самом деле занят номер версии.
+
+    Плюс проверка компенсации: каталог уже перенесён в боевой корень,
+    а записи за ним нет. Оставить его — значит выжечь номер версии
+    навсегда, `target.exists()` истинно и каждая следующая попытка
+    получает 409 на профиль, которого нет ни в каталоге, ни в базе.
+    """
+    settings, pack_id = authoring
+    target = settings.review_packs_dir / "mts-net" / "0.9"
+    original = ReviewPackCatalogService._validate_with_core
+
+    def validate_then_register(self, draft: Path) -> None:
+        original(self, draft)
+        with self._session_factory.begin() as session:
+            session.add(
+                ReviewPackReferenceModel(
+                    company_id=settings.default_company_id,
+                    pack_key="mts-net",
+                    version="0.9",
+                    display_name="Гонка",
+                    document_type="technical_specification",
+                    locator="mts-net/0.9",
+                )
+            )
+
+    monkeypatch.setattr(ReviewPackCatalogService, "_validate_with_core", validate_then_register)
+
+    async with client(settings) as http:
+        source = (await http.get(f"/api/review-packs/{pack_id}/source")).json()
+        response = await http.post(
+            f"/api/review-packs/{pack_id}/versions",
+            json={"version": "0.9", "files": {"policy": source["files"]["policy"]}},
+        )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "REVIEW_PACK_VERSION_EXISTS"
+    assert not target.exists(), sorted(p.name for p in target.iterdir())
+
+
+@pytest.mark.anyio
+async def test_failed_registration_frees_the_version_number(authoring, monkeypatch):
+    """Отказ вставки не оставляет каталог без записи.
+
+    Отдельно от предыдущего теста: там отказ ожидаемый (номер занят),
+    здесь — любой другой сбой БД. Разница важна, потому что выжигание
+    номера происходит одинаково в обоих случаях, а чинилось бы одним
+    перехватом IntegrityError только в первом.
+    """
+    settings, pack_id = authoring
+    target = settings.review_packs_dir / "mts-net" / "0.9"
+
+    async with client(settings) as http:
+        source = (await http.get(f"/api/review-packs/{pack_id}/source")).json()
+
+        def explode(self, **_kwargs):
+            raise RuntimeError("соединение с базой потеряно")
+
+        # Ломаем создание самой записи: это ровно тот момент, после которого
+        # каталог уже в боевом корне, а строки в базе ещё нет.
+        monkeypatch.setattr(ReviewPackReferenceModel, "__init__", explode)
+        # Обработчик Exception в приложении отвечает 500, но Starlette
+        # после него исключение пробрасывает — тестовый клиент видит его.
+        with pytest.raises(RuntimeError):
+            await http.post(
+                f"/api/review-packs/{pack_id}/versions",
+                json={"version": "0.9", "files": {"policy": source["files"]["policy"]}},
+            )
+
+    # Номер версии свободен: следующая попытка не упрётся в каталог-призрак.
+    assert not target.exists()
 
 
 @pytest.mark.anyio

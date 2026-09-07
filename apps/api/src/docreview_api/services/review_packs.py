@@ -393,8 +393,7 @@ class ReviewPackCatalogService:
         if not VERSION_PATTERN.match(version or ""):
             raise ReviewPackEditError(
                 "REVIEW_PACK_VERSION_INVALID",
-                "версия может содержать буквы, цифры, точку, дефис "
-                "и подчёркивание, до 50 символов",
+                "версия может содержать буквы, цифры, точку, дефис и подчёркивание, до 50 символов",
             )
 
         record, source_dir = self._editable_record(company_id, pack_id)
@@ -470,9 +469,7 @@ class ReviewPackCatalogService:
                 )
             ).one_or_none()
             if record is None:
-                raise ReviewPackEditError(
-                    "REVIEW_PACK_NOT_FOUND", "профиль проверки не найден"
-                )
+                raise ReviewPackEditError("REVIEW_PACK_NOT_FOUND", "профиль проверки не найден")
             resolved = self._resolve_locator(record.locator)
             if resolved is None:
                 raise ReviewPackEditError(
@@ -482,22 +479,21 @@ class ReviewPackCatalogService:
             session.expunge(record)
             return record, resolved
 
-    def _version_registered(
-        self, company_id: UUID, pack_key: str, version: str
-    ) -> bool:
+    def _version_registered(self, company_id: UUID, pack_key: str, version: str) -> bool:
         with self._session_factory() as session:
-            return session.scalars(
-                select(ReviewPackReferenceModel).where(
-                    ReviewPackReferenceModel.company_id == company_id,
-                    ReviewPackReferenceModel.pack_key == pack_key,
-                    ReviewPackReferenceModel.version == version,
-                )
-            ).first() is not None
+            return (
+                session.scalars(
+                    select(ReviewPackReferenceModel).where(
+                        ReviewPackReferenceModel.company_id == company_id,
+                        ReviewPackReferenceModel.pack_key == pack_key,
+                        ReviewPackReferenceModel.version == version,
+                    )
+                ).first()
+                is not None
+            )
 
     def _write_files(self, draft: Path, files: dict[str, str]) -> None:
-        by_key = {
-            key: filename for key, filename, _description in PACK_CONTENT_ROLES
-        }
+        by_key = {key: filename for key, filename, _description in PACK_CONTENT_ROLES}
         # Имя policy может быть переопределено манифестом — берём то же
         # имя, что резолвит ядро, иначе правка легла бы в файл, который
         # никто не читает.
@@ -532,9 +528,7 @@ class ReviewPackCatalogService:
                 "REVIEW_PACK_INVALID", f"манифест не читается: {error}"
             ) from error
         if not isinstance(data, dict):
-            raise ReviewPackEditError(
-                "REVIEW_PACK_INVALID", "манифест не является словарём"
-            )
+            raise ReviewPackEditError("REVIEW_PACK_INVALID", "манифест не является словарём")
         data["version"] = version
         manifest.write_text(
             yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
@@ -577,8 +571,7 @@ class ReviewPackCatalogService:
         except (OSError, ValueError) as error:
             raise ReviewPackEditError(
                 "REVIEW_PACK_VALIDATOR_UNAVAILABLE",
-                "проверяющая команда ядра не вернула отчёт "
-                f"(код {completed.returncode})",
+                f"проверяющая команда ядра не вернула отчёт (код {completed.returncode})",
             ) from error
 
         if not payload.get("ok"):

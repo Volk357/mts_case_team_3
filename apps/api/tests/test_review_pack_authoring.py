@@ -47,7 +47,7 @@ def _core_shim(tmp_path: Path) -> str:
     """
     shim = tmp_path / "docreview-shim"
     shim.write_text(
-        "#!/bin/sh\nexec {python} {core} \"$@\"\n".format(
+        '#!/bin/sh\nexec {python} {core} "$@"\n'.format(
             python=sys.executable, core=REPOSITORY / "docreview.py"
         ),
         encoding="utf-8",
@@ -163,17 +163,13 @@ async def test_manifest_version_is_rewritten(authoring):
         )
     assert response.status_code == 201, response.text
     manifest = yaml.safe_load(
-        (settings.review_packs_dir / "mts-net" / "0.9" / "pack.yaml").read_text(
-            encoding="utf-8"
-        )
+        (settings.review_packs_dir / "mts-net" / "0.9" / "pack.yaml").read_text(encoding="utf-8")
     )
     assert manifest["version"] == "0.9"
     assert manifest["id"] == "mts-net"
     # Исходная версия не тронута.
     original = yaml.safe_load(
-        (settings.review_packs_dir / "mts-net" / "0.2" / "pack.yaml").read_text(
-            encoding="utf-8"
-        )
+        (settings.review_packs_dir / "mts-net" / "0.2" / "pack.yaml").read_text(encoding="utf-8")
     )
     assert original["version"] == "0.2"
 

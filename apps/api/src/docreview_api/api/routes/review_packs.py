@@ -50,6 +50,7 @@ def _catalog(
         analysis_executable=settings.analysis_executable,
     )
 
+
 router = APIRouter(prefix="/review-packs", tags=["review-packs"])
 
 
@@ -128,9 +129,7 @@ def create_review_pack_version(
 
     catalog = _catalog(settings, session_factory)
     try:
-        source = catalog.read_source(
-            company_id=settings.default_company_id, pack_id=review_pack_id
-        )
+        source = catalog.read_source(company_id=settings.default_company_id, pack_id=review_pack_id)
         new_id = catalog.create_version(
             company_id=settings.default_company_id,
             pack_id=review_pack_id,

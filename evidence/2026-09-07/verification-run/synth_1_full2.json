@@ -1,0 +1,373 @@
+{
+  "mode": "full2",
+  "fragments": 5,
+  "total_seconds": 71.1,
+  "found_raw": 60,
+  "verified": 17,
+  "before_dedupe": 40,
+  "merged_away": 23,
+  "capped_away": 0,
+  "rejected_count": 0,
+  "reject_reasons": {},
+  "truncated_chars": 0,
+  "severity_fixed": 0,
+  "verified_count": 13,
+  "verifier_rejected": 0,
+  "verifier_would_reject": 10,
+  "findings": [
+    {
+      "quote": "Способ загрузки: Полная перезагрузка периода\nЗагрузка выполняется инкрементально, ранее записанные строки обновляются по ключу.",
+      "defect_id": "INTERNAL_CONTRADICTION",
+      "explanation": "В разделе 'Общие сведения' указано, что способ загрузки - 'Полная перезагрузка периода', но далее утверждается, что 'Загрузка выполняется инкрементально, ранее записанные строки обновляются по ключу'.",
+      "suggestion": "Уточнить способ загрузки, либо указать, что это полная перезагрузка с использованием инкрементального подхода для обновления строк, либо убрать упоминание инкрементальной загрузки, если это полная…",
+      "severity": "high",
+      "merged_count": 3,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "1. В цитате указано, что способ загрузки - 'Полная перезагрузка периода', но далее уточняется, что 'Загрузка выполняется инкрементально, ранее записанные строки обновляются по ключу'. Это не противоре"
+      }
+    },
+    {
+      "quote": "Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Не указано, что является уникальным ключом для строки в целевой таблице. В разделе 'Правило дедупликации' указано, что партиция перезаписывается целиком, но не указано, что является ключом для определения уникальности строки. Это может привести к проблемам с дублированием данных.",
+      "suggestion": "Указать уникальный ключ для строки в целевой таблице. Например: 'Уникальный ключ: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE.'",
+      "severity": "high",
+      "merged_count": 4
+    },
+    {
+      "quote": "Приемники данных\nОписание данных | Кластер | Ссылка на Каталог | Сериализация\nВитрина-агрегат по интернет-трафику абонентов | — | SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY | ORC",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Для приемника данных 'Витрина-агрегат по интернет-трафику абонентов' не указано, где физически расположен приемник (кластер и схема). В документе указано только имя схемы и таблицы, но не кластер.",
+      "suggestion": "Указать кластер и схему для приемника данных, например, 'Кластер: prod, Схема: CDM_TRAFFIC'",
+      "severity": "high",
+      "merged_count": 3,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "1. В цитате указано 'Кластер' как '-', но в объяснении требуют указать кластер. В документе явно указано, что кластер не определен (—), что соответствует требованиям."
+      }
+    },
+    {
+      "quote": "Сессии, начавшиеся до 00:00 UTC и завершившиеся после, относятся к дате начала.",
+      "defect_id": "TIMEZONE_INCONSISTENT",
+      "explanation": "В тексте упоминается UTC, но в предыдущем предложении не указано, что бизнес-дата относится к UTC. Это приводит к несоответствию в трактовке временных границ. Нужно уточнить, что бизнес-дата относится к UTC, чтобы избежать неоднозначности.",
+      "suggestion": "Уточнить, что бизнес-дата относится к UTC, чтобы избежать несоответствия в трактовке временных границ. Например: 'Сессии, начавшиеся до 00:00 UTC и завершившиеся после, относятся к дате начала в UTC.'",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "Если FIELD_LAC = 0 — сопоставление только по FIELD_CELL_ID.\nЕсли FIELD_CELL_ID = 0 — сопоставление только по FIELD_LAC.",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано поведение, если оба поля равны нулю (FIELD_LAC = 0 и FIELD_CELL_ID = 0). Это приведет к неопределенному поведению при обогащении данных, так как не будет сопоставления ни по одному из полей.",
+      "suggestion": "Описать поведение при условии, когда оба поля равны нулю. Например: 'Если FIELD_LAC = 0 и FIELD_CELL_ID = 0, сопоставление не выполняется, и запись помечается как необработанная.'",
+      "severity": "high",
+      "merged_count": 1
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В примере данных и DDL не указано, как обрабатываются случаи, когда FIELD_TARIFF_CODE отсутствует или имеет невалидное значение. Это не покрытый граничный случай.",
+      "suggestion": "Описать правила обработки отсутствия или невалидных значений FIELD_TARIFF_CODE, например: 'Если FIELD_TARIFF_CODE не найден в справочнике, использовать значение по умолчанию или исключить запись'.",
+      "severity": "high",
+      "merged_count": 9,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "1. В DDL указано, что FIELD_TARIFF_CODE имеет тип STRING (не обязательное поле), а пример данных показывает, что оно заполнено. Отсутствие значения или невалидное значение обрабатывается как NULL или,"
+      }
+    },
+    {
+      "quote": "Поля FIELD_IMSI и FIELD_MSISDN в витрину не выгружаются. В слое RAW доступ к ним разграничен ролью ROLE_PII_READ, выгрузка вовне запрещена.",
+      "defect_id": "DANGLING_REFERENCE",
+      "explanation": "В разделе 'Структура данных' упомянуты поля FIELD_IMSI и FIELD_MSISDN, но в структуре таблицы SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY эти поля отсутствуют.",
+      "suggestion": "Убрать упоминание FIELD_IMSI и FIELD_MSISDN в разделе 'Нефункциональные требования', так как они не используются в витрине и не описаны в структуре данных витрины",
+      "severity": "high",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "accept",
+        "reason": "В структуре таблицы SCHEMA_CDM_TRAFFIC.TABLE_AGG_TRAFFIC_DAILY отсутствуют поля FIELD_IMSI и FIELD_MSISDN, хотя они упомянуты в разделе 'Структура данных'."
+      }
+    },
+    {
+      "quote": "Поля FIELD_IMSI и FIELD_MSISDN в витрину не выгружаются. В слое RAW доступ к ним разграничен ролью ROLE_PII_READ, выгрузка вовне запрещена.",
+      "defect_id": "PII_NO_PROTECTION",
+      "explanation": "В структуре витрины присутствуют поля, связанные с персональными данными (FIELD_IMSI и FIELD_MSISDN), но не описаны требования к защите этих данных. Согласно требованиям, должны быть указаны требования к маскированию или доступу.",
+      "suggestion": "Описать требования к защите персональных данных, например, 'Поля FIELD_IMSI и FIELD_MSISDN маскируются перед выгрузкой в витрину' или 'Доступ к этим полям в витрине ограничен ролью ROLE_CDM_READ'.",
+      "severity": "medium",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "3. В цитате уже указано, что поля FIELD_IMSI и FIELD_MSISDN не выгружаются, и доступ к ним в RAW-слое разграничен ролью ROLE_PII_READ, что соответствует требованиям по защите персональных данных."
+      }
+    },
+    {
+      "quote": "Глубина данных: С 01.01.2024",
+      "defect_id": "NO_VOLUME_ESTIMATE",
+      "explanation": "Не указано, сколько данных будет храниться в витрине, например, количество строк в сутки или размер данных. Это необходимо для оценки производительности и ресурсов.",
+      "suggestion": "Указать оценку объёма данных, например, 'Ожидаемый объём данных: 100 тыс. строк в сутки' или 'Размер данных: 10 ГБ в месяц'.",
+      "severity": "medium",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "4. Документ не обязан описывать детали объема данных, такие как количество строк в сутки или размер данных. Это относится к настройкам инфраструктуры, а не к техническому заданию."
+      }
+    },
+    {
+      "quote": "Регламент расчёта: Ежесуточно, в 03:00 UTC за предыдущие сутки",
+      "defect_id": "NO_SCHEDULE",
+      "explanation": "Указано, что расчёт выполняется 'ежесуточно, в 03:00 UTC за предыдущие сутки', но не указано, какое окно обработки или время окончания обработки. Это может привести к неясности, когда данные будут готовы.",
+      "suggestion": "Указать окно обработки, например, 'Ежесуточно, в 03:00 UTC за предыдущие сутки, с окном обработки до 05:00 UTC'.",
+      "severity": "clarification",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "5. В цитате указано, что расчёт выполняется 'ежесуточно, в 03:00 UTC за предыдущие сутки', что достаточно для определения времени начала обработки. Дополнительные детали о времени окончания обработки,"
+      }
+    },
+    {
+      "quote": "Сессии PS-домена | Hive | SCHEMA_DDS.TABLE_PS_SESSION | ORC",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В разделе 'Источники данных' указано, что источник 'Сессии PS-домена' находится в SCHEMA_DDS.TABLE_PS_SESSION, но в разделе 'Источники обогащения данных' упоминается справочник 'Сессии PS-домена', что может быть несоответствием.",
+      "suggestion": "Уточнить, что 'Сессии PS-домена' относятся к SCHEMA_DDS.TABLE_PS_SESSION и не являются справочником, чтобы избежать путаницы.",
+      "severity": "medium",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "accept",
+        "reason": "2. В разделе 'Источники данных' указано SCHEMA_DDS.TABLE_PS_SESSION, а в 'Источники обогащения данных' упоминается справочник 'Сессии PS-домена', что не соответствует, так как источник обогащения не о"
+      }
+    },
+    {
+      "quote": "Гранулярность строки: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В разделе 'Гранулярность строки' указаны поля, которые должны быть частью уникального ключа, но в разделе 'Правило дедупликации' не указано, что эти поля составляют уникальный ключ. Это приводит к несоответствию в описании структуры данных и правил обработки.",
+      "suggestion": "Уточнить, что поля FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE составляют уникальный ключ для строки в целевой таблице.",
+      "severity": "medium",
+      "merged_count": 1
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN_TOTAL | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "Поле FIELD_BYTES_DOWN_TOTAL имеет то же описание и источник, что и FIELD_BYTES_DOWN, что создает несогласованность в структуре данных.",
+      "suggestion": "Уточнить назначение FIELD_BYTES_DOWN_TOTAL и изменить его описание, чтобы отличать от FIELD_BYTES_DOWN, или удалить избыточное поле.",
+      "severity": "medium",
+      "merged_count": 3,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "1. Поле FIELD_BYTES_DOWN_TOTAL имеет то же описание и источник, что и FIELD_BYTES_DOWN, но в документе это явно указано как два разных поля с одинаковым описанием и источником, что не является ошибкой"
+      }
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "В примере данных и DDL указано, что FIELD_RAT имеет значение VAL_01, VAL_02 и т.д., но в списке объектов документа нет упоминания справочника для FIELD_RAT. В то же время есть TABLE_RAT_REF, но не указано, что он используется для FIELD_RAT. Это несоответствие в структуре данных.",
+      "suggestion": "Указать, что FIELD_RAT ссылается на справочник TABLE_RAT_REF, и добавить это в описание структуры данных.",
+      "severity": "medium",
+      "merged_count": 1,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "2. В DDL указано, что FIELD_RAT имеет тип STRING, и в примере данных используются значения VAL_01, VAL_02 и т.д. Справочник TABLE_RAT_REF не требуется для описания структуры данных, так как это не пол"
+      }
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)\nFIELD_BYTES_DOWN_TOTAL | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "DUPLICATE_SEMANTICS",
+      "explanation": "В разделе 'Структура данных' присутствуют два поля FIELD_BYTES_DOWN и FIELD_BYTES_DOWN_TOTAL, которые имеют одинаковое описание 'Объём принятых данных (байты)' и одинаковую формулу расчёта 'sum(TABLE_IUM_RAW_PS.bytes_down)'. Это дублирование смысла между полями",
+      "suggestion": "Удалить одно из полей, либо изменить описание и формулу расчёта для одного из полей, чтобы различать их смысл",
+      "severity": "medium",
+      "merged_count": 2,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "1. В документе FIELD_BYTES_DOWN и FIELD_BYTES_DOWN_TOTAL имеют одинаковое описание и источник, что указано явно, и это не является несогласованностью, а является дублированием, которое может быть ожид"
+      }
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_TARIFF_CODE не имеет перечня допустимых значений, что нарушает требования к полям-кодам. В таблице структуры данных указано, что это поле-код, но не приведены допустимые значения.",
+      "suggestion": "Указать перечень допустимых значений для FIELD_TARIFF_CODE в структуре данных, например: 'VAL_01, VAL_02, ...' или 'коды тарифов из справочника TABLE_TARIFF_REF'.",
+      "severity": "medium",
+      "merged_count": 5,
+      "_verdict": {
+        "verdict": "accept",
+        "reason": "В DDL и примере данных не указаны допустимые значения для FIELD_TARIFF_CODE, что нарушает требования к полям-кодам."
+      }
+    },
+    {
+      "quote": "Срок хранения по слоям: RAW — 30 дней, DDS — 180 дней, CDM — 3 года",
+      "defect_id": "RETENTION_GAP",
+      "explanation": "Указаны сроки хранения для слоёв RAW, DDS и CDM, но не указано, что происходит с данными после истечения срока хранения. Согласно требованиям, для всех слоёв должен быть указан срок хранения, но в данном случае указано только время хранения, а не действие после истечения срока.",
+      "suggestion": "Уточнить, что данные удаляются после истечения срока хранения, или указать, что данные архивируются. Например, 'RAW — 30 дней, после чего данные удаляются' и т.д.",
+      "severity": "low",
+      "merged_count": 2,
+      "_verdict": {
+        "verdict": "reject",
+        "reason": "6. В цитате указаны сроки хранения для слоёв, и это соответствует требованиям. Документ не обязан описывать действия после истечения срока хранения, так как это относится к настройкам инфраструктуры."
+      }
+    }
+  ],
+  "merged": [
+    {
+      "quote": "Способ загрузки: Полная перезагрузка периода\nЗагрузка выполняется инкрементально, ранее записанные строки обновляются по ключу.",
+      "defect_id": "INTERNAL_CONTRADICTION",
+      "explanation": "В разделе 'Общие сведения' указано, что способ загрузки - 'Полная перезагрузка периода', но далее утверждается, что 'Загрузка выполняется инкрементально, ранее записанные строки обновляются по ключу'.",
+      "suggestion": "Уточнить способ загрузки, либо указать, что это полная перезагрузка с использованием инкрементального подхода для обновления строк, либо убрать упоминание инкрементальной загрузки, если это полная…",
+      "severity": "high"
+    },
+    {
+      "quote": "Способ загрузки: Полная перезагрузка периода\nЗагрузка выполняется инкрементально, ранее записанные строки обновляются по ключу.",
+      "defect_id": "INTERNAL_CONTRADICTION",
+      "explanation": "В тексте противоречиво указано, что загрузка выполняется 'инкрементально' и 'полная перезагрузка периода'. Полная перезагрузка не может быть инкрементальной, это противоречие.",
+      "suggestion": "Уточнить способ загрузки: либо 'полная перезагрузка', либо 'инкрементальная загрузка'. Не использовать оба термина одновременно.",
+      "severity": "high"
+    },
+    {
+      "quote": "Правило дедупликации: Партиция перезаписывается целиком, дубли невозможны",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Правило дедупликации указано, но не указано, что является ключом для определения уникальности строки. Это приводит к неясности, как именно определяются дубли и как они обрабатываются. Нужно указать уникальный ключ для строки.",
+      "suggestion": "Указать уникальный ключ для строки в целевой таблице. Например: 'Уникальный ключ: FIELD_BIZ_DATE, FIELD_REGION_CODE, FIELD_RAT, FIELD_TARIFF_CODE.'",
+      "severity": "high"
+    },
+    {
+      "quote": "Обновление: Полная перезагрузка периода без upsert",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Указано, что загрузка выполняется 'полная перезагрузка периода без upsert', но не указан ключ, по которому происходит обновление.",
+      "suggestion": "Уточнить, что для полной перезагрузки используется полная замена данных, и ключ не требуется. Либо убрать упоминание 'без upsert', так как это не применимо к полной перезагрузке.",
+      "severity": "high"
+    },
+    {
+      "quote": "Способ загрузки: Полная перезагрузка периода",
+      "defect_id": "NO_DEDUP_OR_KEY",
+      "explanation": "Для полной перезагрузки периода не требуется ключ, но в тексте упоминается 'Загрузка выполняется инкрементально, ранее записанные строки обновляются по ключу', что противоречит полной перезагрузке. Это приводит к неясности, что именно происходит при обновлении данных.",
+      "suggestion": "Убрать упоминание 'инкрементально' и 'обновляются по ключу', так как это не применимо к полной перезагрузке.",
+      "severity": "high"
+    },
+    {
+      "quote": "Глубина данных: С 01.01.2024",
+      "defect_id": "RETENTION_GAP",
+      "explanation": "В разделе 'Нефункциональные требования' указан срок хранения для слоёв RAW — 30 дней, DDS — 180 дней, CDM — 3 года, но глубина данных указана как 'С 01.01.2024', что не соответствует сроку хранения CDM (3 года).",
+      "suggestion": "Уточнить глубину данных, чтобы она соответствовала сроку хранения CDM (3 года), либо указать, что глубина данных будет обновляться по мере необходимости",
+      "severity": "low"
+    },
+    {
+      "quote": "Сырые события интернет-трафика | Hive | SCHEMA_RAW.TABLE_IUM_RAW_PS | —",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Для таблицы SCHEMA_RAW.TABLE_IUM_RAW_PS не указано, где физически расположена таблица (кластер и схема). В документе указано только имя схемы и таблицы, но не кластер.",
+      "suggestion": "Указать кластер и схему для таблицы SCHEMA_RAW.TABLE_IUM_RAW_PS, например, 'Кластер: prod, Схема: RAW'",
+      "severity": "high"
+    },
+    {
+      "quote": "Сессии PS-домена | Hive | SCHEMA_DDS.TABLE_PS_SESSION | ORC",
+      "defect_id": "MISSING_SOURCE_LOCATION",
+      "explanation": "Для таблицы SCHEMA_DDS.TABLE_PS_SESSION не указано, где физически расположена таблица (кластер и схема). В документе указано только имя схемы и таблицы, но не кластер.",
+      "suggestion": "Указать кластер и схему для таблицы SCHEMA_DDS.TABLE_PS_SESSION, например, 'Кластер: prod, Схема: DDS'",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "Поле FIELD_BYTES_DOWN описано как 'Объём принятых данных (байты)', но в источнике TABLE_IUM_RAW_PS указано, что FIELD_BYTES_DOWN имеет тип bigint, что соответствует типу в целевой таблице. Однако, поле FIELD_BYTES_DOWN_TOTAL имеет то же описание и источник, что создает несогласованность.",
+      "suggestion": "Уточнить назначение FIELD_BYTES_DOWN_TOTAL и убедиться, что его описание и источник отличаются от FIELD_BYTES_DOWN, или удалить избыточное поле.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BYTES_UP | bigint | Объём переданных данных | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_up)",
+      "defect_id": "SCHEMA_INCONSISTENCY",
+      "explanation": "Поле FIELD_BYTES_UP описано как 'Объём переданных данных', но в источнике TABLE_IUM_RAW_PS указано, что FIELD_BYTES_UP имеет тип string, что противоречит типу bigint в целевой таблице.",
+      "suggestion": "Убедиться, что тип данных FIELD_BYTES_UP в источнике TABLE_IUM_RAW_PS соответствует типу bigint, как указано в целевой таблице, или изменить тип в целевой таблице на string.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "В примере данных и DDL не указано, как обрабатываются случаи, когда FIELD_RAT отсутствует или имеет невалидное значение. Это не покрытый граничный случай.",
+      "suggestion": "Описать правила обработки отсутствия или невалидных значений FIELD_RAT, например: 'Если FIELD_RAT не найден в справочнике, использовать значение по умолчанию или исключить запись'.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN_TOTAL | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описана обработка случая, когда в источнике TABLE_IUM_RAW_PS отсутствуют данные для FIELD_BYTES_DOWN_TOTAL, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие данных в FIELD_BYTES_DOWN_TOTAL в источнике, например, заменять на 0 или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описана обработка случая, когда в источнике TABLE_IUM_RAW_PS отсутствуют данные для FIELD_BYTES_DOWN, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие данных в FIELD_BYTES_DOWN в источнике, например, заменять на 0 или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_REGION_CODE | string | Код региона абонента | NOT NULL | TABLE_REGION_REF.region_code",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано, как обрабатывать отсутствие кода региона в справочнике TABLE_REGION_REF, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие кода региона в справочнике TABLE_REGION_REF, например, заменять на 'UNKNOWN' или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_BYTES_UP | bigint | Объём переданных данных | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_up)",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описана обработка случая, когда в источнике TABLE_IUM_RAW_PS отсутствуют данные для FIELD_BYTES_UP, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие данных в FIELD_BYTES_UP в источнике, например, заменять на 0 или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_RAT | string | Технология радиодоступа: 2G, 3G, 4G, 5G | NOT NULL | TABLE_RAT_REF.rat_name",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описана обработка случая, когда в справочнике TABLE_RAT_REF отсутствует значение rat_name для определенного кода, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие значения в справочнике TABLE_RAT_REF, например, заменять на 'UNKNOWN' или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_TARIFF_CODE | string | Код тарифного плана | — | TABLE_TARIFF_REF.tariff_code",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано, как обрабатывать отсутствие кода тарифного плана в справочнике TABLE_TARIFF_REF, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие кода тарифного плана в справочнике TABLE_TARIFF_REF, например, заменять на 'UNKNOWN' или игнорировать.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_IMSI | string | Идентификатор абонента",
+      "defect_id": "UNDEFINED_EDGE_CASE",
+      "explanation": "Не описано, как обрабатывать отсутствие IMSI в источнике TABLE_IUM_RAW_PS, что может привести к ошибкам в агрегации.",
+      "suggestion": "Описать, как обрабатывать отсутствие IMSI в источнике, например, игнорировать запись или заменять на 'UNKNOWN'.",
+      "severity": "high"
+    },
+    {
+      "quote": "FIELD_BYTES_DOWN_TOTAL | bigint | Объём принятых данных (байты) | NOT NULL | sum(TABLE_IUM_RAW_PS.bytes_down)",
+      "defect_id": "DUPLICATE_SEMANTICS",
+      "explanation": "Поле FIELD_BYTES_DOWN_TOTAL имеет то же описание, что и FIELD_BYTES_DOWN, что создает неоднозначность в их назначении и различии.",
+      "suggestion": "Уточнить назначение и описание FIELD_BYTES_DOWN_TOTAL, чтобы отличать его от FIELD_BYTES_DOWN.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_RAT не имеет перечня допустимых значений, что нарушает требования к полям-кодам. В таблице структуры данных указано, что это поле-код, но не приведены допустимые значения.",
+      "suggestion": "Указать перечень допустимых значений для FIELD_RAT в структуре данных, например: 'VAL_01, VAL_02, ...' или 'коды RAT из справочника TABLE_RAT_REF'.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_BYTES_DOWN не имеет единицы измерения, что нарушает требования к числовым полям. В таблице структуры данных указано, что это поле-число, но не указана единица измерения.",
+      "suggestion": "Указать единицу измерения для FIELD_BYTES_DOWN, например: 'байты' или 'кбайты'.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_USERS_CNT не имеет единицы измерения, что нарушает требования к числовым полям. В таблице структуры данных указано, что это поле-число, но не указана единица измерения.",
+      "suggestion": "Указать единицу измерения для FIELD_USERS_CNT, например: 'количество пользователей' или 'число абонентов'.",
+      "severity": "medium"
+    },
+    {
+      "quote": "FIELD_BIZ_DATE | FIELD_REGION_CODE | FIELD_RAT | FIELD_TARIFF_CODE | FIELD_BYTES_UP | FIELD_BYTES_DOWN | FIELD_USERS_CNT | FIELD_PROC_TS",
+      "defect_id": "UNSPECIFIED_FORMAT",
+      "explanation": "Поле FIELD_BYTES_UP не имеет единицы измерения, что нарушает требования к числовым полям. В таблице структуры данных указано, что это поле-число, но не указана единица измерения.",
+      "suggestion": "Указать единицу измерения для FIELD_BYTES_UP, например: 'байты' или 'кбайты'.",
+      "severity": "medium"
+    }
+  ],
+  "capped": [],
+  "verifier_dropped": [],
+  "rejected": []
+}

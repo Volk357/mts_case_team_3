@@ -1,0 +1,22 @@
+{
+  "mode": "formal",
+  "fragments": 1,
+  "total_seconds": 0.0,
+  "found_raw": 1,
+  "verified": 1,
+  "rejected_count": 0,
+  "reject_reasons": {},
+  "findings": [
+    {
+      "quote": "События изменения статуса договора | Kafka | TOPIC_CRM_CONTRACT_EVENTS | —",
+      "defect_id": "SERIALIZATION_UNSPECIFIED",
+      "explanation": "Для источника в таблице «Источники данных» не указана сериализация (формат/схема/способ десериализации). Требование кейсодателя №1: сериализация входного потока должна быть задана. Источников без сериализации: 1.",
+      "suggestion": "Указать сериализацию (формат/схему) для каждого источника.",
+      "severity": "high",
+      "detail": [
+        "События изменения статуса договора | Kafka | TOPIC_CRM_CONTRACT_EVENTS | —"
+      ]
+    }
+  ],
+  "rejected": []
+}
